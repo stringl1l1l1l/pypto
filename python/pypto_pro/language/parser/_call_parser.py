@@ -1299,19 +1299,19 @@ class CallParserMixin:
         from pypto_pro.ir._utils import _normalize_expr
         from pypto_pro.ir.op.system_ops import _create_mutex_dedup_op, mutex_lock, mutex_unlock
 
-        emit_plain = mutex_lock if is_lock else mutex_unlock
         op_name = "system.mutex_lock" if is_lock else "system.mutex_unlock"
+        emit_plain = mutex_lock if is_lock else mutex_unlock
         id_exprs = list(buf_ids)
 
         if all(isinstance(buf_id, ir.ConstInt) for buf_id in id_exprs):
             unique_ids = list(dict.fromkeys(int(buf_id.value) for buf_id in id_exprs))
             for mutex_id in unique_ids:
-                expr = emit_plain(pipe=pipe, mutex_id=mutex_id, mutex_ids=mutex_ids, span=span)
+                expr = emit_plain(pipe=pipe, mutex_id=mutex_id, span=span)
                 self.builder.emit(ir.EvalStmt(expr, span))
             return
 
         if len(id_exprs) == 1:
-            expr = emit_plain(pipe=pipe, mutex_id=id_exprs[0], mutex_ids=mutex_ids, span=span)
+            expr = emit_plain(pipe=pipe, mutex_id=id_exprs[0], span=span)
         else:
             expr = _create_mutex_dedup_op(
                 op_name,
@@ -1319,6 +1319,7 @@ class CallParserMixin:
                 mutex_id_exprs=[_normalize_expr(buf_id, span) for buf_id in id_exprs],
                 mutex_id_owner_indices=mutex_id_owner_indices,
                 mutex_ids_union=list(mutex_ids or ()),
+                auto_mutex=self._auto_mutex,
                 span=span,
             )
         self.builder.emit(ir.EvalStmt(expr, span))

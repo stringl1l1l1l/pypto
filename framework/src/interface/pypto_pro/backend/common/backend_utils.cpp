@@ -51,15 +51,6 @@ std::vector<int> GetMutexIdsFromKwargs(const ir::CallPtr& op)
             return values;
         }
     }
-    int max_id = 2;
-    for (const auto& [key, value] : op->kwargs_) {
-        if (key == "max_mutex_id") {
-            max_id = std::any_cast<int>(value);
-        }
-    }
-    for (int i = 0; i < max_id; ++i) {
-        values.push_back(i);
-    }
     return values;
 }
 
