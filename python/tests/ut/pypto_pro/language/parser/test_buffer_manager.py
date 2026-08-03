@@ -25,6 +25,10 @@ from pypto_pro.language.parser.diagnostics import ParserTypeError, UnsupportedFe
 import pytest
 
 from pypto.pypto_impl import ir
+from pypto_pro.ir.op.system_ops import (
+    _create_mutex_dedup_op,
+    mutex_lock,
+)
 
 
 def _ir_to_str(prog: ir.Program) -> str:
@@ -35,7 +39,11 @@ def _parse_kernel(kernel_def) -> ir.Program:
     return kernel_def.parse_target_program(ir.SectionKind.Vector)[0]
 
 
-def test_static_mutex_lock_unlock():
+def _dynamic_mutex_id(name="mutex_id"):
+    return ir.Var(name, ir.ScalarType(ir.DataType.INDEX), ir.Span.unknown())
+
+
+def test_manual_mutex():
     @pl.kernel
     def k(x: pl.Tensor[[64], pl.DT_FP16]):
         tt = pl.TileType(shape=[64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
@@ -47,20 +55,14 @@ def test_static_mutex_lock_unlock():
     ir_str = _ir_to_str(_parse_kernel(k))
     assert "system.mutex_lock" in ir_str
     assert "system.mutex_unlock" in ir_str
+    assert '"auto_mutex": False' in ir_str
+    assert "max_mutex_id" not in ir_str
 
-
-def test_keyword_form():
-    @pl.kernel
-    def k(x: pl.Tensor[[64], pl.DT_FP16]):
-        tt = pl.TileType(shape=[64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
-        t = pl.make_tile(tt, addr=0, size=128)
-        pl.system.mutex_lock(pipe=pl.PipeType.MTE2, mutex_id=1)
-        pl.load(t, x, [0])
-        pl.system.mutex_unlock(pipe=pl.PipeType.MTE2, mutex_id=1)
-
-    ir_str = _ir_to_str(_parse_kernel(k))
-    assert "system.mutex_lock" in ir_str
-    assert "system.mutex_unlock" in ir_str
+    dyn_op = mutex_lock(pipe=ir.PipeType.MTE2, mutex_id=_dynamic_mutex_id())
+    assert dyn_op.name == "system.mutex_lock_dyn"
+    assert dyn_op.kwargs["auto_mutex"] is False
+    assert "mutex_ids" not in str(dyn_op)
+    assert "max_mutex_id" not in str(dyn_op)
 
 
 def test_contiguous_addr_auto_offset():
@@ -156,6 +158,7 @@ def test_auto_mutex_single_tile():
     ir_str = _ir_to_str(_parse_kernel(k))
     assert ir_str.count("mutex_lock") >= 2, ir_str
     assert ir_str.count("mutex_unlock") >= 2, ir_str
+    assert "max_mutex_id" not in ir_str
 
 
 def test_auto_mutex_group_loop():
@@ -171,6 +174,40 @@ def test_auto_mutex_group_loop():
     assert "mutex_lock" in ir_str, ir_str
     assert "mutex_unlock" in ir_str, ir_str
     assert ir_str.count("block.make_tile") == 2, ir_str
+    assert "max_mutex_id" not in ir_str
+
+
+def test_getval_setval_auto_mutex_emits_lock_unlock():
+    @pl.kernel(auto_mutex=True)
+    def k(x: pl.Tensor[[64], pl.DT_FP16]):
+        tt = pl.TileType(shape=[64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
+        g = pl.make_tile_group(type=tt, addrs=0, mutex_ids=[3, 4])
+        buf = g.current()
+        value = buf[0]
+        buf[1] = value
+        pl.store(x, buf, [0])
+
+    ir_str = _ir_to_str(_parse_kernel(k))
+    assert "block.getval" in ir_str
+    assert "block.setval" in ir_str
+    assert ir_str.count("mutex_lock") >= 3, ir_str
+    assert ir_str.count("mutex_unlock") >= 3, ir_str
+    assert "max_mutex_id" not in ir_str
+
+
+def test_internal_dedup_mutex_is_marked_auto_mutex():
+    op = _create_mutex_dedup_op(
+        "system.mutex_lock",
+        pipe=ir.PipeType.MTE2,
+        mutex_id_exprs=[_dynamic_mutex_id("lhs_id"), _dynamic_mutex_id("rhs_id")],
+        mutex_ids_union=[4, 5],
+        auto_mutex=True,
+        span=ir.Span.unknown(),
+    )
+    assert op.name == "system.mutex_lock_dyn"
+    assert '"mutex_ids": [4, 5]' in str(op)
+    assert "max_mutex_id" not in str(op)
+    assert op.kwargs["auto_mutex"] is True
 
 
 def test_next_advances():
