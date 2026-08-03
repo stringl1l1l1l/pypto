@@ -19,8 +19,8 @@
 ## 函数原型
 
 ```python
-pypto_pro.language.system.mutex_lock(*, pipe, mutex_id, mode=0, max_mutex_id=2, mutex_ids=None)
-pypto_pro.language.system.mutex_unlock(*, pipe, mutex_id, mode=0, max_mutex_id=2, mutex_ids=None)
+pypto_pro.language.system.mutex_lock(*, pipe, mutex_id, mode=0)
+pypto_pro.language.system.mutex_unlock(*, pipe, mutex_id, mode=0)
 ```
 
 ## 参数类型
@@ -30,18 +30,14 @@ pypto_pro.language.system.mutex_unlock(*, pipe, mutex_id, mode=0, max_mutex_id=2
 | `pipe` | 输入 | 加 / 解锁所在的pipe |
 | `mutex_id` | 输入 | MutexID |
 | `mode` | 输入 | 模式属性 |
-| `max_mutex_id` | 输入 | 动态id时展开上界 |
-| `mutex_ids` | 输入 | 动态id时if-chain的比较目标列表 |
 
 ## 参数范围
 
 | 参数 | 输入/输出 | 说明 |
-|---|---|---|
-| `pipe` | 输入 | `pypto_pro.language.PipeType.MTE1` / `pypto_pro.language.PipeType.MTE2` / `pypto_pro.language.PipeType.MTE3`等<br>加锁与解锁须在同一pipe |
-| `mutex_id` | 输入 | 整型常量或运行时整数标量表达式，运行时有效取值为0～31<br>同一pipe内不同mutex_id互不干扰 |
-| `mode` | 输入 | 默认0<br>高级用法，一般场景无需修改 |
-| `max_mutex_id` | 输入 | 正整数，默认2。仅动态`mutex_id`且未提供`mutex_ids`时生效，此时生成候选集合`[0, 1, ..., max_mutex_id - 1]`；静态`mutex_id`时忽略。候选值须位于0～31。 |
-| `mutex_ids` | 输入 | 整数列表或元组，元素须位于0～31。仅动态`mutex_id`时生效，用作运行时分支比较的实际候选ID；提供后不再用`max_mutex_id`生成候选集合。静态`mutex_id`时忽略。调用方须保证动态值属于候选集合。 |
+|---|---|
+| `pipe` | 输入 | `pypto_pro.language.PipeType.MTE1` / `pypto_pro.language.PipeType.MTE2` / `pypto_pro.language.PipeType.MTE3` 等<br>加锁与解锁须在同一 pipe |
+| `mutex_id` | 输入 | 整型常量或运行时整型表达式；有效取值为 0~31<br>同一 pipe 内不同 mutex_id 互不干扰 |
+| `mode` | 输入 | 默认 0<br>高级用法，一般场景无需修改 |
 
 ## 使用说明
 
