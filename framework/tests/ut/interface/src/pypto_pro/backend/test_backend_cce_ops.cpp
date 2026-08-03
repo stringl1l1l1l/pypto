@@ -675,6 +675,131 @@ TEST(BackendCceOpsTest, MutexDynSkipsDedupWithinOneTile)
     EXPECT_LT(release_output1, release_source_guard);
 }
 
+TEST(BackendCceOpsTest, ManualVPipeMutexIsNotSkippedOnA5)
+{
+    Kwargs kwargs = {{"pipe", 4}, {"mutex_id", 7}, {"mode", 0}, {"auto_mutex", false}};
+    auto call = std::make_shared<const ir::Call>("system.mutex_lock", std::vector<ir::ExprPtr>{}, kwargs,
+                                                 ir::Span::Unknown());
+    auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
+
+    codegen::CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    EXPECT_NE(generated.find("get_buf(PIPE_V, 7, 0);"), std::string::npos);
+}
+
+TEST(BackendCceOpsTest, MissingAutoMutexKwargDefaultsToManualOnA5)
+{
+    Kwargs kwargs = {{"pipe", 4}, {"mutex_id", 7}, {"mode", 0}};
+    auto call = std::make_shared<const ir::Call>("system.mutex_lock", std::vector<ir::ExprPtr>{}, kwargs,
+                                                 ir::Span::Unknown());
+    auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
+
+    codegen::CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    EXPECT_NE(generated.find("get_buf(PIPE_V, 7, 0);"), std::string::npos);
+}
+
+TEST(BackendCceOpsTest, AutoVPipeMutexIsSkippedWhenOnlyUsedByVPipe)
+{
+    Kwargs kwargs = {{"pipe", 4},
+                     {"mutex_id", 7},
+                     {"mode", 0},
+                     {"mutex_ids", std::vector<int>{7}},
+                     {"auto_mutex", true}};
+    auto call = std::make_shared<const ir::Call>("system.mutex_lock", std::vector<ir::ExprPtr>{}, kwargs,
+                                                 ir::Span::Unknown());
+    auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
+
+    codegen::CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    EXPECT_EQ(generated.find("get_buf(PIPE_V, 7, 0);"), std::string::npos);
+}
+
+TEST(BackendCceOpsTest, AutoStaticVPipeMutexUsesTileGroupIds)
+{
+    Kwargs v_kwargs = {{"pipe", 4},
+                       {"mutex_id", 6},
+                       {"mode", 0},
+                       {"mutex_ids", std::vector<int>{6, 7}},
+                       {"auto_mutex", true}};
+    Kwargs mte2_kwargs = {{"pipe", 1},
+                          {"mutex_id", 7},
+                          {"mode", 0},
+                          {"mutex_ids", std::vector<int>{6, 7}},
+                          {"auto_mutex", true}};
+    auto v_call = std::make_shared<const ir::Call>("system.mutex_lock", std::vector<ir::ExprPtr>{}, v_kwargs,
+                                                   ir::Span::Unknown());
+    auto mte2_call = std::make_shared<const ir::Call>("system.mutex_lock", std::vector<ir::ExprPtr>{}, mte2_kwargs,
+                                                      ir::Span::Unknown());
+    auto body = std::make_shared<const ir::SeqStmts>(
+        std::vector<ir::StmtPtr>{std::make_shared<const ir::EvalStmt>(v_call, ir::Span::Unknown()),
+                                 std::make_shared<const ir::EvalStmt>(mte2_call, ir::Span::Unknown())},
+        ir::Span::Unknown());
+
+    codegen::CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    EXPECT_NE(generated.find("get_buf(PIPE_V, 6, 0);"), std::string::npos);
+    EXPECT_NE(generated.find("get_buf(PIPE_MTE2, 7, 0);"), std::string::npos);
+}
+
+TEST(BackendCceOpsTest, AutoDynamicVPipeMutexUsesInternalCandidateIds)
+{
+    auto dynamic_id = MakeVar("dynamic_id", std::make_shared<const ir::ScalarType>(ir::DataType::INT32));
+    Kwargs dyn_kwargs = {{"pipe", 4},
+                         {"mode", 0},
+                         {"mutex_ids", std::vector<int>{6, 7}},
+                         {"auto_mutex", true}};
+    Kwargs mte2_kwargs = {{"pipe", 1},
+                          {"mutex_id", 7},
+                          {"mode", 0},
+                          {"mutex_ids", std::vector<int>{6, 7}},
+                          {"auto_mutex", true}};
+    auto dyn_call = std::make_shared<const ir::Call>("system.mutex_lock_dyn", std::vector<ir::ExprPtr>{dynamic_id},
+                                                     dyn_kwargs, ir::Span::Unknown());
+    auto mte2_call = std::make_shared<const ir::Call>("system.mutex_lock", std::vector<ir::ExprPtr>{}, mte2_kwargs,
+                                                      ir::Span::Unknown());
+    auto body = std::make_shared<const ir::SeqStmts>(
+        std::vector<ir::StmtPtr>{std::make_shared<const ir::EvalStmt>(dyn_call, ir::Span::Unknown()),
+                                 std::make_shared<const ir::EvalStmt>(mte2_call, ir::Span::Unknown())},
+        ir::Span::Unknown());
+
+    codegen::CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), "a5");
+    EXPECT_NE(generated.find("get_buf(PIPE_V, dynamic_id_0, 0);"), std::string::npos);
+}
+
+TEST(BackendCceOpsTest, AutoDynamicVPipeMutexWithoutCandidatesIsKept)
+{
+    auto dynamic_id = MakeVar("dynamic_id", std::make_shared<const ir::ScalarType>(ir::DataType::INT32));
+    Kwargs kwargs = {{"pipe", 4}, {"mode", 0}, {"auto_mutex", true}};
+    auto call = std::make_shared<const ir::Call>("system.mutex_lock_dyn", std::vector<ir::ExprPtr>{dynamic_id},
+                                                 kwargs, ir::Span::Unknown());
+    auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
+
+    codegen::CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), "a5");
+    EXPECT_NE(generated.find("get_buf(PIPE_V, dynamic_id_0, 0);"), std::string::npos);
+}
+
+TEST(BackendCceOpsTest, DynamicMutexDedupIfGuardsRemainUnchanged)
+{
+    auto first_id = MakeVar("first_id", std::make_shared<const ir::ScalarType>(ir::DataType::INT32));
+    auto second_id = MakeVar("second_id", std::make_shared<const ir::ScalarType>(ir::DataType::INT32));
+    Kwargs kwargs = {{"pipe", 1},
+                     {"mode", 0},
+                     {"mutex_ids", std::vector<int>{6, 7}},
+                     {"auto_mutex", true}};
+    auto call = std::make_shared<const ir::Call>(
+        "system.mutex_lock_dyn", std::vector<ir::ExprPtr>{first_id, second_id}, kwargs, ir::Span::Unknown());
+    auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
+
+    codegen::CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {first_id, second_id}), "a5");
+    EXPECT_NE(generated.find("get_buf(PIPE_MTE2, first_id_0, 0);"), std::string::npos);
+    EXPECT_NE(generated.find("if ((second_id_0 != first_id_0))"), std::string::npos);
+    EXPECT_NE(generated.find("get_buf(PIPE_MTE2, second_id_0, 0);"), std::string::npos);
+}
+
 // ============================================================================
 // A5-specific: set_mm_layout_transform
 // ============================================================================

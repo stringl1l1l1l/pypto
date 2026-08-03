@@ -51,7 +51,6 @@ TEST(SyncOpsMutexTest, DynamicMutexAcceptsMutexIdOwnerIndices)
     std::vector<std::pair<std::string, std::any>> kwargs = {
         {"pipe", 5},
         {"mode", 0},
-        {"max_mutex_id", 2},
         {"mutex_ids", std::vector<int>{0, 1, 2, 3}},
         {"mutex_id_owner_indices", mutex_id_owner_indices},
     };
