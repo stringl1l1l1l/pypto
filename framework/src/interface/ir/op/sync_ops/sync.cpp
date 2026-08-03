@@ -336,6 +336,8 @@ REGISTER_OP("system.mutex_lock")
     .set_attr<int>("pipe")
     .set_attr<int>("mutex_id")
     .set_attr<int>("mode")
+    .set_attr<std::vector<int>>("mutex_ids")
+    .set_attr<bool>("auto_mutex")
     .f_deduce_type(DeduceUnknownType);
 
 // Register system.mutex_unlock (Mutex::Unlock, A5)
@@ -347,6 +349,8 @@ REGISTER_OP("system.mutex_unlock")
     .set_attr<int>("pipe")
     .set_attr<int>("mutex_id")
     .set_attr<int>("mode")
+    .set_attr<std::vector<int>>("mutex_ids")
+    .set_attr<bool>("auto_mutex")
     .f_deduce_type(DeduceUnknownType);
 
 // Register system.mutex_lock_dyn (Mutex::Lock with dynamic mutex_id, A5)
@@ -356,9 +360,9 @@ REGISTER_OP("system.mutex_lock_dyn")
     .add_argument("mutex_id", "Dynamic Mutex ID (ScalarType INDEX)")
     .set_attr<int>("pipe")
     .set_attr<int>("mode")
-    .set_attr<int>("max_mutex_id")
     .set_attr<std::vector<int>>("mutex_ids")
     .set_attr<std::vector<int>>("mutex_id_owner_indices")
+    .set_attr<bool>("auto_mutex")
     .f_deduce_type(DeduceUnknownType);
 
 // Register system.mutex_unlock_dyn (Mutex::Unlock with dynamic mutex_id, A5)
@@ -368,9 +372,9 @@ REGISTER_OP("system.mutex_unlock_dyn")
     .add_argument("mutex_id", "Dynamic Mutex ID (ScalarType INDEX)")
     .set_attr<int>("pipe")
     .set_attr<int>("mode")
-    .set_attr<int>("max_mutex_id")
     .set_attr<std::vector<int>>("mutex_ids")
     .set_attr<std::vector<int>>("mutex_id_owner_indices")
+    .set_attr<bool>("auto_mutex")
     .f_deduce_type(DeduceUnknownType);
 
 // ============================================================================

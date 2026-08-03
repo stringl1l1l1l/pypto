@@ -311,17 +311,13 @@ def _create_mutex_op(
     pipe: PipeType,
     mutex_id: int | Expr,
     mode: int,
-    max_mutex_id: int,
-    mutex_ids: tuple | list | None,
     actual_span: Span,
 ) -> Call:
-    """Create a mutex lock/unlock operation for static or dynamic mutex ids."""
+    """Create a manual mutex lock/unlock operation."""
     if isinstance(mutex_id, Expr):
-        kwargs: dict = {"pipe": pipe, "mode": mode, "max_mutex_id": max_mutex_id}
-        if mutex_ids is not None:
-            kwargs["mutex_ids"] = list(mutex_ids)
+        kwargs: dict = {"pipe": pipe, "mode": mode, "auto_mutex": False}
         return _ir_core.create_op_call(f"{op_name}_dyn", [mutex_id], kwargs, actual_span)
-    kwargs = {"pipe": pipe, "mutex_id": mutex_id, "mode": mode}
+    kwargs = {"pipe": pipe, "mutex_id": mutex_id, "mode": mode, "auto_mutex": False}
     return _ir_core.create_op_call(op_name, [], kwargs, actual_span)
 
 
@@ -333,6 +329,7 @@ def _create_mutex_dedup_op(
     mutex_id_owner_indices: list[int] | None = None,
     mode: int = 0,
     mutex_ids_union: list | None = None,
+    auto_mutex: bool = False,
     span: Span | None = None,
 ) -> Call:
     """Create a dedup mutex lock/unlock for N runtime mutex-id expressions.
@@ -351,10 +348,15 @@ def _create_mutex_dedup_op(
             the same index come from one Tile and are guaranteed distinct.
         mode: Mutex mode (default 0).
         mutex_ids_union: Union of all candidate mutex_id values (for ShouldSkipVPipeMutex).
+        auto_mutex: Whether the parser generated this operation for automatic synchronization.
         span: Source span.
     """
     actual_span = span if span is not None else _get_span_or_capture(span, frame_offset=3)
-    kwargs: dict = {"pipe": pipe, "mode": mode, "max_mutex_id": len(mutex_id_exprs)}
+    kwargs: dict = {
+        "pipe": pipe,
+        "mode": mode,
+        "auto_mutex": auto_mutex,
+    }
     if mutex_id_owner_indices is not None:
         if len(mutex_id_owner_indices) != len(mutex_id_exprs):
             raise ValueError("mutex_id_owner_indices length must match mutex_id_exprs length")
@@ -370,8 +372,6 @@ def _mutex_op(
     pipe: PipeType,
     mutex_id: int | Expr,
     mode: int = 0,
-    max_mutex_id: int = 2,
-    mutex_ids: tuple | list | None = None,
     span: Span | None = None,
 ) -> Call:
     """Shared wrapper for mutex_lock / mutex_unlock (handles span capture)."""
@@ -381,8 +381,6 @@ def _mutex_op(
         pipe=pipe,
         mutex_id=mutex_id,
         mode=mode,
-        max_mutex_id=max_mutex_id,
-        mutex_ids=mutex_ids,
         actual_span=actual_span,
     )
 
@@ -392,8 +390,6 @@ def mutex_lock(
     pipe: PipeType,
     mutex_id: int | Expr,
     mode: int = 0,
-    max_mutex_id: int = 2,
-    mutex_ids: tuple | list | None = None,
     span: Span | None = None,
 ) -> Call:
     """Acquire a Mutex buffer-id token on ``pipe`` (A5).
@@ -408,10 +404,6 @@ def mutex_lock(
             codegen emits an if-chain of static `pto.get_buf` using
             ``mutex_ids`` as the comparison targets.
         mode: Optional mode attribute (default 0).
-        max_mutex_id: Upper bound of the unrolled range when ``mutex_id``
-            is dynamic. Defaults to 2 (ping-pong double buffering).
-        mutex_ids: Actual mutex id integer values for if-chain
-            (e.g. (2, 3)). When None, defaults to (0, 1, ..., max_mutex_id-1).
         span: Optional source span (auto-captured when omitted).
 
     Returns:
@@ -422,8 +414,6 @@ def mutex_lock(
         pipe=pipe,
         mutex_id=mutex_id,
         mode=mode,
-        max_mutex_id=max_mutex_id,
-        mutex_ids=mutex_ids,
         span=span,
     )
 
@@ -433,8 +423,6 @@ def mutex_unlock(
     pipe: PipeType,
     mutex_id: int | Expr,
     mode: int = 0,
-    max_mutex_id: int = 2,
-    mutex_ids: tuple | list | None = None,
     span: Span | None = None,
 ) -> Call:
     """Release a previously acquired Mutex buffer-id token on ``pipe`` (A5).
@@ -446,8 +434,6 @@ def mutex_unlock(
         pipe: PipeType for which to release the lock.
         mutex_id: MutexID passed to the paired :func:`mutex_lock`.
         mode: Optional mode attribute (default 0).
-        max_mutex_id: Upper bound of the unrolled range when dynamic.
-        mutex_ids: Actual mutex id integer values for if-chain.
         span: Optional source span (auto-captured when omitted).
 
     Returns:
@@ -458,8 +444,6 @@ def mutex_unlock(
         pipe=pipe,
         mutex_id=mutex_id,
         mode=mode,
-        max_mutex_id=max_mutex_id,
-        mutex_ids=mutex_ids,
         span=span,
     )
 

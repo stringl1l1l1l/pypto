@@ -1886,16 +1886,17 @@ static std::string MakeMutexBufCodegenCCE(const ir::CallPtr& op, codegen::Codege
     auto pipe = static_cast<ir::PipeType>(op->GetKwarg<int>("pipe"));
 
     std::string static_mutex_id_expr;
-    std::vector<int> mutex_ids;
-    if (is_dynamic) {
-        mutex_ids = mutex_id::GetMutexIdsFromKwargs(op);
-    } else {
+    if (!is_dynamic) {
         auto mutex_id = op->GetKwarg<int>("mutex_id");
-        mutex_ids = {mutex_id};
         static_mutex_id_expr = std::to_string(mutex_id);
     }
-    if (codegen.ShouldSkipVPipeMutex(pipe, mutex_ids))
-        return "";
+
+    bool auto_mutex = op->GetKwarg<bool>("auto_mutex", false);
+    if (auto_mutex) {
+        auto mutex_ids = mutex_id::GetMutexIdsFromKwargs(op);
+        if (!mutex_ids.empty() && codegen.ShouldSkipVPipeMutex(pipe, mutex_ids))
+            return "";
+    }
 
     int mode = GetMutexModeCCE(op);
     std::string pipe_str = PipeTypeToCCEString(pipe);
