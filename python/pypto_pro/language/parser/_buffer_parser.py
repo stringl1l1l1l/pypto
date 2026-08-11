@@ -27,6 +27,7 @@ Both produce the same metadata, so auto_mutex cannot tell them apart.
 from __future__ import annotations
 
 import ast
+import warnings
 from functools import reduce
 
 from pypto.pypto_impl import ir
@@ -151,6 +152,14 @@ class BufferParserMixin:
             raise ParserTypeError(
                 f"make_tile_group() mutex_ids length {len(mutex_ids)} must equal depth {depth}",
                 span=span,
+            )
+
+        if not self._auto_mutex:
+            warnings.warn(
+                "make_tile_group() mutex_ids specified but auto_mutex is not enabled; "
+                "mutex_ids will not be used for automatic synchronization. "
+                "Enable auto_mutex via @pl.kernel(auto_mutex=True) to use them.",
+                stacklevel=2,
             )
 
         slot_size = self._tile_type_slot_size(tile_type)
