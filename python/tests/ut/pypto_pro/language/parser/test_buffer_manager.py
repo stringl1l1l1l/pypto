@@ -391,6 +391,7 @@ def test_subscript_const_index_materializes_mutex_companions():
     assert "_bufidx" not in ir_str, ir_str
     assert ir_str.count("system.mutex_lock_dyn") == 2, ir_str
     assert "mutex_ids=[6, 7]" in ir_str, ir_str
+    assert "max_mutex_id" not in ir_str
 
 
 def test_subscript_negative_index_rejected():
