@@ -1297,21 +1297,36 @@ class CallParserMixin:
     ) -> None:
         """Emit static IDs directly or a per-tile-aware dynamic dedup operation."""
         from pypto_pro.ir._utils import _normalize_expr
-        from pypto_pro.ir.op.system_ops import _create_mutex_dedup_op, mutex_lock, mutex_unlock
+        from pypto_pro.ir.op.system_ops import _create_mutex_dedup_op, _create_mutex_op
 
         op_name = "system.mutex_lock" if is_lock else "system.mutex_unlock"
-        emit_plain = mutex_lock if is_lock else mutex_unlock
         id_exprs = list(buf_ids)
 
         if all(isinstance(buf_id, ir.ConstInt) for buf_id in id_exprs):
             unique_ids = list(dict.fromkeys(int(buf_id.value) for buf_id in id_exprs))
             for mutex_id in unique_ids:
-                expr = emit_plain(pipe=pipe, mutex_id=mutex_id, span=span)
+                expr = _create_mutex_op(
+                    op_name,
+                    pipe=pipe,
+                    mutex_id=mutex_id,
+                    mode=0,
+                    auto_mutex=self._auto_mutex,
+                    mutex_ids=mutex_ids,
+                    actual_span=span,
+                )
                 self.builder.emit(ir.EvalStmt(expr, span))
             return
 
         if len(id_exprs) == 1:
-            expr = emit_plain(pipe=pipe, mutex_id=id_exprs[0], span=span)
+            expr = _create_mutex_op(
+                op_name,
+                pipe=pipe,
+                mutex_id=id_exprs[0],
+                mode=0,
+                auto_mutex=self._auto_mutex,
+                mutex_ids=mutex_ids,
+                actual_span=span,
+            )
         else:
             expr = _create_mutex_dedup_op(
                 op_name,

@@ -317,12 +317,18 @@ def _create_mutex_op(
     mutex_id: int | Expr,
     mode: int,
     actual_span: Span,
+    auto_mutex: bool = False,
+    mutex_ids: tuple | list | None = None,
 ) -> Call:
-    """Create a manual mutex lock/unlock operation."""
+    """Create a mutex lock/unlock operation for static or dynamic mutex ids."""
     if isinstance(mutex_id, Expr):
-        kwargs: dict = {"pipe": pipe, "mode": mode, "auto_mutex": False}
+        kwargs: dict = {"pipe": pipe, "mode": mode, "auto_mutex": auto_mutex}
+        if mutex_ids is not None:
+            kwargs["mutex_ids"] = list(mutex_ids)
         return _ir_core.create_op_call(f"{op_name}_dyn", [mutex_id], kwargs, actual_span)
-    kwargs = {"pipe": pipe, "mutex_id": mutex_id, "mode": mode, "auto_mutex": False}
+    kwargs = {"pipe": pipe, "mutex_id": mutex_id, "mode": mode, "auto_mutex": auto_mutex}
+    if mutex_ids is not None:
+        kwargs["mutex_ids"] = list(mutex_ids)
     return _ir_core.create_op_call(op_name, [], kwargs, actual_span)
 
 
