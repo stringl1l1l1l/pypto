@@ -28,7 +28,7 @@
 
 ```python
 pypto_pro.language.move(dst_tile, src_tile, offset=None, *, acc_to_vec_mode=None,
-        relu_pre_mode=None, scale=None)
+        relu_pre_mode=None, scale=None, phase=None)
 ```
 
 ## 参数类型
@@ -41,6 +41,7 @@ pypto_pro.language.move(dst_tile, src_tile, offset=None, *, acc_to_vec_mode=None
 | `acc_to_vec_mode` | 输入 | 可选，Acc→Vec搬运模式 |
 | `relu_pre_mode` | 输入 | 可选，搬运时融合ReLU |
 | `scale` | 输入 | 可选，随路量化比例（deqScalar / deqTensor路径） |
+| `phase` | 输入 | 可选，详见 [phase 使用约束](../matrix_computation/phase.md) |
 
 ## 参数范围
 
@@ -52,6 +53,7 @@ pypto_pro.language.move(dst_tile, src_tile, offset=None, *, acc_to_vec_mode=None
 | `acc_to_vec_mode` | 输入 | 取`pl.AccToVecMode.SingleModeVec0`/`pl.AccToVecMode.SingleModeVec1`/`pl.AccToVecMode.DualModeSplitM`/`pl.AccToVecMode.DualModeSplitN`；仅在源为`Acc`、目的为`Vec`时有意义。`scale`为`Tile`（per-channel）时只支持单vec模式（`DualModeSplitM`/`DualModeSplitN`报错） |
 | `relu_pre_mode` | 输入 | 默认`None`（不融合ReLU）；可取`pl.ReluPreMode.NormalRelu` |
 | `scale` | 输入 | 可选，随路量化比例：`float`（编译期标量）→ per-tensor量化；运行时`FP32`标量→自动重解释为IEEE-754位模式；运行时`INT`标量→须传预编码的float32位模式（`struct.pack("!f", v)`）；`Tile`（INT64、`MemorySpace.Scaling`、shape `[1, N]`）→ per-channel量化（`move_fp`路径），用户预制deqTensor tile，框架直接复用（不自动分配/同步，用户负责load→move→sync(MTE1→FIX)），只支持单vec模式；`Tensor`不支持（per-channel须以`Tile`传入） |
+| `phase` | 输入 | 默认`None`；可取`pl.STPhase.Partial`或`pl.STPhase.Final`，仅对源为`Acc`、目的为`Vec`时有效；启用后通过硬件unit_flag与matmul生产者做握手同步，替代软件mutex；不能与`offset`同时使用。详见 [phase 使用约束](../matrix_computation/phase.md) |
 
 ## 流水类型
 
