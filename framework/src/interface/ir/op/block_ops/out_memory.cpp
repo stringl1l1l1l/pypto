@@ -180,6 +180,7 @@ REGISTER_OP("block.move")
     .add_argument("pre_quant_scalar", "Optional fixpipe quant scale (ScalarType, low-32-bit float bits)")
     .set_attr<int>("acc_to_vec_mode")
     .set_attr<int>("relu_pre_mode")
+    .set_attr<int>("phase")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
         CHECK(args.size() >= 2 && args.size() <= 4)
@@ -204,6 +205,7 @@ REGISTER_OP("block.move_fp")
     .add_argument("fp_tile", "Floating-point parameter tile (TileType, Scaling memory)")
     .set_attr<int>("acc_to_vec_mode")
     .set_attr<int>("relu_pre_mode")
+    .set_attr<int>("phase")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
         CHECK(args.size() == 3) << "The operator block.move_fp requires 3 arguments, but got " << args.size();

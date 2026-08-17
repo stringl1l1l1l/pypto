@@ -564,6 +564,7 @@ def _ir_move(
     acc_to_vec_mode: AccToVecMode | None = None,
     relu_pre_mode: ReluPreMode | None = None,
     scale: Any = None,
+    phase: STPhase | None = None,
 ) -> Expr:
     actual_span = span or _span()
 
@@ -591,7 +592,11 @@ def _ir_move(
             f"move: unsupported data path src({_src_mem.name})->dst({_dst_mem.name}), "
             f"supported paths: Mat->Left, Mat->Right, Mat->Scaling, Mat->Bias, Acc->Vec, Vec->Vec, Vec->Mat"
         )
-
+    if phase is not None and not isinstance(phase, STPhase):
+        raise ValueError(f"move: invalid phase value {phase!r}, expected STPhase")
+    if phase is not None and (_src_mem, _dst_mem) != (MemorySpace.Acc, MemorySpace.Vec):
+        raise ValueError("move: phase is only supported for Acc->Vec path")
+    # Validate src/dst tile shape compatibility (issue #99: transpose-style mismatch)
     _check_move_shape_compat(out, src, offset, acc_to_vec_mode, actual_span)
     if offset is not None:
         if isinstance(offset, _ir_core.MakeTuple):
@@ -609,11 +614,15 @@ def _ir_move(
     )
     if fp_tile is not None and acc_to_vec_mode in {AccToVecMode.DualModeSplitM, AccToVecMode.DualModeSplitN}:
         raise ValueError("scale (per-channel) only supports single-mode acc_to_vec_mode")
+    if phase is not None and offset is not None:
+        raise ValueError("move: phase cannot be combined with offset (TEXTRACT path does not support unit_flag)")
     kwargs: dict[str, Any] = {}
     if acc_to_vec_mode is not None:
         kwargs["acc_to_vec_mode"] = acc_to_vec_mode
     if relu_pre_mode is not None:
         kwargs["relu_pre_mode"] = relu_pre_mode
+    if phase is not None:
+        kwargs["phase"] = phase
     if fp_tile is not None:
         return _ir_core.create_op_call(block_ir_op("move_fp"), [out, src, fp_tile], kwargs, actual_span)
     args = [out, src]

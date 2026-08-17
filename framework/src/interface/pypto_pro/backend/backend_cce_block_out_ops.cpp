@@ -572,6 +572,9 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
         template_params += ", " + GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
     }
 
+    // Get phase (unit-flag) — STPhase template parameter.
+    std::string phase_template = GetSTPhaseCCE(op);
+
     // Optional trailing operands are distinguished by TYPE, not position: a MakeTuple is the 2D
     // sub-tile offset; a ScalarType is the pre_quant_scalar scale. Layout is [dst, src, offset?, pre_quant?]
     // so args_[2] may be either, and args_[3] (when present) is always pre_quant_scalar.
@@ -617,8 +620,13 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
         args += ", " + MakePreQuantExprCCE(codegen, pre_quant_operand, dst_dtype);
     }
 
-    codegen.Emit("TMOV<std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src + ")>" +
-                 template_params + ">(" + args + ");");
+    std::string tparams;
+    if (!phase_template.empty()) {
+        tparams = phase_template + ", ";
+    }
+    tparams += "std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src + ")>" +
+               template_params;
+    codegen.Emit("TMOV<" + tparams + ">(" + args + ");");
 
     return "";
 }
@@ -654,6 +662,8 @@ static std::string MakeBlockOutMoveFpCodegenCCE(const ir::CallPtr& op, codegen::
     std::string fp_tile = codegen.GetExprAsCode(op->args_[2]);
     std::string args = dst + ", " + src + ", " + fp_tile;
 
+    std::string phase_template = GetSTPhaseCCE(op);
+
     std::string relu_template;
     if (op->HasKwarg("relu_pre_mode")) {
         relu_template = GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
@@ -669,7 +679,8 @@ static std::string MakeBlockOutMoveFpCodegenCCE(const ir::CallPtr& op, codegen::
         }
         std::string dst_type = TileTypeStringForTemplate(codegen, dst, op->args_[0]);
         std::string src_type = TileTypeStringForTemplate(codegen, src, op->args_[1]);
-        codegen.Emit("TMOV<std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src +
+        std::string phase_prefix = phase_template.empty() ? "" : (phase_template + ", ");
+        codegen.Emit("TMOV<" + phase_prefix + "std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src +
                      ")>" + template_params + ">(" + args + ");");
         return "";
     }
@@ -678,8 +689,12 @@ static std::string MakeBlockOutMoveFpCodegenCCE(const ir::CallPtr& op, codegen::
         std::string dst_type = TileTypeStringForTemplate(codegen, dst, op->args_[0]);
         std::string src_type = TileTypeStringForTemplate(codegen, src, op->args_[1]);
         std::string fp_type = TileTypeStringForTemplate(codegen, fp_tile, op->args_[2]);
-        codegen.Emit("TMOV_FP<std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src +
+        std::string phase_prefix = phase_template.empty() ? "" : (phase_template + ", ");
+        codegen.Emit("TMOV_FP<" + phase_prefix + "std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src +
                      ")>, std::remove_reference_t<decltype(" + fp_tile + ")>, " + relu_template + ">(" + args + ");");
+    } else if (!phase_template.empty()) {
+        codegen.Emit("TMOV_FP<" + phase_template + ", std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src +
+                     ")>, std::remove_reference_t<decltype(" + fp_tile + ")>>(" + args + ");");
     } else {
         codegen.Emit("TMOV_FP(" + args + ");");
     }

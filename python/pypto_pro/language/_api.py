@@ -212,6 +212,7 @@ def move(
     acc_to_vec_mode: Optional[AccToVecMode] = None,
     relu_pre_mode: Optional[ReluPreMode] = None,
     scale: Optional[Union[float, Scalar, Tile]] = None,
+    phase: Optional[STPhase] = None,
 ) -> None:
     """Move data between on-chip Tiles (tile↔tile, no GM access).
 
@@ -256,6 +257,8 @@ def move(
             Hardware requires ``[1, N]`` (row == 1, per-column), ``N % 16 == 0`` and ``N <= 512`` —
             ``[N, 1]`` per-row scaling is NOT supported.
             ``None`` → no fixpipe quantization.
+        phase: Optional — ``pl.STPhase.Partial`` or ``pl.STPhase.Final``; only for Acc->Vec path;
+            enables hardware unit_flag handshake with matmul producer; cannot be combined with ``offset``
     """
 
 
