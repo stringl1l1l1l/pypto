@@ -14,7 +14,7 @@
 
 ## 功能说明
 
-`matmul` / `matmul_acc` / `matmul_mx` / `matmul_mx_acc`的`phase`参数（`pl.AccPhase`）与`store` / `store_tile`的`phase`参数（`pl.STPhase`）共同控制Cube（矩阵乘）与FixPipe（L0C→GM搬运）之间的**unit_flag硬件握手**。正确使用phase可以省去软件同步、提升流水并行度；使用不当则会导致精度问题或设备卡死。
+`matmul` / `matmul_acc` / `matmul_mx` / `matmul_mx_acc`的`phase`参数（`pl.AccPhase`）与`store` / `store_tile` / `move`的`phase`参数（`pl.STPhase`）共同控制Cube（矩阵乘）与（L0C→GM/L0C→UB搬运）之间的**unit_flag硬件握手**。正确使用phase可以省去软件同步、提升流水并行度；使用不当则会导致精度问题或设备卡死。
 
 ## 硬件unit_flag机制
 
@@ -32,7 +32,7 @@
 | `Partial` | 是（等待unit_flag = 0才写入） | 否（不改变unit_flag） |
 | `Final` | 是（等待unit_flag = 0才写入） | 是（写入后将unit_flag置为1） |
 
-### store / store_tile（STPhase）
+### store / store_tile / move（STPhase）
 
 `phase=pl.STPhase.Partial`或`phase=pl.STPhase.Final`均会使能硬件的unitFlag功能：
 
@@ -137,4 +137,28 @@ with pl.section_cube():
         else:
             pl.matmul_acc(ac, ac, al, br, phase=pl.AccPhase.Final)   # 末块
     pl.store(out, ac, [0, 0], phase=pl.STPhase.Final)                # Final 收尾
+```
+
+### Flash Attention
+
+matmul 结果需要 vector 核做后处理（如 softmax）时，必须通过 `move` 将累加器数据搬到 UB，`store` 只能直接写 GM，无法在 UB 上做后续计算。以 Flash Attention 的 QK matmul 为例：
+
+```python
+with pl.section_cube():
+    ac = acc.current()
+    for k in pl.range(0, K_TOTAL, TILE_K):
+        ...
+        if k == 0:
+            pl.matmul(ac, q, k, phase=pl.AccPhase.Partial)
+        else:
+            pl.matmul_acc(ac, ac, q, k, phase=pl.AccPhase.Final)
+    # 搬到 UB 供 vector 核做 softmax（store 做不到 L0C→UB）
+    pl.move(qk_vec, ac, acc_to_vec_mode=pl.AccToVecMode.DualModeSplitN,
+            phase=pl.STPhase.Final)
+with pl.section_vector():
+    # softmax: row max → sub → exp → sum → scale
+    pl.maximum(reduce_max, qk_vec, tmp, dim=1)
+    pl.expand_sub(tmp, qk_vec, reduce_max, dim=1)
+    # ... exp / sum / scale ...
+    pl.store(p_buf, qk_vec, [...])
 ```

@@ -27,6 +27,7 @@ pypto_pro.language.move(
     acc_to_vec_mode: Optional[AccToVecMode] = None,
     relu_pre_mode: Optional[ReluPreMode] = None,
     scale: Optional[Union[float, Scalar, Tile]] = None,
+    phase: Optional[STPhase] = None,
 ) -> None
 ```
 
@@ -40,6 +41,7 @@ pypto_pro.language.move(
 | acc_to_vec_mode | 输入 | 可选，L0C Buffer→UB搬运时是否开启双目标搬运模式，[pypto_pro.language.AccToVecMode](../../basic_data_structures/AccToVecMode.md)类型。 |
 | relu_pre_mode | 输入 | 可选，L0C Buffer→UB搬运时是否开启随路ReLU操作，[pypto_pro.language.ReluPreMode](../../basic_data_structures/ReluPreMode.md)类型。 |
 | scale | 输入 | 可选，是否使能量化功能及设置量化模式下的量化参数，数据在搬出L0C时由FixPipe乘以该比例并转换到目的数据类型。不同的传入形式会影响量化粒度，支持如下类型：<br>- **float类型**：直接传入固定值（如scale = 2.0），适用于整块tile使用同一比例。<br>- **Scalar类型**：量化比例在运行时确定，需按数据类型传值。<br>&nbsp;&nbsp;- DT_FP32：直接传原始比例值（如0.5）。<br>&nbsp;&nbsp;- DT_INT32、DT_INT64：传预编码的float32位模式转成的整数（如`struct.pack("!f", 0.5)`）。<br>- **Tile类型**：每列使用独立比例，需满足以下要求：<br>&nbsp;&nbsp;- target_memory必须为pl.MemorySpace.Scaling。<br>&nbsp;&nbsp;- shape为[1, N]（列量化），N必须是16的倍数且N ≤ 512。<br>&nbsp;&nbsp;- dtype为DT_INT64。<br>&nbsp;&nbsp;- 不支持与双目标搬运（AccToVecMode.DualModeSplitM / AccToVecMode.DualModeSplitN）同时使用。<br>&nbsp;&nbsp;- 目的操作数的Tile数据类型为DT_INT8时，Scaling tile每个DT_INT64元素的bit46需置1，用于选择有符号量化；未置位时L0C Buffer中的负值会被按无符号解读。<br>&nbsp;&nbsp;- 用户需要先把比例数据从GM搬到L1，再搬到Scaling，并完成MTE1→FIX同步（框架不会自动分配该Tile，也不会自动插入同步）。|
+| phase | 输入 | 可选，详见 [phase 使用约束](../matrix_computation/phase.md) |
 
 ## 约束说明
 
