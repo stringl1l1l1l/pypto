@@ -921,6 +921,40 @@ TEST(BackendCCEBlockOutOps, MoveFpWrongSpace)
     EXPECT_THROW(RunCodegen("block.move_fp", call), ir::ValueError);
 }
 
+TEST(BackendCCEBlockOutOps, MoveWithPhase)
+{
+    auto tile = MakeTileType();
+    auto call = MakeCallWithKwargs("block.move", {MakeVar("dst", tile), MakeVar("src", tile)}, {{"phase", 1}});
+    auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "STPhase::Partial");
+    EXPECT_CONTAINS(code, "TMOV<");
+}
+
+TEST(BackendCCEBlockOutOps, MoveFpWithPhase)
+{
+    auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
+    auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
+    auto scaling_memref = MakeMemRef(ir::MemorySpace::Scaling);
+    auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
+    auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
+    auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
+    auto call = MakeCallWithKwargs("block.move_fp",
+                                   {MakeVar("dst", vec_tile), MakeVar("src", acc_tile), MakeVar("fp", scaling_tile)},
+                                   {{"phase", 2}});
+    auto code = RunCodegen("block.move_fp", call);
+    EXPECT_CONTAINS(code, "STPhase::Final");
+}
+
+TEST(BackendCCEBlockOutOps, MoveWithPhaseAndAccToVecMode)
+{
+    auto tile = MakeTileType();
+    auto call = MakeCallWithKwargs("block.move", {MakeVar("dst", tile), MakeVar("src", tile)},
+                                   {{"phase", 1}, {"acc_to_vec_mode", 0}});
+    auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "STPhase::Partial");
+    EXPECT_CONTAINS(code, "AccToVecMode::SingleModeVec0");
+}
+
 TEST(BackendCCEBlockOutOps, UbCopy)
 {
     auto tile = MakeTileType();
