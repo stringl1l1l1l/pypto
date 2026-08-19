@@ -554,11 +554,12 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
     std::string dst = codegen.GetExprAsCode(op->args_[0]);
     std::string src = codegen.GetExprAsCode(op->args_[1]);
 
-    // Build template params (shared by both TEXTRACT and TMOV paths)
-    std::string template_params = "";
+    // Build trailing template params (acc_to_vec_mode, relu_pre_mode) shared by both
+    // TEXTRACT and TMOV paths. These come AFTER the dst/src type pair.
+    std::string trailing_params = "";
     if (op->HasKwarg("acc_to_vec_mode")) {
         int mode_val = op->GetKwarg<int>("acc_to_vec_mode");
-        template_params = ", " + GetAccToVecModeCCE(mode_val, true);
+        trailing_params = ", " + GetAccToVecModeCCE(mode_val, true);
         // Auto-align Acc valid_shape for DualModeSplitM (M%2==0) / DualModeSplitN (N%32==0).
         auto mode = static_cast<ir::AccToVecMode>(mode_val);
         if (mode == ir::AccToVecMode::DualModeSplitM) {
@@ -569,11 +570,18 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
         }
     }
     if (op->HasKwarg("relu_pre_mode")) {
-        template_params += ", " + GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
+        trailing_params += ", " + GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
     }
 
-    // Get phase (unit-flag) — STPhase template parameter.
+    // Build full template param list: [STPhase,] DstType, SrcType [, acc_to_vec_mode, relu_pre_mode]
+    // STPhase is the first template parameter per pto-isa UF-aware TMOV/TEXTRACT overloads.
     std::string phase_template = GetSTPhaseCCE(op);
+    std::string tparams;
+    if (!phase_template.empty()) {
+        tparams = phase_template + ", ";
+    }
+    tparams += "std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src + ")>" +
+               trailing_params;
 
     // Optional trailing operands are distinguished by TYPE, not position: a MakeTuple is the 2D
     // sub-tile offset; a ScalarType is the pre_quant_scalar scale. Layout is [dst, src, offset?, pre_quant?]
@@ -602,8 +610,7 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
         auto m_offset_expr = codegen.GetExprAsCode(make_tuple->elements_[0]);
         auto k_offset_expr = codegen.GetExprAsCode(make_tuple->elements_[1]);
 
-        codegen.Emit("TEXTRACT<std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" +
-                     src + ")>" + template_params + ">(" + dst + ", " + src + ", " + m_offset_expr + ", " +
+        codegen.Emit("TEXTRACT<" + tparams + ">(" + dst + ", " + src + ", " + m_offset_expr + ", " +
                      k_offset_expr + ");");
         return "";
     }
@@ -620,12 +627,6 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
         args += ", " + MakePreQuantExprCCE(codegen, pre_quant_operand, dst_dtype);
     }
 
-    std::string tparams;
-    if (!phase_template.empty()) {
-        tparams = phase_template + ", ";
-    }
-    tparams += "std::remove_reference_t<decltype(" + dst + ")>, std::remove_reference_t<decltype(" + src + ")>" +
-               template_params;
     codegen.Emit("TMOV<" + tparams + ">(" + args + ");");
 
     return "";
