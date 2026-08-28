@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -127,18 +126,12 @@ static std::string GetReluPreModeCCE(int relu)
 
 static std::string GetSTPhaseCCE(const ir::CallPtr& op)
 {
-    if (!op->HasKwarg("phase")) {
-        return "";
-    }
-    return ir::EnumToString(static_cast<ir::STPhase>(op->GetKwarg<int>("phase")));
+    return op->HasKwarg("phase") ? ir::EnumToString(static_cast<ir::STPhase>(op->GetKwarg<int>("phase"))) : "";
 }
 
 static std::string GetAccPhaseCCE(const ir::CallPtr& op)
 {
-    if (!op->HasKwarg("phase")) {
-        return "";
-    }
-    return ir::EnumToString(static_cast<ir::AccPhase>(op->GetKwarg<int>("phase")));
+    return op->HasKwarg("phase") ? ir::EnumToString(static_cast<ir::AccPhase>(op->GetKwarg<int>("phase"))) : "";
 }
 
 static std::string GetAccToVecModeCCE(int mode, bool allow_dual)
@@ -148,6 +141,31 @@ static std::string GetAccToVecModeCCE(int mode, bool allow_dual)
         throw pypto::ir::ValueError("block.move_fp: fp_tile only supports single-mode acc_to_vec_mode");
     }
     return ir::EnumToString(m);
+}
+
+static std::string TypeOf(const std::string& expr) { return "std::remove_reference_t<decltype(" + expr + ")>"; }
+
+static void EmitTemplated(codegen::CCECodegen& codegen, const std::string& op,
+                          std::initializer_list<std::string> tparams, std::initializer_list<std::string> args)
+{
+    auto join = [](std::initializer_list<std::string> parts) {
+        std::string result;
+        for (const auto& p : parts) {
+            if (p.empty())
+                continue;
+            if (!result.empty())
+                result += ", ";
+            result += p;
+        }
+        return result;
+    };
+    std::string tp = join(tparams);
+    std::string a = join(args);
+    if (tp.empty()) {
+        codegen.Emit(op + "(" + a + ");");
+    } else {
+        codegen.Emit(op + "<" + tp + ">(" + a + ");");
+    }
 }
 
 // ============================================================================
@@ -387,17 +405,10 @@ static std::string MakeBlockOutStoreCodegenCCE(const ir::CallPtr& op, codegen::C
     // Build template parameters: TSTORE<TileData, GlobalData, AtomicType, ReluPreMode>(dst, src, ...)
     // Per pto-isa: template order is <TileData, GlobalData, AtomicType, ReluPreMode>
     // Function arg order is (GlobalData& dst, TileData& src, ...)
-    std::string relu_template;
-    std::string atomic_enum = "AtomicType::AtomicNone";
-
-    // Get atomic mode
-    if (op->HasKwarg("atomic")) {
-        atomic_enum = GetAtomicTypeCCE(op->GetKwarg<int>("atomic"));
-    }
-
-    if (op->HasKwarg("relu_pre_mode")) {
-        relu_template = GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
-    }
+    std::string relu_template = op->HasKwarg("relu_pre_mode") ? GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode")) :
+                                                                "";
+    std::string atomic_enum = op->HasKwarg("atomic") ? GetAtomicTypeCCE(op->GetKwarg<int>("atomic")) :
+                                                       "AtomicType::AtomicNone";
 
     // Get phase (unit-flag) — STPhase template parameter.
     std::string phase_template = GetSTPhaseCCE(op);
@@ -440,32 +451,19 @@ static std::string MakeBlockOutStoreCodegenCCE(const ir::CallPtr& op, codegen::C
     // Emit TSTORE
     // When phase is present, STPhase is the first template parameter of TSTORE
     // (per pto-isa pto_instr.hpp UF-aware overloads at lines 224/240/257/275).
+    std::string src_type = TileTypeStringForTemplate(codegen, src_tile, op->args_[1]);
+    std::string dst_type = "decltype(" + dst_tensor_access + ")";
+
     if (!relu_template.empty()) {
         // TSTORE<[STPhase,] TileData, GlobalData, AtomicType::AtomicNone, ReluPreMode>(dst, src[, preQuant])
-        std::string src_type = TileTypeStringForTemplate(codegen, src_tile, op->args_[1]);
-        std::string tparams;
-        if (!phase_template.empty()) {
-            tparams = phase_template + ", ";
-        }
-        tparams += src_type + ", decltype(" + dst_tensor_access + "), AtomicType::AtomicNone, " + relu_template;
-        codegen.Emit("TSTORE<" + tparams + ">(" + args + ");");
-    } else if (op->args_.size() > 3) {
+        EmitTemplated(codegen, "TSTORE", {phase_template, src_type, dst_type, "AtomicType::AtomicNone", relu_template},
+                      {args});
+    } else if (op->args_.size() > 3 || !phase_template.empty()) {
         // TSTORE<[STPhase,] TileData, GlobalData>(dst, src, preQuant)  -  default AtomicType & ReluPreMode
         // pre_quant_scalar is the optional trailing operand (args_[3]).
-        std::string src_type = TileTypeStringForTemplate(codegen, src_tile, op->args_[1]);
-        std::string tparams;
-        if (!phase_template.empty()) {
-            tparams = phase_template + ", ";
-        }
-        tparams += src_type + ", decltype(" + dst_tensor_access + ")";
-        codegen.Emit("TSTORE<" + tparams + ">(" + args + ");");
-    } else if (!phase_template.empty()) {
-        // TSTORE<STPhase, TileData, GlobalData>(dst, src) — phase-only path
-        std::string src_type = TileTypeStringForTemplate(codegen, src_tile, op->args_[1]);
-        codegen.Emit("TSTORE<" + phase_template + ", " + src_type + ", decltype(" + dst_tensor_access + ")>(" + args +
-                     ");");
+        EmitTemplated(codegen, "TSTORE", {phase_template, src_type, dst_type}, {args});
     } else {
-        codegen.Emit("TSTORE(" + args + ");");
+        EmitTemplated(codegen, "TSTORE", {}, {args});
     }
 
     // Reset atomic mode after TSTORE if atomic was set (pto-isa API)
@@ -551,10 +549,10 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
 
     // Build trailing template params (acc_to_vec_mode, relu_pre_mode) shared by both
     // TEXTRACT and TMOV paths. These come AFTER the dst/src type pair.
-    std::string trailing;
+    std::string acc_mode;
     if (op->HasKwarg("acc_to_vec_mode")) {
         int mode_val = op->GetKwarg<int>("acc_to_vec_mode");
-        trailing = ", " + GetAccToVecModeCCE(mode_val, true);
+        acc_mode = GetAccToVecModeCCE(mode_val, true);
         // Auto-align Acc valid_shape for DualModeSplitM (M%2==0) / DualModeSplitN (N%32==0).
         auto mode = static_cast<ir::AccToVecMode>(mode_val);
         if (mode == ir::AccToVecMode::DualModeSplitM) {
@@ -564,16 +562,9 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
                          ".GetValidCol() + 31) / 32 * 32);");
         }
     }
-    if (op->HasKwarg("relu_pre_mode")) {
-        trailing += ", " + GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
-    }
+    std::string relu = op->HasKwarg("relu_pre_mode") ? GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode")) : "";
 
     // Template param list: [STPhase,] DstType, SrcType [, acc_to_vec_mode, relu_pre_mode]
-    std::string phase = GetSTPhaseCCE(op);
-    std::string tparams = (phase.empty() ? "" : phase + ", ") + "std::remove_reference_t<decltype(" + dst +
-                          ")>, "
-                          "std::remove_reference_t<decltype(" +
-                          src + ")>" + trailing;
 
     // Optional trailing operands are distinguished by TYPE, not position: a MakeTuple is the 2D
     // sub-tile offset; a ScalarType is the pre_quant_scalar scale. Layout is [dst, src, offset?, pre_quant?]
@@ -602,8 +593,8 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
         auto m_offset_expr = codegen.GetExprAsCode(make_tuple->elements_[0]);
         auto k_offset_expr = codegen.GetExprAsCode(make_tuple->elements_[1]);
 
-        codegen.Emit("TEXTRACT<" + tparams + ">(" + dst + ", " + src + ", " + m_offset_expr + ", " + k_offset_expr +
-                     ");");
+        EmitTemplated(codegen, "TEXTRACT", {GetSTPhaseCCE(op), TypeOf(dst), TypeOf(src), acc_mode, relu},
+                      {dst, src, m_offset_expr, k_offset_expr});
         return "";
     }
 
@@ -619,7 +610,7 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
         args += ", " + MakePreQuantExprCCE(codegen, pre_quant_operand, dst_dtype);
     }
 
-    codegen.Emit("TMOV<" + tparams + ">(" + args + ");");
+    EmitTemplated(codegen, "TMOV", {GetSTPhaseCCE(op), TypeOf(dst), TypeOf(src), acc_mode, relu}, {args});
 
     return "";
 }
@@ -657,41 +648,22 @@ static std::string MakeBlockOutMoveFpCodegenCCE(const ir::CallPtr& op, codegen::
 
     std::string phase_template = GetSTPhaseCCE(op);
 
-    std::string relu_template;
-    if (op->HasKwarg("relu_pre_mode")) {
-        relu_template = GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
-    }
+    std::string relu_template = op->HasKwarg("relu_pre_mode") ? GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode")) :
+                                                                "";
 
     if (op->HasKwarg("acc_to_vec_mode")) {
         std::string mode_enum = GetAccToVecModeCCE(op->GetKwarg<int>("acc_to_vec_mode"), false);
-
         std::string fp_type = TileTypeStringForTemplate(codegen, fp_tile, op->args_[2]);
-        std::string template_params = ", " + fp_type + ", " + mode_enum;
-        if (!relu_template.empty()) {
-            template_params += ", " + relu_template;
-        }
-        std::string dst_type = TileTypeStringForTemplate(codegen, dst, op->args_[0]);
-        std::string src_type = TileTypeStringForTemplate(codegen, src, op->args_[1]);
-        std::string phase_prefix = phase_template.empty() ? "" : (phase_template + ", ");
-        codegen.Emit("TMOV<" + phase_prefix + "std::remove_reference_t<decltype(" + dst +
-                     ")>, std::remove_reference_t<decltype(" + src + ")>" + template_params + ">(" + args + ");");
+        EmitTemplated(codegen, "TMOV", {phase_template, TypeOf(dst), TypeOf(src), fp_type, mode_enum, relu_template},
+                      {args});
         return "";
     }
 
-    if (!relu_template.empty()) {
-        std::string dst_type = TileTypeStringForTemplate(codegen, dst, op->args_[0]);
-        std::string src_type = TileTypeStringForTemplate(codegen, src, op->args_[1]);
-        std::string fp_type = TileTypeStringForTemplate(codegen, fp_tile, op->args_[2]);
-        std::string phase_prefix = phase_template.empty() ? "" : (phase_template + ", ");
-        codegen.Emit("TMOV_FP<" + phase_prefix + "std::remove_reference_t<decltype(" + dst +
-                     ")>, std::remove_reference_t<decltype(" + src + ")>, std::remove_reference_t<decltype(" + fp_tile +
-                     ")>, " + relu_template + ">(" + args + ");");
-    } else if (!phase_template.empty()) {
-        codegen.Emit("TMOV_FP<" + phase_template + ", std::remove_reference_t<decltype(" + dst +
-                     ")>, std::remove_reference_t<decltype(" + src + ")>, std::remove_reference_t<decltype(" + fp_tile +
-                     ")>>(" + args + ");");
+    if (phase_template.empty() && relu_template.empty()) {
+        EmitTemplated(codegen, "TMOV_FP", {}, {args});
     } else {
-        codegen.Emit("TMOV_FP(" + args + ");");
+        EmitTemplated(codegen, "TMOV_FP", {phase_template, TypeOf(dst), TypeOf(src), TypeOf(fp_tile), relu_template},
+                      {args});
     }
 
     return "";
@@ -725,13 +697,7 @@ static std::string MakeBlockOutMatmulCodegenCCE(const ir::CallPtr& op, codegen::
     std::string right = codegen.GetExprAsCode(op->args_[2]);
 
     // Get phase (unit-flag) — AccPhase template parameter for TMATMUL.
-    std::string phase_template = GetAccPhaseCCE(op);
-
-    if (!phase_template.empty()) {
-        codegen.Emit("TMATMUL<" + phase_template + ">(" + dst + ", " + left + ", " + right + ");");
-    } else {
-        codegen.Emit("TMATMUL(" + dst + ", " + left + ", " + right + ");");
-    }
+    EmitTemplated(codegen, "TMATMUL", {GetAccPhaseCCE(op)}, {dst, left, right});
     return "";
 }
 
@@ -747,13 +713,7 @@ static std::string MakeBlockOutMatmulAccCodegenCCE(const ir::CallPtr& op, codege
     std::string right = codegen.GetExprAsCode(op->args_[3]);
 
     // Get phase (unit-flag) — AccPhase template parameter for TMATMUL_ACC.
-    std::string phase_template = GetAccPhaseCCE(op);
-
-    if (!phase_template.empty()) {
-        codegen.Emit("TMATMUL_ACC<" + phase_template + ">(" + dst + ", " + acc + ", " + left + ", " + right + ");");
-    } else {
-        codegen.Emit("TMATMUL_ACC(" + dst + ", " + acc + ", " + left + ", " + right + ");");
-    }
+    EmitTemplated(codegen, "TMATMUL_ACC", {GetAccPhaseCCE(op)}, {dst, acc, left, right});
     return "";
 }
 
@@ -771,13 +731,7 @@ static std::string MakeBlockOutMatmulBiasCodegenCCE(const ir::CallPtr& op, codeg
     std::string bias = codegen.GetExprAsCode(op->args_[3]);
 
     // Get phase (unit-flag) — AccPhase template parameter for TMATMUL_BIAS.
-    std::string phase_template = GetAccPhaseCCE(op);
-
-    if (!phase_template.empty()) {
-        codegen.Emit("TMATMUL_BIAS<" + phase_template + ">(" + dst + ", " + left + ", " + right + ", " + bias + ");");
-    } else {
-        codegen.Emit("TMATMUL_BIAS(" + dst + ", " + left + ", " + right + ", " + bias + ");");
-    }
+    EmitTemplated(codegen, "TMATMUL_BIAS", {GetAccPhaseCCE(op)}, {dst, left, right, bias});
     return "";
 }
 
@@ -798,12 +752,7 @@ static std::string MakeBlockOutMatmulMxCodegenCCE(const ir::CallPtr& op, codegen
     std::string scale_a = codegen.GetExprAsCode(op->args_[3]);
     std::string scale_b = codegen.GetExprAsCode(op->args_[4]);
 
-    std::string phase_template = GetAccPhaseCCE(op);
-    std::string call = "TMATMUL_MX_IMPL";
-    if (!phase_template.empty()) {
-        call += "<" + phase_template + ">";
-    }
-    codegen.Emit(call + "(" + dst + ", " + left + ", " + scale_a + ", " + right + ", " + scale_b + ");");
+    EmitTemplated(codegen, "TMATMUL_MX_IMPL", {GetAccPhaseCCE(op)}, {dst, left, scale_a, right, scale_b});
     return "";
 }
 
@@ -820,12 +769,7 @@ static std::string MakeBlockOutMatmulMxAccCodegenCCE(const ir::CallPtr& op, code
     std::string scale_a = codegen.GetExprAsCode(op->args_[4]);
     std::string scale_b = codegen.GetExprAsCode(op->args_[5]);
 
-    std::string phase_template = GetAccPhaseCCE(op);
-    std::string call = "TMATMUL_MX_IMPL";
-    if (!phase_template.empty()) {
-        call += "<" + phase_template + ">";
-    }
-    codegen.Emit(call + "(" + dst + ", " + acc + ", " + left + ", " + scale_a + ", " + right + ", " + scale_b + ");");
+    EmitTemplated(codegen, "TMATMUL_MX_IMPL", {GetAccPhaseCCE(op)}, {dst, acc, left, scale_a, right, scale_b});
     return "";
 }
 
@@ -1311,10 +1255,10 @@ static std::string MakeBlockOutGatherCodegenCCE(const ir::CallPtr& op, codegen::
         std::string cdst = codegen.GetExprAsCode(op->args_[3]);
         std::string tmp = codegen.GetExprAsCode(op->args_[4]);
         std::string cmp_mode_str = (attrs.cmp_mode == 4) ? "CmpMode::GT" : "CmpMode::EQ";
-        codegen.Emit("TGATHER<std::remove_reference_t<decltype(" + out + ")>, std::remove_reference_t<decltype(" + src +
-                     ")>, std::remove_reference_t<decltype(" + k_value + ")>, std::remove_reference_t<decltype(" +
-                     cdst + ")>, std::remove_reference_t<decltype(" + tmp + ")>, " + cmp_mode_str + ">(" + out + ", " +
-                     src + ", " + k_value + ", " + cdst + ", " + tmp + ", " + std::to_string(attrs.offset) + ");");
+        std::string offset = std::to_string(attrs.offset);
+        EmitTemplated(codegen, "TGATHER",
+                      {TypeOf(out), TypeOf(src), TypeOf(k_value), TypeOf(cdst), TypeOf(tmp), cmp_mode_str},
+                      {out, src, k_value, cdst, tmp, offset});
     } else {
         CHECK(false) << "block.gather: invalid argument combination";
     }
@@ -1351,8 +1295,7 @@ static std::string MakeBlockOutGatherMaskCodegenCCE(const ir::CallPtr& op, codeg
     std::string out = codegen.GetExprAsCode(op->args_[0]);
     std::string src = codegen.GetExprAsCode(op->args_[1]);
 
-    codegen.Emit("TGATHER<std::remove_reference_t<decltype(" + out + ")>, std::remove_reference_t<decltype(" + src +
-                 ")>, " + std::string(pattern_names[pattern_mode]) + ">(" + out + ", " + src + ");");
+    EmitTemplated(codegen, "TGATHER", {TypeOf(out), TypeOf(src), pattern_names[pattern_mode]}, {out, src});
     return "";
 }
 
@@ -2294,28 +2237,21 @@ static std::string MakeBlockOutMrgsort2CCE(const ir::CallPtr& op, codegen::Codeg
     // TMRGSORT requires exhausted as a non-deducible bool template parameter.
     // Tile-group accessors lower to array subscripts, whose decltype is Tile&; strip
     // the reference before passing the types to TMRGSORT_IMPL.
-    auto tile_type = [](const std::string& expr) { return "std::remove_reference_t<decltype(" + expr + ")>"; };
-    auto emit_tmrgsort = [&](const std::string& srcs_decl, const std::string& srcs_args) {
-        std::ostringstream oss;
-        oss << "MrgSortExecutedNumList executedNumList;";
-        codegen.Emit(oss.str());
-        oss.str("");
-        oss << "TMRGSORT_IMPL<" << tile_type(dst) << ", " << tile_type(tmp) << ", " << srcs_decl << ", "
-            << exhausted_str << ">(" << dst << ", executedNumList, " << tmp << ", " << srcs_args << ");";
-        codegen.Emit(oss.str());
-    };
-
+    codegen.Emit("MrgSortExecutedNumList executedNumList;");
     if (num_args == 4) {
-        emit_tmrgsort(tile_type(src0) + ", " + tile_type(src1), src0 + ", " + src1);
+        EmitTemplated(codegen, "TMRGSORT_IMPL", {TypeOf(dst), TypeOf(tmp), TypeOf(src0), TypeOf(src1), exhausted_str},
+                      {dst, "executedNumList", tmp, src0, src1});
     } else if (num_args == 5) {
         std::string src2 = codegen.GetExprAsCode(op->args_[4]);
-        emit_tmrgsort(tile_type(src0) + ", " + tile_type(src1) + ", " + tile_type(src2),
-                      src0 + ", " + src1 + ", " + src2);
+        EmitTemplated(codegen, "TMRGSORT_IMPL",
+                      {TypeOf(dst), TypeOf(tmp), TypeOf(src0), TypeOf(src1), TypeOf(src2), exhausted_str},
+                      {dst, "executedNumList", tmp, src0, src1, src2});
     } else {
         std::string src2 = codegen.GetExprAsCode(op->args_[4]);
         std::string src3 = codegen.GetExprAsCode(op->args_[5]);
-        emit_tmrgsort(tile_type(src0) + ", " + tile_type(src1) + ", " + tile_type(src2) + ", " + tile_type(src3),
-                      src0 + ", " + src1 + ", " + src2 + ", " + src3);
+        EmitTemplated(codegen, "TMRGSORT_IMPL",
+                      {TypeOf(dst), TypeOf(tmp), TypeOf(src0), TypeOf(src1), TypeOf(src2), TypeOf(src3), exhausted_str},
+                      {dst, "executedNumList", tmp, src0, src1, src2, src3});
     }
     return "";
 }
