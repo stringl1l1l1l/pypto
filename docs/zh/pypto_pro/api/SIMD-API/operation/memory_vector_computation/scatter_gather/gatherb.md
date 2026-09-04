@@ -14,37 +14,33 @@
 
 ## 功能说明
 
-按32字节块的字节偏移聚合：从源tile中按offsets指定的字节偏移，每次取32字节（如16个FP16元素）块，拼入目标tile。
+从源Tile中按offsets指定的字节偏移，每次取32字节的数据块（如16个DT_FP16元素），拼入目标Tile。
 
 ## 函数原型
 
 ```python
-pypto_pro.language.gatherb(out, src, offsets)
+pypto_pro.language.gatherb(out: Tile, src: Tile, offsets: Tile) -> None
 ```
 
 ## 参数类型
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| `out` | 输出 | 目标tile，按字节偏移聚合结果 |
-| `src` | 输入 | 源tile |
-| `offsets` | 输入 | 偏移tile（字节偏移），指定每个32字节块从源中读取的位置 |
+| out | 输出 | 目标Tile，存放按字节偏移聚合的结果。dtype与src一致，支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32。shape与valid_shape须与期望输出匹配。 |
+| src | 输入 | 源Tile，dtype与out一致，shape与out一致。 |
+| offsets | 输入 | 偏移Tile，dtype为DT_UINT32，每个值解释为相对源Tile基址的字节偏移。shape为[行数, 列数 / BLOCK_ELEMS]，其中BLOCK_ELEMS = 32 / dtype_size（如DT_FP16时为16个元素）。取值须为合法的字节偏移（0 ≤ offset < 源Tile总字节数），越界行为未定义。每次取32字节。 |
 
-## 参数范围
+## 约束说明
 
-| 参数 | 输入/输出 | 说明 |
-|---|---|---|
-| `out` | 输出 | 数据类型：b8、b16、b32；dtype须与`src`一致，shape/valid shape须与期望输出匹配 |
-| `src` | 输入 | 数据类型：与`out`一致<br>shape：与`out`一致 |
-| `offsets` | 输入 | 数据类型：`pypto_pro.language.DT_UINT32`，每个值解释为相对源Tile基址的字节偏移<br>shape：`[行数, 列数 / BLOCK_ELEMS]`，其中`BLOCK_ELEPS = 32 / dtype_size`（如FP16时为16个元素）<br>值须为合法的字节偏移（0 ≤ offset < 源tile总字节数），越界行为未定义<br>每次取32字节 |
+无。
 
-## 流水类型
+## 返回值说明
 
-V（向量计算流水）。
+无。
 
 ## 调用示例
 
-下面是一个完整kernel：用identity offset（行顺序字节偏移）从64×128 FP16源tile中gatherb，结果应复现源数据。纯vector kernel使用`make_tile_group`管理Tile资源，并通过`auto_mutex`完成流水同步。
+### 基本用法
 
 ```python
 import pypto_pro.language as pl

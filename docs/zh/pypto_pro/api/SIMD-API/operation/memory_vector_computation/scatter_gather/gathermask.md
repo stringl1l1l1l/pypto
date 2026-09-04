@@ -14,49 +14,33 @@
 
 ## 功能说明
 
-按位模式从源tile中抽取列到目标tile。
-
-`pattern_mode`取值：
-
-| 取值 | 含义 |
-|---|---|
-| 1 | 取偶数列`src[:, 0::2]` |
-| 2 | 取奇数列`src[:, 1::2]` |
-| 3 | 每4列取第1列`src[:, 0::4]` |
-| 4 | 每4列取第2列`src[:, 1::4]` |
-| 5 | 每4列取第3列`src[:, 2::4]` |
-| 6 | 每4列取第4列`src[:, 3::4]` |
-| 7 | 全取（等价于copy） |
+按位模式从源Tile中抽取列到目标Tile，抽取的列由pattern_mode参数决定。
 
 ## 函数原型
 
 ```python
-pypto_pro.language.gathermask(out, src, *, pattern_mode)
+pypto_pro.language.gathermask(out: Tile, src: Tile, *, pattern_mode: int) -> None
 ```
 
-## 参数类型
+## 参数说明
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| `out` | 输出 | 目标tile，存放按位模式抽取的列 |
-| `src` | 输入 | 源tile |
-| `pattern_mode` | 输入 | 位模式（常量整数），决定抽取哪些列 |
+| out | 输出 | 目标Tile，存放按位模式抽取的列。dtype与src一致，行数与src一致，列数由pattern_mode决定。有效列必须连续存储。 |
+| src | 输入 | 源Tile，位于UB的行主序Tile，dtype支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64，out与src元素位宽相同。 |
+| pattern_mode | 输入 | 位模式，编译期常量整数，取值1～7，决定抽取哪些列：<br>1：取偶数列，即`src[:, 0::2]`。<br>2：取奇数列，即`src[:, 1::2]`。<br>3：每4列取第1列，即`src[:, 0::4]`。<br>4：每4列取第2列，即`src[:, 1::4]`。<br>5：每4列取第3列，即`src[:, 2::4]`。<br>6：每4列取第4列，即`src[:, 3::4]`。<br>7：取全部列，等价于copy。 |
 
-## 参数范围
+## 约束说明
 
-| 参数 | 输入/输出 | 说明 |
-|---|---|---|
-| `out` | 输出 | 数据类型：与`src`一致<br>shape：行数与`src`一致，列数由`pattern_mode`决定 |
-| `src` | 输入 | 数据类型：b8、b16、b32、b64，`out`与`src`元素位宽相同；二者均为Vec、行主序Tile<br>`out`的有效列必须连续存储 |
-| `pattern_mode` | 输入 | 编译期常量整数，取值1～7<br>1/2：每2列分别取第1/2列<br>3/4/5/6：每4列分别取第1/2/3/4列<br>7：取全部列 |
+无。
 
-## 流水类型
+## 返回值说明
 
-V（向量计算流水）。
+无。
 
 ## 调用示例
 
-下面是一个完整kernel：用`pypto_pro.language.gathermask`从64×128 FP16源tile中抽取偶数列（`pattern_mode=1`），输出64×64 FP16 tile。纯vector kernel使用`make_tile_group`管理Tile资源，并通过`auto_mutex`完成流水同步。
+### 基本用法
 
 ```python
 import pypto_pro.language as pl
@@ -91,7 +75,7 @@ def gathermask_p1_kernel(
 ```
 <!-- pypto-doc-output:gathermask:end -->
 
-其他典型用法（节选）：
+### 其他典型用法
 
 ```python
 # 抽取奇数列

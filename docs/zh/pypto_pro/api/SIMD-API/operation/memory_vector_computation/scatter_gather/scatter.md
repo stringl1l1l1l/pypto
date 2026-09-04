@@ -14,48 +14,41 @@
 
 ## 功能说明
 
-按索引分散写入：根据索引tile中的扁平元素偏移，将源tile的元素分散写入目标tile的对应位置。即`dst_flat[indices[i,j]] = src[i,j]`。
+根据索引Tile中的扁平元素偏移，将源Tile的元素分散写入目标Tile的对应位置，即`dst_flat[indices[i,j]] = src[i,j]`。
 
 ## 函数原型
 
 ```python
-pypto_pro.language.scatter(out, src, idx)
+pypto_pro.language.scatter(out: Tile, src: Tile, idx: Tile) -> None
 ```
 
-## 参数类型
+## 参数说明
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| `out` | 输出 | 目标tile，按索引分散写入 |
-| `src` | 输入 | 源tile |
-| `idx` | 输入 | 索引tile（扁平元素偏移），指定每个源元素的写入位置 |
+| out | 输出 | 目标Tile，按索引分散写入。位于UB，dtype与src一致，支持的数据类型详见[约束说明](#约束说明)。 |
+| src | 输入 | 源Tile，dtype与out一致，shape与out一致。 |
+| idx | 输入 | 索引Tile，位于UB，为有符号或无符号整数Tile，数据类型与索引类型的组合详见[约束说明](#约束说明)。有效shape须与被分散的源数据匹配，索引越界或发生写冲突时行为未定义。 |
 
-## 参数范围
+## 约束说明
 
-| 参数 | 输入/输出 | 说明 |
-|---|---|---|
-| `out` | 输出 | 数据类型：b8、b16、b32、b64，须位于Vec空间；dtype与`src`一致 |
-| `src` | 输入 | 数据类型：与`out`一致<br>shape：与`out`一致 |
-| `idx` | 输入 | Vec空间的有符号或无符号整数Tile，类型组合见下表；有效shape须与被分散的源数据匹配。索引越界或发生写冲突时行为未定义。 |
+- 硬件TSCATTER指令仅支持以下数据类型与索引类型的组合：
 
-## 类型约束
+  | 数据类型 | 索引类型 | 说明 |
+  |---|---|---|
+  | DT_INT64、DT_UINT64 | DT_INT32、DT_UINT32 | 64 bit数据使用32 bit索引。 |
+  | DT_FP32、DT_INT32、DT_UINT32 | DT_INT32、DT_UINT32 | 32 bit数据使用32 bit索引。 |
+  | DT_FP16、DT_BF16、DT_INT16、DT_UINT16 | DT_INT16、DT_UINT16 | 16 bit数据使用16 bit索引。 |
+  | DT_INT8、DT_UINT8 | DT_INT16、DT_UINT16 | 8 bit数据使用16 bit索引。 |
 
-硬件`TSCATTER`指令仅支持以下数据类型与索引类型的组合：
 
-| 数据类型 | 索引类型 | 说明 |
-|---|---|---|
-| b64（INT64/UINT64） | INT32或UINT32 | 64 bit数据使用32 bit索引 |
-| b32（FP32/INT32/UINT32） | INT32或UINT32 | 32 bit数据使用32 bit索引 |
-| b16（FP16/BF16/INT16/UINT16） | INT16或UINT16 | 16 bit数据使用16 bit索引 |
-| b8（INT8/UINT8） | INT16或UINT16 | 8 bit数据使用16 bit索引 |
+## 返回值说明
 
-## 流水类型
-
-V（向量计算流水）。
+无。
 
 ## 调用示例
 
-下面是一个完整kernel：把FP32源tile的元素按INT32索引分散写入FP32目标tile。vector kernel开`auto_mutex`，同步由`make_tile_group`自动管理。
+### 基本用法
 
 ```python
 import pypto_pro.language as pl

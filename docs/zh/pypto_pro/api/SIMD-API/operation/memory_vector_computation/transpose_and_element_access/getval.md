@@ -14,9 +14,7 @@
 
 ## 功能说明
 
-读取Tile或Tensor指定位置的单个元素值，返回标量。操作走标量pipe（`PipeType.S`），需要配合标量pipe同步。
-
-统一接口：根据第一个参数的类型（Tile或Tensor）自动分发到对应的后端实现。
+读取Tile或Tensor指定位置的单个元素值，返回标量。根据第一个参数的类型（Tile或Tensor）自动分发到对应的后端实现。推荐使用下标语法糖container[i, j]替代pypto_pro.language.getval(container, offset)，下标语法自动将多维坐标线性化为偏移量，语义更清晰；线性偏移API适用于需要直接计算线性地址的场景（如跨rank共享helper）。
 
 ## 函数原型
 
@@ -29,46 +27,25 @@ value = container[i, j]           # 多维容器（索引数 = rank）
 value = pypto_pro.language.getval(container, offset)
 ```
 
-> **推荐使用下标语法糖**`container[i, j]`替代`pl.getval(container, offset)`。下标语法自动将多维坐标线性化为偏移量，语义更清晰。线性偏移API适用于需要直接计算线性地址的场景（如跨rank共享helper）。
+## 参数说明
 
-## 参数类型
+| 参数 | 输入/输出 | 说明 |
+|---|---|---|
+| container | 输入 | 目标Tile或Tensor，从中读取单个元素。Tile必须位于UB；Tensor为GM Tensor。支持可参与标量表达式的整型或浮点类型，不支持DT_FP4、DT_FP8E4M3FN、DT_FP8E5M2、DT_INT4、DT_UINT4、DT_HF4、DT_HF8等仅用于存储的低精度类型。 |
+| i, j, ... | 输入 | 下标语法糖的多维索引，均为整数，索引数必须等于容器rank，1D容器可用单索引container[i]。多维索引自动线性化为`i * (N1*N2*...) + j * (N2*...) + ...`。 |
+| offset | 输入 | 线性偏移API的读取位置，线性元素偏移。整型常量或运行时整型标量表达式（支持循环变量），取值范围0 ≤ offset < 总元素数，越界行为不确定。 |
 
-### 下标语法`container[i, j]`
+## 约束说明
 
-| 参数        | 输入/输出 | 说明                                                                       |
-| ----------- | --------- | -------------------------------------------------------------------------- |
-| `container` | 输入      | 目标Tile或Tensor，从中读取单个元素                                      |
-| `i, j, ...` | 输入      | 多维索引（整数），索引数必须等于容器rank；1D容器可用单索引`container[i]` |
-
-### 线性偏移API `getval(container, offset)`
-
-| 参数        | 输入/输出 | 说明                                  |
-| ----------- | --------- | ------------------------------------- |
-| `container` | 输入      | 目标Tile或Tensor，从中读取单个元素 |
-| `offset`    | 输入      | 线性元素偏移，指定读取位置            |
-
-## 参数范围
-
-| 参数           | 输入/输出 | 说明                                                                                                                                                                                                                         |
-| -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `container`    | 输入      | Tile必须位于Vec空间；Tensor为GM Tensor。支持可参与标量表达式的整型或浮点类型；不支持FP4、FP8E4M3FN、FP8E5M2、INT4、UINT4、HF4和HF8等仅用于存储的低精度类型 |
-| 索引 /`offset` | 输入      | 整型常量或运行时整型标量表达式（支持循环变量）<br>下标语法：多维索引数须等于容器rank，自动线性化为`i * (N1*N2*...) + j * (N2*...) + ...`<br>线性偏移API：`offset`为线性元素偏移（0 ≤ offset < 总元素数），越界行为不确定 |
+无。
 
 ## 返回值说明
 
-返回与`container`元素类型一致的标量。
-
-## 流水类型
-
-S（标量流水）。使用`make_tile_group + auto_mutex`时由框架完成MTE2→S / S→MTE3流水同步；使用`make_tile`时需显式同步。
+返回与container元素类型一致的标量。
 
 ## 调用示例
 
-下面通过Tile和Tensor两种场景演示元素读取的用法。
-
 ### Tile场景
-
-用下标语法读出Tile第0个元素，再写到第1个位置，store回GM验证。示例使用`make_tile_group`管理Tile资源，并通过`auto_mutex`完成MTE2→S和S→MTE3流水同步。
 
 ```python
 import pypto_pro.language as pl
@@ -90,8 +67,6 @@ def getval_setval_kernel(
 ```
 
 ### Tensor场景
-
-直接从Tensor中读取标量值，写到另一个位置。
 
 ```python
 import pypto_pro.language as pl

@@ -14,43 +14,44 @@
 
 ## 功能说明
 
-按索引聚合：根据索引Tile中的扁平元素偏移，从源Tile中gather元素到目标Tile。即`dst_flat[i] = src_flat[idx[i]]`。与[`pypto_pro.language.scatter`](scatter.md)互为反向操作。
+根据索引Tile中的扁平元素偏移，从源Tile中聚合元素到目标Tile，即`dst_flat[i] = src_flat[idx[i]]`。与[pypto_pro.language.scatter](scatter.md)互为反向操作。
 
 ## 函数原型
 
 ```python
-pypto_pro.language.gather(out, src, idx, tmp, *, cmp_mode=0, offset=0)
+pypto_pro.language.gather(
+    out: Tile,
+    src: Tile,
+    idx: Tile,
+    tmp: Tile,
+    *,
+    cmp_mode: int = 0,
+    offset: int = 0,
+) -> None
 ```
 
-## 参数类型
+## 参数说明
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| `out` | 输出 | 目标tile，按索引聚合结果 |
-| `src` | 输入 | 源tile |
-| `idx` | 输入 | 索引Tile |
-| `tmp` | 输入 | 临时工作Tile（中间计算用） |
-| `cmp_mode` | 输入 | 可选，比较模式（默认0，不比较） |
-| `offset` | 输入 | 可选，索引偏移（默认0） |
+| out | 输出 | 目标Tile，存放按索引聚合的结果。dtype与src一致，支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_HF8。shape与valid_shape须与索引结果匹配。 |
+| src | 输入 | 源Tile，位于UB的行主序Tile，dtype与out一致。 |
+| idx | 输入 | 索引Tile，位于UB，支持DT_INT16、DT_UINT16、DT_INT32、DT_UINT32，64 bit数据须使用32 bit索引。元素值为src中的扁平元素索引，越界行为未定义。 |
+| tmp | 输入 | 临时工作Tile，供硬件中间计算使用。位于UB，dtype与idx一致，shape与idx一致，不可与out、src、idx重叠。 |
+| cmp_mode | 输入 | 可选，比较模式，取0表示不比较。 |
+| offset | 输入 | 可选，对idx中的索引值施加的偏移。 |
 
-## 参数范围
+## 约束说明
 
-| 参数 | 输入/输出 | 说明 |
-|---|---|---|
-| `out` | 输出 | dtype与`src`一致，支持b8、b16、b32、b64以及FP8/HF8；shape/valid shape须与索引结果匹配 |
-| `src` | 输入 | Vec空间、行主序Tile，dtype与`out`一致 |
-| `idx` | 输入 | Vec空间索引Tile，支持16 bit或32 bit整数；b64数据须使用32 bit索引。元素值为`src`中的扁平元素索引，越界行为未定义 |
-| `tmp` | 输入 | Vec工作Tile，dtype与`idx`一致，shape与`idx`一致；硬件中间计算用，不可与`out`/`src`/`idx`重叠 |
-| `cmp_mode` | 输入 | 整数，比较模式。默认`0`表示不比较 |
-| `offset` | 输入 | 整数，对`idx`中的索引值施加偏移（默认0） |
+无。
 
-## 流水类型
+## 返回值说明
 
-V（向量计算流水）。
+无。
 
 ## 调用示例
 
-下面是一个完整kernel：把FP16源tile按INT32索引gather到FP16目标tile。vector kernel开`auto_mutex`，同步由`make_tile_group`自动管理。
+### 基本用法
 
 ```python
 import pypto_pro.language as pl
@@ -89,7 +90,7 @@ def gather_kernel(
 ```
 <!-- pypto-doc-output:gather:end -->
 
-带偏移的gather：
+### 带偏移的用法
 
 ```python
 # offset会在gather时参与索引计算

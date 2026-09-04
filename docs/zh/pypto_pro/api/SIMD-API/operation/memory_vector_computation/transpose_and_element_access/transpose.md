@@ -14,35 +14,32 @@
 
 ## 功能说明
 
-交换二维tile的两个轴，实现矩阵转置。
+交换二维Tile的两个轴，实现矩阵转置。
 
 ## 函数原型
 
 ```python
-pypto_pro.language.transpose(out, src)
+pypto_pro.language.transpose(out: Tile, src: Tile) -> None
 ```
 
 ## 参数类型
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| `out` | 输出 | 转置结果tile |
-| `src` | 输入 | 源tile |
+| out | 输出 | 转置结果Tile。dtype与src一致；shape为src转置后的结果，如src为[64, 128]时out为[128, 64]；不可与src为同一Tile。 |
+| src | 输入 | 源Tile，二维UB Tile。dtype支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32，不支持64 bit元素。源、目标主维长度乘元素字节数须32字节对齐。 |
 
-## 参数范围
+## 约束说明
 
-| 参数 | 输入/输出 | 说明 |
-|---|---|---|
-| `out` | 输出 | 数据类型：与`src`一致<br>shape：为`src`转置后的结果（如`src`为`[64, 128]`时`out`为`[128, 64]`）<br>不可与`src`为同一tile |
-| `src` | 输入 | 数据类型：8/16/32位整型、FP16、BF16或FP32，不支持64位元素<br>shape：二维Vec Tile；源、目标主维长度乘元素字节数须32字节对齐 |
+无。
 
-## 流水类型
+## 返回值说明
 
-V（向量计算流水）。
+无。
 
 ## 调用示例
 
-下面是一个完整kernel：把64×64 FP16源tile转置后写回GM。vector kernel开`auto_mutex`，同步由`make_tile_group`自动管理。
+### 基本用法
 
 ```python
 import pypto_pro.language as pl

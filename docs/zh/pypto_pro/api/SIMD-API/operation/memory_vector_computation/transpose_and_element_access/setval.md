@@ -14,9 +14,7 @@
 
 ## 功能说明
 
-向Tile或Tensor中指定位置写入一个标量值，与`pypto_pro.language.getval`配合使用。
-
-统一接口：根据第一个参数的类型（Tile或Tensor）自动分发到对应的后端实现。
+向Tile或Tensor中指定位置写入一个标量值，与[pypto_pro.language.getval](getval.md)配合使用。根据第一个参数的类型（Tile或Tensor）自动分发到对应的后端实现。推荐使用下标语法糖container[i, j] = value替代pypto_pro.language.setval(container, offset, value)，下标语法自动将多维坐标线性化为偏移量，语义更清晰；线性偏移API适用于需要直接计算线性地址的场景（如跨rank共享helper）。
 
 ## 函数原型
 
@@ -29,45 +27,26 @@ container[i, j] = value          # 多维容器（索引数 = rank）
 pypto_pro.language.setval(container, offset, value)
 ```
 
-> **推荐使用下标语法糖**`container[i, j] = value`替代`pl.setval(container, offset, value)`。下标语法自动将多维坐标线性化为偏移量，语义更清晰。线性偏移API适用于需要直接计算线性地址的场景（如跨rank共享helper）。
+## 参数说明
 
-## 参数类型
+| 参数 | 输入/输出 | 说明 |
+|---|---|---|
+| container | 输入 | 目标Tile或Tensor，向其中写入单个元素。支持可参与标量表达式的整型或浮点类型，不支持DT_FP4、DT_FP8E4M3FN、DT_FP8E5M2、DT_INT4、DT_UINT4、DT_HF4、DT_HF8等仅用于存储的低精度类型。写入值类型须与元素类型一致或可由前端按该元素类型构造。 |
+| i, j, ... | 输入 | 下标语法糖的多维索引，均为整数，索引数必须等于容器rank，1D容器可用单索引container[i]。多维索引自动线性化为`i * (N1*N2*...) + j * (N2*...) + ...`。 |
+| offset | 输入 | 线性偏移API的写入位置，线性元素偏移。整型常量或运行时整型标量表达式（支持循环变量），取值范围0 ≤ offset < 总元素数，越界行为不确定。 |
+| value | 输入 | 要写入的标量值。整型或浮点型常量，或运行时整型或浮点型标量表达式，类型须与container元素类型兼容。 |
 
-### 下标语法`container[i, j] = value`
+## 约束说明
 
-| 参数        | 输入/输出 | 说明                                                                       |
-| ----------- | --------- | -------------------------------------------------------------------------- |
-| `container` | 输入      | 目标Tile或Tensor，向其中写入单个元素                                    |
-| `i, j, ...` | 输入      | 多维索引（整数），索引数必须等于容器rank；1D容器可用单索引`container[i]` |
-| `value`     | 输入      | 要写入的标量值                                                             |
+无。
 
-### 线性偏移API `setval(container, offset, value)`
+## 返回值说明
 
-| 参数        | 输入/输出 | 说明                                    |
-| ----------- | --------- | --------------------------------------- |
-| `container` | 输入      | 目标Tile或Tensor，向其中写入单个元素 |
-| `offset`    | 输入      | 线性元素偏移，指定写入位置              |
-| `value`     | 输入      | 要写入的标量值                          |
-
-## 参数范围
-
-| 参数           | 输入/输出 | 说明                                                                                                                                                                                                                         |
-| -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `container`    | 输入      | Tile或GM Tensor；支持可参与标量表达式的整型或浮点类型，不支持FP4、FP8E4M3FN、FP8E5M2、INT4、UINT4、HF4和HF8等仅用于存储的低精度类型。写入值类型须与元素类型一致或可由前端按该元素类型构造 |
-| 索引 /`offset` | 输入      | 整型常量或运行时整型标量表达式（支持循环变量）<br>下标语法：多维索引数须等于容器rank，自动线性化为`i * (N1*N2*...) + j * (N2*...) + ...`<br>线性偏移API：`offset`为线性元素偏移（0 ≤ offset < 总元素数），越界行为不确定 |
-| `value`        | 输入      | 整型或浮点型常量，或运行时整型或浮点型标量表达式<br>类型须与`container`元素类型兼容                                                                                                                                                     |
-
-## 流水类型
-
-S（标量流水）。使用`make_tile_group + auto_mutex`时由框架完成MTE2→S / S→MTE3流水同步；使用`make_tile`时需显式同步。
+无。
 
 ## 调用示例
 
-下面通过Tile和Tensor两种场景演示元素写入的用法。
-
 ### Tile场景
-
-用下标语法读出Tile第0个元素，再写到第1个位置，store回GM验证。示例使用`make_tile_group`管理Tile资源，并通过`auto_mutex`完成MTE2→S和S→MTE3流水同步。
 
 ```python
 import pypto_pro.language as pl
@@ -89,8 +68,6 @@ def getval_setval_kernel(
 ```
 
 ### Tensor场景
-
-从Tensor中读取标量值，写到另一个位置。
 
 ```python
 import pypto_pro.language as pl
