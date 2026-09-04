@@ -26,7 +26,7 @@ pypto_pro.language.set_validshape(tile: Union[Tile, TileGroup], shape: List[int]
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| tile | 输入 | 目标Tile或pypto_pro.language.make_tile_group返回的TileGroup。Tile数据类型支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。valid_shape后端缺省值为[-1, -1]，无需显式指定。 |
+| tile | 输入 | 目的操作数，Tile或TileGroup类型。Tile数据类型支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。valid_shape后端缺省值为[-1, -1]，无需显式指定。 |
 | shape | 输入 | 长度为2的有效shape序列，两个元素均为整型常量或运行时整型标量表达式（支持循环变量），元素须为正整数，且分别不超过Tile shape对应维度。 |
 
 ## 约束说明

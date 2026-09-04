@@ -26,9 +26,9 @@ pypto_pro.language.gathermask(out: Tile, src: Tile, *, pattern_mode: int) -> Non
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| out | 输出 | 目标Tile，存放按位模式抽取的列。dtype与src一致，行数与src一致，列数由pattern_mode决定。有效列必须连续存储。 |
-| src | 输入 | 源Tile，位于UB的行主序Tile，dtype支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64，out与src元素位宽相同。 |
-| pattern_mode | 输入 | 位模式，编译期常量整数，取值1～7，决定抽取哪些列：<br>1：取偶数列，即`src[:, 0::2]`。<br>2：取奇数列，即`src[:, 1::2]`。<br>3：每4列取第1列，即`src[:, 0::4]`。<br>4：每4列取第2列，即`src[:, 1::4]`。<br>5：每4列取第3列，即`src[:, 2::4]`。<br>6：每4列取第4列，即`src[:, 3::4]`。<br>7：取全部列，等价于copy。 |
+| out | 输出 | 目的操作数，Tile类型，存放按位模式抽取的列。dtype与src一致，行数与src一致，列数由pattern_mode决定。有效列必须连续存储。 |
+| src | 输入 | 源操作数，Tile类型，位于UB，行主序，dtype支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64，out与src元素位宽相同。 |
+| pattern_mode | 输入 | 位模式，编译期常量整数，取值1～7，决定抽取哪些列：<br>1：取偶数列，即src[:, 0::2]。<br>2：取奇数列，即src[:, 1::2]。<br>3：每4列取第1列，即src[:, 0::4]。<br>4：每4列取第2列，即src[:, 1::4]。<br>5：每4列取第3列，即src[:, 2::4]。<br>6：每4列取第4列，即src[:, 3::4]。<br>7：取全部列，等价于copy。 |
 
 ## 约束说明
 

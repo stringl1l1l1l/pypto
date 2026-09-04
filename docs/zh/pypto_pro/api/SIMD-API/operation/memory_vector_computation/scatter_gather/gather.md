@@ -34,10 +34,10 @@ pypto_pro.language.gather(
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| out | 输出 | 目标Tile，存放按索引聚合的结果。dtype与src一致，支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_HF8。shape与valid_shape须与索引结果匹配。 |
-| src | 输入 | 源Tile，位于UB的行主序Tile，dtype与out一致。 |
-| idx | 输入 | 索引Tile，位于UB，支持DT_INT16、DT_UINT16、DT_INT32、DT_UINT32，64 bit数据须使用32 bit索引。元素值为src中的扁平元素索引，越界行为未定义。 |
-| tmp | 输入 | 临时工作Tile，供硬件中间计算使用。位于UB，dtype与idx一致，shape与idx一致，不可与out、src、idx重叠。 |
+| out | 输出 | 目的操作数，Tile类型，存放按索引聚合的结果。dtype与src一致，支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_HF8。shape与valid_shape须与索引结果匹配。 |
+| src | 输入 | 源操作数，Tile类型，位于UB，行主序，dtype与out一致。 |
+| idx | 输入 | 索引操作数，Tile类型，位于UB，支持DT_INT16、DT_UINT16、DT_INT32、DT_UINT32，64 bit数据须使用32 bit索引。元素值为src中的扁平元素索引，越界行为未定义。 |
+| tmp | 输入 | 临时工作操作数，Tile类型，供硬件中间计算使用。位于UB，dtype与idx一致，shape与idx一致，不可与out、src、idx重叠。 |
 | cmp_mode | 输入 | 可选，比较模式，取0表示不比较。 |
 | offset | 输入 | 可选，对idx中的索引值施加的偏移。 |
 

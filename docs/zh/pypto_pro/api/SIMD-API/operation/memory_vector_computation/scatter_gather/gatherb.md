@@ -26,9 +26,9 @@ pypto_pro.language.gatherb(out: Tile, src: Tile, offsets: Tile) -> None
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| out | 输出 | 目标Tile，存放按字节偏移聚合的结果。dtype与src一致，支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32。shape与valid_shape须与期望输出匹配。 |
-| src | 输入 | 源Tile，dtype与out一致，shape与out一致。 |
-| offsets | 输入 | 偏移Tile，dtype为DT_UINT32，每个值解释为相对源Tile基址的字节偏移。shape为[行数, 列数 / BLOCK_ELEMS]，其中BLOCK_ELEMS = 32 / dtype_size（如DT_FP16时为16个元素）。取值须为合法的字节偏移（0 ≤ offset < 源Tile总字节数），越界行为未定义。每次取32字节。 |
+| out | 输出 | 目的操作数，Tile类型，存放按字节偏移聚合的结果。dtype与src一致，支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32。shape与valid_shape须与期望输出匹配。 |
+| src | 输入 | 源操作数，Tile类型，dtype与out一致，shape与out一致。 |
+| offsets | 输入 | 偏移操作数，Tile类型，dtype为DT_UINT32，每个值解释为相对源操作数基址的字节偏移。shape为[行数, 列数 / BLOCK_ELEMS]，其中BLOCK_ELEMS = 32 / dtype_size（如DT_FP16时为16个元素）。取值须为合法的字节偏移（0 ≤ offset < 源操作数总字节数），越界行为未定义。每次取32字节。 |
 
 ## 约束说明
 

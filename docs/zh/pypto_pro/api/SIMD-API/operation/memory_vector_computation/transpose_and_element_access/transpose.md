@@ -26,8 +26,8 @@ pypto_pro.language.transpose(out: Tile, src: Tile) -> None
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| out | 输出 | 转置结果Tile。dtype与src一致；shape为src转置后的结果，如src为[64, 128]时out为[128, 64]；不可与src为同一Tile。 |
-| src | 输入 | 源Tile，二维UB Tile。dtype支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32，不支持64 bit元素。源、目标主维长度乘元素字节数须32字节对齐。 |
+| out | 输出 | 目的操作数，Tile类型，存放转置结果。dtype与src一致；shape为src转置后的结果，如src为[64, 128]时out为[128, 64]；不可与src为同一Tile。 |
+| src | 输入 | 源操作数，Tile类型，二维UB。dtype支持DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32，不支持64 bit元素。源、目标主维长度乘元素字节数须32字节对齐。 |
 
 ## 约束说明
 

@@ -26,9 +26,9 @@ pypto_pro.language.histogram(dst: Tile, src: Tile, idx: Tile, *, is_msb: bool) -
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| dst | 输出 | 目标Tile，存放直方图统计结果。dtype为DT_UINT32；行数与src一致，列数不小于256（覆盖所有可能的字节值）；布局为pypto_pro.language.ND（行主序）。 |
-| src | 输入 | 源Tile，待统计的元素。dtype为DT_UINT16或DT_UINT32；shape任意；布局为pypto_pro.language.ND（行主序）。 |
-| idx | 输入 | 索引Tile，is_msb为False时用于过滤。dtype为DT_UINT8：src为DT_UINT16时，shape行数与src一致、列数为1，布局为pypto_pro.language.DN（列主序）；src为DT_UINT32且is_msb为True时不使用；src为DT_UINT32且is_msb为False时，shape行数为3、列数与src一致，布局为pypto_pro.language.ND（行主序）。 |
+| dst | 输出 | 目的操作数，Tile类型，存放直方图统计结果。dtype为DT_UINT32；行数与src一致，列数不小于256（覆盖所有可能的字节值）；布局为pypto_pro.language.ND（行主序）。 |
+| src | 输入 | 源操作数，Tile类型，待统计的元素。dtype为DT_UINT16或DT_UINT32；shape任意；布局为pypto_pro.language.ND（行主序）。 |
+| idx | 输入 | 索引操作数，Tile类型，is_msb为False时用于过滤。dtype为DT_UINT8：src为DT_UINT16时，shape行数与src一致、列数为1，布局为pypto_pro.language.DN（列主序）；src为DT_UINT32且is_msb为True时不使用；src为DT_UINT32且is_msb为False时，shape行数为3、列数与src一致，布局为pypto_pro.language.ND（行主序）。 |
 | is_msb | 输入 | 是否统计高字节：<br>True：统计每个元素的最高字节，DT_UINT16为bits 15-8，DT_UINT32为bits 31-24。<br>False：统计每个元素的低字节（bits 7-0），仅纳入高字节与idx Tile中对应行值匹配的元素。 |
 
 ## 约束说明

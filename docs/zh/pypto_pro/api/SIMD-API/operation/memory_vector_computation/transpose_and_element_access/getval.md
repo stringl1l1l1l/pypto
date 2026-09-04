@@ -31,8 +31,8 @@ value = pypto_pro.language.getval(container, offset)
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| container | 输入 | 目标Tile或Tensor，从中读取单个元素。Tile必须位于UB；Tensor为GM Tensor。支持可参与标量表达式的整型或浮点类型，不支持DT_FP4、DT_FP8E4M3FN、DT_FP8E5M2、DT_INT4、DT_UINT4、DT_HF4、DT_HF8等仅用于存储的低精度类型。 |
-| i, j, ... | 输入 | 下标语法糖的多维索引，均为整数，索引数必须等于容器rank，1D容器可用单索引container[i]。多维索引自动线性化为`i * (N1*N2*...) + j * (N2*...) + ...`。 |
+| container | 输入 | 源操作数，Tile或Tensor类型，从中读取单个元素。Tile必须位于UB；Tensor为GM Tensor。支持可参与标量表达式的整型或浮点类型，不支持DT_FP4、DT_FP8E4M3FN、DT_FP8E5M2、DT_INT4、DT_UINT4、DT_HF4、DT_HF8等仅用于存储的低精度类型。 |
+| i, j, ... | 输入 | 下标语法糖的多维索引，均为整数，索引数必须等于容器rank，1D容器可用单索引container[i]。多维索引自动线性化为i * (N1*N2*...) + j * (N2*...) + ...。 |
 | offset | 输入 | 线性偏移API的读取位置，线性元素偏移。整型常量或运行时整型标量表达式（支持循环变量），取值范围0 ≤ offset < 总元素数，越界行为不确定。 |
 
 ## 约束说明

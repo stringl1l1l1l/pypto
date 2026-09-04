@@ -26,9 +26,9 @@ pypto_pro.language.scatter(out: Tile, src: Tile, idx: Tile) -> None
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| out | 输出 | 目标Tile，按索引分散写入。位于UB，dtype与src一致，支持的数据类型详见[约束说明](#约束说明)。 |
-| src | 输入 | 源Tile，dtype与out一致，shape与out一致。 |
-| idx | 输入 | 索引Tile，位于UB，为有符号或无符号整数Tile，数据类型与索引类型的组合详见[约束说明](#约束说明)。有效shape须与被分散的源数据匹配，索引越界或发生写冲突时行为未定义。 |
+| out | 输出 | 目的操作数，Tile类型，按索引分散写入。位于UB，dtype与src一致，支持的数据类型详见[约束说明](#约束说明)。 |
+| src | 输入 | 源操作数，Tile类型，dtype与out一致，shape与out一致。 |
+| idx | 输入 | 索引操作数，Tile类型，位于UB，为有符号或无符号整数，数据类型与索引类型的组合详见[约束说明](#约束说明)。有效shape须与被分散的源数据匹配，索引越界或发生写冲突时行为未定义。 |
 
 ## 约束说明
 
