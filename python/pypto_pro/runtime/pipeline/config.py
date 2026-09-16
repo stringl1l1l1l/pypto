@@ -32,7 +32,8 @@ class PipelineConfig:
                  cross-core sync inserted around each stage. Start there to confirm the serial
                  kernel is correct, then raise it.
 
-                 Must not be negative.
+                 Must be an int for every value (floats and bools are refused) and must
+                 not be negative.
     """
 
     preload: int | tuple[int, ...] = 2
@@ -48,6 +49,13 @@ class PipelineConfig:
                     "loop, or a single value to use for all of them."
                 )
         for value in self.preload if isinstance(self.preload, tuple) else (self.preload,):
+            # bool is a subclass of int, so the isinstance check alone would let it through.
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(
+                    f"pipeline: preload must be an int, got {type(value).__name__}: {value!r}. "
+                    f"It is how many iterations ahead a stage runs, so a float or a bool "
+                    f"has no meaning here; write it as a plain int."
+                )
             if value < 0:
                 raise ValueError(
                     f"pipeline: preload must be >= 0, got {value}. It is how many "
