@@ -195,6 +195,7 @@ void DevAscendFunction::InitOperationDynamicField(
 void HandleActualRaw(const OrderedSet<std::shared_ptr<RawTensor>>& incastRawList,
                      const OrderedSet<std::shared_ptr<RawTensor>>& outcastRawList,
                      const std::unordered_map<int, std::shared_ptr<RawTensor>>& rawMagicToRawTensor,
+                     const std::unordered_map<const RawTensor*, int>& rawToOutcastIdx,
                      const std::shared_ptr<RawTensor>& rawTensor, DevAscendRawTensor& encoded)
 {
     auto iter = rawMagicToRawTensor.find(rawTensor->actualRawmagic);
@@ -207,7 +208,10 @@ void HandleActualRaw(const OrderedSet<std::shared_ptr<RawTensor>>& incastRawList
         } else {
             encoded.addrOffset = iter->second->addrOffset;
             if (outcastRawList.count(iter->second)) {
-                encoded.ioIndex = outcastRawList.GetIndex(iter->second);
+                auto ownerIter = rawToOutcastIdx.find(iter->second.get());
+                encoded.ioIndex = ownerIter != rawToOutcastIdx.end() ?
+                                      ownerIter->second :
+                                      static_cast<int>(outcastRawList.GetIndex(iter->second));
                 encoded.ioProperty = DevIOProperty::ROOT_OUTCAST;
             } else if (incastRawList.count(iter->second)) {
                 encoded.ioIndex = incastRawList.GetIndex(iter->second);
@@ -356,6 +360,18 @@ void DevAscendFunction::InitRawTensorAndMemoryRequirement(
     rawTensorList_.HostInitDataSizeOffset(initOffset, rawList.size());
     rawTensorDescList_.HostInitDataSizeOffset(initOffset, rawList.size());
 
+    /* Assemble versions of one slot share a RawTensor, so outcastRawList is deduped while the
+     * runtime outcast table keeps one entry per version. ioIndex must reference the owning
+     * outcast entry (first occurrence in devRoot's outcast list), otherwise GetOutcastAddress
+     * and COA location encode resolve the wrong outcast (pr !6322 precision regression). */
+    std::unordered_map<const RawTensor*, int> rawToOutcastIdx;
+    {
+        const auto& rootOutcasts = param.devRoot->GetOutcast();
+        for (size_t oi = 0; oi < rootOutcasts.size(); oi++) {
+            rawToOutcastIdx.emplace(rootOutcasts[oi]->GetRawTensor().get(), static_cast<int>(oi));
+        }
+    }
+
     ONFILLCONTENT
     {
         const std::vector<RuntimeSlotKindSet>& runtimeSlotKindSetList = inoutLink->runtimeSlotKindSetList;
@@ -388,7 +404,10 @@ void DevAscendFunction::InitRawTensorAndMemoryRequirement(
                 rawTensor->addrOffset = 0;
             } else if (outcastRawList.count(rawTensor)) {
                 encoded.ioProperty = DevIOProperty::ROOT_OUTCAST;
-                encoded.ioIndex = outcastRawList.GetIndex(rawTensor);
+                auto ownerIter = rawToOutcastIdx.find(rawTensor.get());
+                encoded.ioIndex = ownerIter != rawToOutcastIdx.end() ?
+                                      ownerIter->second :
+                                      static_cast<int>(outcastRawList.GetIndex(rawTensor));
                 rawTensor->addrOffset = 0;
                 if (!HasInputOutputOrAssembleDst(slot->outcastSlot[encoded.ioIndex], runtimeSlotKindSetList)) {
                     encoded.addrOffset = exclusiveOutcastWsMemoryRequirement;
@@ -414,7 +433,10 @@ void DevAscendFunction::InitRawTensorAndMemoryRequirement(
                     rootInnerTensorWsMemoryRequirement, rawAttrs[idx].storage->start_ + rawAttrs[idx].storage->length_);
 #endif
             }
-            UpdateRawTensorDesc(rawTensor, idx, incastRawList.size(), encoded);
+            /* Outcast offsetOrIndex indexes the combined per-entry address table
+             * [incast entries..., outcast entries...]; the base is the incast ENTRY count
+             * (devRoot->GetIncast().size()), not the deduped raw count. */
+            UpdateRawTensorDesc(rawTensor, idx, param.devRoot->GetIncast().size(), encoded);
         }
 
         for (size_t i = 0; i < rawList.size(); i++) {
@@ -423,8 +445,8 @@ void DevAscendFunction::InitRawTensorAndMemoryRequirement(
                 continue;
             }
             auto& encoded = *GetRawTensor(i);
-            HandleActualRaw(incastRawList, outcastRawList, rawMagicToRawTensor, rawTensor, encoded);
-            UpdateRawTensorDesc(rawTensor, i, incastRawList.size(), encoded);
+            HandleActualRaw(incastRawList, outcastRawList, rawMagicToRawTensor, rawToOutcastIdx, rawTensor, encoded);
+            UpdateRawTensorDesc(rawTensor, i, param.devRoot->GetIncast().size(), encoded);
         }
 
         for (size_t i = 0; i < rawList.size(); i++) {

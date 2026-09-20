@@ -150,10 +150,8 @@ std::string DevAscendFunction::DumpIncast(int incastIndex, const std::string& in
         oss << " | #" << tag << ":!" << consumerIdx;
         oss << " | #offsetAttrIdx:" << offsetAttrIdx;
         oss << " | #shapeAttrIdx:" << shapeAttrIdx;
-        oss << " | #offsetAttr:"
-            << DumpSymIntList(&GetOperationAttr(consumerIdx, offsetAttrIdx), incast.dim, runtimeExpressionList);
-        oss << " | #shapeAttr:"
-            << DumpSymIntList(&GetOperationAttr(consumerIdx, shapeAttrIdx), incast.dim, runtimeExpressionList);
+        oss << " | #offsetAttr:" << DumpSymIntList(GetSymoffset(offsetAttrIdx), incast.dim, runtimeExpressionList);
+        oss << " | #shapeAttr:" << DumpSymIntList(GetSymoffset(shapeAttrIdx), incast.dim, runtimeExpressionList);
         oss << "\n";
     };
     for (size_t j = 0; j < incast.consumerList.size(); j++) {
@@ -182,10 +180,8 @@ std::string DevAscendFunction::DumpOutcast(int outcastIndex, const std::string& 
             oss << " | #opType:" << (producer.opType == CellMatchOpType::READ ? "consumer" : "producer");
             oss << " | #offsetAttrIdx:" << offsetAttrIdx;
             oss << " | #shapeAttrIdx:" << shapeAttrIdx;
-            oss << " | #offsetAttr:"
-                << DumpSymIntList(&GetOperationAttr(producerIdx, offsetAttrIdx), outcast.dim, runtimeExpressionList);
-            oss << " | #shapeAttr:"
-                << DumpSymIntList(&GetOperationAttr(producerIdx, shapeAttrIdx), outcast.dim, runtimeExpressionList);
+            oss << " | #offsetAttr:" << DumpSymIntList(GetSymoffset(offsetAttrIdx), outcast.dim, runtimeExpressionList);
+            oss << " | #shapeAttr:" << DumpSymIntList(GetSymoffset(shapeAttrIdx), outcast.dim, runtimeExpressionList);
             oss << "\n";
         }
     };
