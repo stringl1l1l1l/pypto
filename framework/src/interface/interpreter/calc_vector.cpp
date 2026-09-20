@@ -898,7 +898,7 @@ void ExecuteOpQuantMX(ExecuteOperationContext* ctx)
     ASSERT(ExecuteOperationScene::RUNTIME_EXCEPTION, normalizedAxis >= 0 && normalizedAxis < srcRank)
         << "QuantMX axis is out of range. Current axis: " << axis << ", input rank: " << srcRank;
     ASSERT(ExecuteOperationScene::RUNTIME_EXCEPTION,
-           normalizedAxis == srcRank - 1 || (srcRank >= 2 && normalizedAxis == srcRank - 2))
+           normalizedAxis == srcRank - 1 || (srcRank >= 0x2 && normalizedAxis == srcRank - 0x2))
         << "QuantMX interpreter currently only supports the last axis and second-last axis. Current axis: " << axis
         << ", input rank: " << srcRank;
     calc::QuantMX(out, exp, max, scaling, src, performanceMode != 0, mode, normalizedAxis);

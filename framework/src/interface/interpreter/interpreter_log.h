@@ -21,7 +21,8 @@
 #include <string>
 
 namespace npu::tile_fwk::interpreter {
-enum class LogLevel : uint8_t { kDebug = 0, kInfo, kWarn, kEvent, kError };
+// 成员值对齐 ASCEND slog 规范编号（见 CANN log_types.h）；0x4 为 DLOG_NULL（关闭日志）保留档，故空缺
+enum class LogLevel : uint8_t { kDebug = 0x0, kInfo = 0x1, kWarn = 0x2, kError = 0x3, kEvent = 0x5 };
 
 const std::string& LogFilePath();
 void SetLogFilePath(const std::string& path);

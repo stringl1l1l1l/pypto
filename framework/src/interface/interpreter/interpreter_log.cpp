@@ -13,10 +13,6 @@
  * \brief Interpreter logging helpers and macros implementation.
  */
 
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
-
 #include "interface/interpreter/interpreter_log.h"
 
 #include <cinttypes>
@@ -37,8 +33,7 @@ namespace {
 constexpr const char* kEnvGlobalLogLevel = "ASCEND_GLOBAL_LOG_LEVEL";
 constexpr const char* kEnvModuleLogLevel = "ASCEND_MODULE_LOG_LEVEL";
 constexpr const char* kModulePrefix = "PYPTO=";
-// Canonical ASCEND log levels: debug=0, info=1, warning=2, error=3, event=5.
-constexpr int kDefaultGlobalLogThreshold = 3;
+constexpr int kDefaultGlobalLogThreshold = static_cast<int>(LogLevel::kError);
 
 bool IsEnvEnabled(const char* name)
 {
@@ -95,20 +90,11 @@ int GetGlobalLogThreshold()
 
 int ToCanonicalLevel(LogLevel level)
 {
-    switch (level) {
-        case LogLevel::kDebug:
-            return 0;
-        case LogLevel::kInfo:
-            return 1;
-        case LogLevel::kWarn:
-            return 2;
-        case LogLevel::kError:
-            return 3;
-        case LogLevel::kEvent:
-            return 5;
-        default:
-            return kDefaultGlobalLogThreshold;
+    const int canonical = static_cast<int>(level);
+    if (canonical > static_cast<int>(LogLevel::kEvent)) {
+        return kDefaultGlobalLogThreshold;
     }
+    return canonical;
 }
 
 struct LogContext {

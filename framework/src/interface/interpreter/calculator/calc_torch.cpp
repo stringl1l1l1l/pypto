@@ -3289,11 +3289,11 @@ static QuantMXShapes BuildQuantMXShapes(const torch::Tensor& input, DataType src
     shapes.quantShape = input.sizes().vec();
     const int64_t rank = static_cast<int64_t>(shapes.quantShape.size());
     const int64_t normalizedAxis = axis < 0 ? axis + rank : axis;
-    shapes.isDnAxis = rank >= 2 && normalizedAxis == rank - 2;
+    shapes.isDnAxis = rank >= 0x2 && normalizedAxis == rank - 0x2;
     if (shapes.isDnAxis) {
         shapes.mDim = shapes.quantShape[rank - 2];
         shapes.nDim = shapes.quantShape.back();
-        ASSERT(CalculatorErrorScene::QUANTMX_RANK_INVALID, shapes.mDim % 64 == 0)
+        ASSERT(CalculatorErrorScene::QUANTMX_RANK_INVALID, shapes.mDim % 0x40 == 0)
             << "QuantMX axis=-2 interpreter requires the second-last dimension to be 64-aligned.";
         ASSERT(CalculatorErrorScene::QUANTMX_RANK_INVALID, shapes.nDim != 0)
             << "QuantMX input last dimension must not be zero.";
@@ -3303,15 +3303,15 @@ static QuantMXShapes BuildQuantMXShapes(const torch::Tensor& input, DataType src
         shapes.groupedShape = input.sizes().vec();
         shapes.groupedShape[rank - 2] = shapes.mDim / MX_QUANT_TILE_BLOCK;
         shapes.expShape = input.sizes().vec();
-        shapes.expShape[rank - 2] = shapes.mDim / 64;
-        shapes.expShape.back() = shapes.nDim * 2;
+        shapes.expShape[rank - 2] = shapes.mDim / 0x40;
+        shapes.expShape.back() = shapes.nDim * 0x2;
         shapes.performanceGroupedShape = shapes.expShape;
         shapes.performanceScalingShape = shapes.groupedShape;
         shapes.scalingShape = shapes.groupedShape;
         shapes.rows = input.numel() / shapes.nDim;
         shapes.cols = shapes.nDim;
         shapes.groupCols = shapes.mDim / MX_QUANT_TILE_BLOCK;
-        shapes.expCols = shapes.nDim * 2;
+        shapes.expCols = shapes.nDim * 0x2;
         shapes.quantCols = shapes.quantShape.back();
         shapes.prefixRows = input.numel() / (shapes.mDim * shapes.nDim);
         return shapes;
