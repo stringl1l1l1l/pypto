@@ -25,7 +25,10 @@ namespace npu::tile_fwk {
 constexpr float vfPrarm = 0.8f;
 class TuneSyncForVF : public Pass {
 public:
-    TuneSyncForVF() : Pass("TuneSyncForVF") { SetSupportedArches({NPUArch::DAV_3510}); }
+    TuneSyncForVF() : Pass("TuneSyncForVF")
+    {
+        SetSupportedArches({NPUArch::DAV_3510, NPUArch::DAV_3003, NPUArch::DAV_3113});
+    }
     ~TuneSyncForVF() override = default;
 
     Status RunOnFunction(Function& function) override;

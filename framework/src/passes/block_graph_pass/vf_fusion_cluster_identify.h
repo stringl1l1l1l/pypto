@@ -52,7 +52,10 @@ private:
 
 class VFFusionClusterIdentify : public Pass {
 public:
-    VFFusionClusterIdentify() : Pass("VFFusionClusterIdentify") { SetSupportedArches({NPUArch::DAV_3510}); }
+    VFFusionClusterIdentify() : Pass("VFFusionClusterIdentify")
+    {
+        SetSupportedArches({NPUArch::DAV_3510, NPUArch::DAV_3003, NPUArch::DAV_3113});
+    }
     ~VFFusionClusterIdentify() override = default;
 
     Status RunOnFunction(Function& function) override;

@@ -250,7 +250,10 @@ void CodeGenLiteNPU::AppendLiteNPUVFOptions(std::ostringstream& oss) const
         << "-mllvm --tile-fusion-skip-reduceop-fusion=false "
         << "-mllvm --tile-fusion-skip-legality-check=false "
         << "-Rpass=tile-fusion "
-        << "-Rpass-missed=tile-fusion ";
+        << "-Rpass-missed=tile-fusion "
+        << "-mllvm -cce-vf-fusion-max-candidate-set-threshold=10 "
+        << "-mllvm -enable-vexpdif-fusion=false "
+        << "--cce-simd-vf-fusion=true";
 }
 
 void CodeGenLiteNPU::BuildExtraOptions(std::ostringstream& oss, [[maybe_unused]] const CompileInfo& compileInfo,

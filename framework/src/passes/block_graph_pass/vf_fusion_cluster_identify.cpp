@@ -1666,7 +1666,8 @@ Status VFFusionClusterIdentify::RunOnFunction(Function& function)
                           function.paramConfigs_.oooSchedMode.c_str());
         return SUCCESS;
     }
-    if (Platform::Instance().GetSoc().GetNPUArch() != NPUArch::DAV_3510) {
+    const auto arch = Platform::Instance().GetSoc().GetNPUArch();
+    if (arch != NPUArch::DAV_3510 && !IsLiteNPU(arch)) {
         APASS_LOG_DEBUG_F(Elements::Function, "VFFusionClusterIdentify is skipped for unsupported architecture.");
         return SUCCESS;
     }

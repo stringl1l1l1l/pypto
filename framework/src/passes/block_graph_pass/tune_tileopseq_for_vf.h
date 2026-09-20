@@ -25,7 +25,10 @@
 namespace npu::tile_fwk {
 class TuneTileOpSeqForVF : public Pass {
 public:
-    TuneTileOpSeqForVF() : Pass("TuneTileOpSeqForVF") { SetSupportedArches({NPUArch::DAV_3510}); }
+    TuneTileOpSeqForVF() : Pass("TuneTileOpSeqForVF")
+    {
+        SetSupportedArches({NPUArch::DAV_3510, NPUArch::DAV_3003, NPUArch::DAV_3113});
+    }
     ~TuneTileOpSeqForVF() override = default;
 
     Status RunOnFunction(Function& function) override;
