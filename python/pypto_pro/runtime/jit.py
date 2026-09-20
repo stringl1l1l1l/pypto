@@ -537,7 +537,7 @@ def _entry_params_from_param_specs(param_specs: list[ParamSpec]) -> list[tuple[s
         elif spec.kind == ParamKind.SCALAR:
             params.append((_cce_cpp_type_from_dtype(spec.dtype, param_name=spec.name), spec.name, False))
 
-    params.extend(("int32_t", dim_name, False) for dim_name in _collect_dyn_vars(param_specs))
+    params.extend(("int64_t", dim_name, False) for dim_name in _collect_dyn_vars(param_specs))
     return params
 
 
@@ -724,7 +724,7 @@ def _build_launch_entry(compiled: "CompiledKernel"):
     generated ``extern "C"`` signature exactly (see :func:`_generate_caller_cpp` and
     :func:`_entry_params_from_param_specs`): ``uint32_t blockDim``, ``void* stream``,
     one ``uint8_t*`` per tensor/ptr/tiling parameter, the scalar's own C type, then one
-    ``int32_t`` per dynamic dimension. Each compiled kernel owns its CDLL handle, so the
+    ``int64_t`` per dynamic dimension. Each compiled kernel owns its CDLL handle, so the
     declaration cannot leak between kernels.
     """
     plan = _LaunchPlan(compiled.param_specs)
@@ -734,14 +734,12 @@ def _build_launch_entry(compiled: "CompiledKernel"):
     has_tiling = plan.has_tiling
     slots = plan.slots
     dyn_checks = plan.dyn_checks
-    # Scalars carry their own ctype; everything else crosses as an opaque pointer. The
-    # dynamic tail is int32_t on the C side and was being passed as c_int64, which worked
-    # only because the callee reads the low half of the register -- declaring it correctly
-    # here passes the same bits with the same wraparound and no longer relies on that.
+    # Scalars carry their own ctype; everything else crosses as an opaque pointer.
+    # Dynamic dimensions use int64_t in both the generated entry and the IR.
     call_kernel.argtypes = (
         [ctypes.c_uint32, ctypes.c_void_p]
         + [ctypes.c_void_p if slot[0] else slot[3] for slot in slots]
-        + [ctypes.c_int32] * plan.dyn_count
+        + [ctypes.c_int64] * plan.dyn_count
     )
     # Positive results are the actual block count; negative results carry native
     # resource-query errors. int64_t preserves the error tag above its 32-bit detail.
@@ -902,7 +900,7 @@ def _prof_shape_token(dim, dims_in_scope: set) -> str:
     """C++ expression for one tensor dim inside the generated launcher.
 
     Static dims become literals; named dynamic dims reference the matching
-    int32_t dim parameter the launcher already receives; unknown dynamics
+    int64_t dim parameter the launcher already receives; unknown dynamics
     (``-1``) degrade to 0.
     """
     if isinstance(dim, int) and dim > 0:

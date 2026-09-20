@@ -895,7 +895,7 @@ void CCECodegen::EmitSingleFunctionSignature(const ir::FunctionPtr& func, bool h
         if (!first)
             sig << ", ";
         first = false;
-        sig << "int32_t " << context_.SanitizeName(dyn_var);
+        sig << "int64_t " << context_.SanitizeName(dyn_var);
     }
     if (has_cross_sync) {
         if (!first)

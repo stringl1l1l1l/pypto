@@ -303,8 +303,7 @@ def test_argtypes_match_the_generated_c_signature(launch):
     ``_entry_params_from_param_specs`` builds the extern "C" parameter list the caller
     wrapper is generated from, so it is the authority on the callee's signature. Passing
     plain Python values only works while the declaration agrees with it -- and the tail is
-    declared ``int32_t`` there, which is what the launch path now says too, instead of the
-    c_int64 that happened to work because the callee reads the low half of the register.
+    declared ``int64_t`` there, matching the launch path and the IR dimension type.
     """
     specs = [
         _tensor_spec("a", DataType.FP32, ["M", 64]),
@@ -324,9 +323,9 @@ def test_argtypes_match_the_generated_c_signature(launch):
     assert len(result) == len(c_params)
     for (declared, _value), (_c_type, _name, is_ptr) in zip(result, c_params):
         assert (declared is ctypes.c_void_p) == is_ptr
-    # The two dynamic names, M and N, close the vector as int32_t.
-    assert [c_type for c_type, _name, _is_ptr in c_params[-2:]] == ["int32_t", "int32_t"]
-    assert [declared for declared, _value in result[-2:]] == [ctypes.c_int32, ctypes.c_int32]
+    # The two dynamic names, M and N, close the vector as int64_t.
+    assert [c_type for c_type, _name, _is_ptr in c_params[-2:]] == ["int64_t", "int64_t"]
+    assert [declared for declared, _value in result[-2:]] == [ctypes.c_int64, ctypes.c_int64]
 
 
 def test_args_to_ctypes_tensor(launch):
@@ -376,7 +375,7 @@ def test_none_tensor_arg_is_null_pointer(launch):
     result = launch(specs, (None,))
     assert len(result) == 3
     assert result[0] == (ctypes.c_void_p, None)
-    assert result[1:] == [(ctypes.c_int32, 0), (ctypes.c_int32, 0)]
+    assert result[1:] == [(ctypes.c_int64, 0), (ctypes.c_int64, 0)]
 
 
 # ---------------------------------------------------------------------------
@@ -455,7 +454,23 @@ def test_args_to_ctypes_dyn_appended(launch):
     result = launch(specs, (tensor,))
     assert len(result) == 2
     assert result[0][0] is ctypes.c_void_p
-    assert result[1] == (ctypes.c_int32, m_var)
+    assert result[1] == (ctypes.c_int64, m_var)
+
+
+def test_args_to_ctypes_dyn_dimension_exceeds_int32(launch):
+    """Dynamic dimensions must not narrow when crossing the JIT ABI."""
+    dimension = 2**31 + 1
+    specs = [_tensor_spec("a", DataType.FP32, ["M"])]
+    result = launch(specs, (_MockTensor([dimension], torch.float32),))
+    assert result[-1] == (ctypes.c_int64, dimension)
+
+
+def test_args_to_ctypes_dyn_product_exceeds_int32(launch):
+    """Each dimension remains 64-bit when their product exceeds INT32_MAX."""
+    dimension = 65536
+    specs = [_tensor_spec("a", DataType.FP32, ["M", "N"])]
+    result = launch(specs, (_MockTensor([dimension, dimension], torch.float32),))
+    assert result[-2:] == [(ctypes.c_int64, dimension), (ctypes.c_int64, dimension)]
 
 
 def test_args_to_ctypes_dyn_order(launch):
@@ -470,7 +485,7 @@ def test_args_to_ctypes_dyn_order(launch):
     )
     result = launch(specs, args)
     assert len(result) == 5
-    assert result[2:] == [(ctypes.c_int32, 10), (ctypes.c_int32, 20), (ctypes.c_int32, 30)]  # M, N, K
+    assert result[2:] == [(ctypes.c_int64, 10), (ctypes.c_int64, 20), (ctypes.c_int64, 30)]  # M, N, K
 
 
 def test_args_to_ctypes_dyn_dedup(launch):
@@ -485,7 +500,7 @@ def test_args_to_ctypes_dyn_dedup(launch):
     )
     result = launch(specs, args)
     assert len(result) == 4
-    assert result[2:] == [(ctypes.c_int32, 8), (ctypes.c_int32, 16)]  # M, N
+    assert result[2:] == [(ctypes.c_int64, 8), (ctypes.c_int64, 16)]  # M, N
 
 
 def test_args_to_ctypes_no_dyn(launch):
@@ -548,14 +563,14 @@ def test_packed_dyn_dim_scaled_in_abi_tail(launch):
     """The dynamic tail carries the element count, not the packed storage count."""
     specs = [_tensor_spec("x", DataType.FP4E2M1, [64, "K"])]
     result = launch(specs, (_MockTensor([64, 32], torch.uint8),))
-    assert result[-1] == (ctypes.c_int32, 64)
+    assert result[-1] == (ctypes.c_int64, 64)
 
 
 def test_packed_outer_dims_are_not_scaled(launch):
     """Only the innermost axis is packed; an outer dynamic dim passes through unchanged."""
     specs = [_tensor_spec("x", DataType.FP4E2M1, ["M", 64])]
     result = launch(specs, (_MockTensor([7, 32], torch.uint8),))
-    assert result[-1] == (ctypes.c_int32, 7)
+    assert result[-1] == (ctypes.c_int64, 7)
 
 
 def test_packed_dyn_dim_agrees_with_unpacked_param(launch):
@@ -569,7 +584,7 @@ def test_packed_dyn_dim_agrees_with_unpacked_param(launch):
         _MockTensor([64, 8], torch.float32),
     )
     result = launch(specs, args)
-    assert result[2:] == [(ctypes.c_int32, 4), (ctypes.c_int32, 64)]  # M, K
+    assert result[2:] == [(ctypes.c_int64, 4), (ctypes.c_int64, 64)]  # M, K
 
 
 def test_packed_dyn_dim_mismatch_with_unpacked_param(launch):

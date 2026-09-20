@@ -149,6 +149,25 @@ TEST(CCECodegenTest, EmitsTargetSpecificGuardsNamesAndVectorSetup)
     EXPECT_NE(vector.find("set_vector_mask(-1, -1);"), std::string::npos);
 }
 
+TEST(CCECodegenTest, EmitsInt64DynamicTensorDimensions)
+{
+    auto m = MakeVar("__pypto_dyn_x_0", std::make_shared<const ir::ScalarType>(ir::DataType::INT64));
+    auto n = MakeVar("__pypto_dyn_x_1", std::make_shared<const ir::ScalarType>(ir::DataType::INT64));
+    auto ptr = MakeVar("x_base", std::make_shared<const ir::PtrType>(ir::DataType::FP32));
+    ir::TensorView view({}, ir::TensorLayout::ND, ptr);
+    auto tensor_type = std::make_shared<const ir::TensorType>(std::vector<ir::ExprPtr>{m, n}, ir::DataType::FP32,
+                                                              std::optional<ir::MemRefPtr>(std::nullopt),
+                                                              std::optional<ir::TensorView>(view));
+    auto x = MakeVar("x", tensor_type);
+    auto body = std::make_shared<const ir::ReturnStmt>(ir::Span::Unknown());
+
+    CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {x}), "a5");
+    EXPECT_NE(generated.find("int64_t __pypto_dyn_x_0"), std::string::npos);
+    EXPECT_NE(generated.find("int64_t __pypto_dyn_x_1"), std::string::npos);
+    EXPECT_EQ(generated.find("int32_t __pypto_dyn_x_0"), std::string::npos);
+}
+
 TEST(CCECodegenTest, EmitsTargetSpecificTilingStructCopy)
 {
     std::vector<ir::TypePtr> field_types = {
