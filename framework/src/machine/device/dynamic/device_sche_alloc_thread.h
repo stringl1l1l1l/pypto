@@ -260,14 +260,18 @@ inline int CalculateThreadIdx(int cpu, int die0ScheNum, uint64_t die0Selected, u
     return threadIdx;
 }
 
-inline bool CheckThreadIdxUnique(int cpu, int curThreadIdx, std::atomic<uint64_t>& threadIdxBitmap)
+inline bool CheckThreadIdxUnique(int cpu, int curThreadIdx, std::atomic<uint64_t>& threadIdxBitmap, int level,
+                                 uint64_t arbitrationCpumask, int die0ScheNum, uint64_t die0Selected,
+                                 uint64_t die1Selected)
 {
     uint64_t prevBitmap = threadIdxBitmap.fetch_or(1ULL << curThreadIdx, std::memory_order_acq_rel);
     if (prevBitmap & (1ULL << curThreadIdx)) {
-        DEV_ERROR(ThreadErr::THREAD_CPU_ALLOC_FAILED,
-                  "#sche.thread.duplicate: Duplicate threadIdx detected! "
-                  "cpu=%d, threadIdx=%d, bitmap=0x%lx",
-                  cpu, curThreadIdx, prevBitmap);
+        // AICPU blockDim 分波串行时，后波可能复用前波物理核并算出相同 threadIdx。
+        // 前波已跑完对应 sche，后波应丢弃（threadIdx=-1），仍参与 SyncSchExit 凑齐 nrAicpu。
+        DEV_WARN("#sche.thread.duplicate: Duplicate threadIdx, drop as excess block. "
+                 "cpu=%d, threadIdx=%d, bitmap=0x%lx, level=%d, arbitrationCpumask=0x%lx, "
+                 "die0ScheNum=%d, die0Selected=0x%lx, die1Selected=0x%lx",
+                 cpu, curThreadIdx, prevBitmap, level, arbitrationCpumask, die0ScheNum, die0Selected, die1Selected);
         return false;
     }
     return true;
@@ -283,6 +287,7 @@ inline bool CheckThreadIdxUnique(int cpu, int curThreadIdx, std::atomic<uint64_t
  * 4. ARBIT_FAILED：报错
  * 5. CROSS_DIE：sche 数 = min(popcount(arbitrationCpumask), scheCpuNum)，多余线程 threadIdx=-1
  * 6. SAME_DIE_CLUSTER/SAME_DIE：按拓扑选 CPU 并算 threadIdx；未选中则 threadIdx=-1
+ * 7. threadIdx 已被占用（分波复用物理核）：threadIdx=-1，不报错，仍走 SyncSchExit
  */
 inline int AllocThreadIdxForDav3510Impl(DeviceArgs* devArgs, int cpu, int& curThreadIdx, std::atomic<int>& threadIdx,
                                         std::atomic<uint64_t>& cpumask, int& arbitratedScheNum,
@@ -352,8 +357,11 @@ inline int AllocThreadIdxForDav3510Impl(DeviceArgs* devArgs, int cpu, int& curTh
     }
 
     curThreadIdx = CalculateThreadIdx(cpu, die0ScheNum, die0Selected, die1Selected, info);
-    if (!CheckThreadIdxUnique(cpu, curThreadIdx, threadIdxBitmap)) {
-        return DEVICE_MACHINE_ERROR;
+    if (!CheckThreadIdxUnique(cpu, curThreadIdx, threadIdxBitmap, level, info.die0Mask | info.die1Mask, die0ScheNum,
+                              die0Selected, die1Selected)) {
+        // 分波后波 / 重复占用：丢弃本 block，避免重复跑同一 threadIdx
+        curThreadIdx = -1;
+        return DEVICE_MACHINE_OK;
     }
 
     threadIdx.store(curThreadIdx, std::memory_order_release);

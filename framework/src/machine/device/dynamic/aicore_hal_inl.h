@@ -156,54 +156,54 @@ inline void AicoreHAL::GetFinishQueue(const uint32_t* coreIdx, uint32_t* vals, i
     }
 }
 
-inline void AicoreHAL::ResetShakeBuf(int coreStart, int coreEnd)
+inline void AicoreHAL::SendWaveGoodbye(int coreStart, int coreEnd)
 {
     if constexpr (IsDeviceMode()) {
         int i, idx = coreStart;
         int n = coreEnd - coreStart;
         for (i = 0; i < (n & (~CORE_QUEUE_MODE_NUM_7)); i += CORE_QUEUE_MODE_NUM_8) {
-            ResetShakeBufDeviceOne(idx++);
-            ResetShakeBufDeviceOne(idx++);
-            ResetShakeBufDeviceOne(idx++);
-            ResetShakeBufDeviceOne(idx++);
-            ResetShakeBufDeviceOne(idx++);
-            ResetShakeBufDeviceOne(idx++);
-            ResetShakeBufDeviceOne(idx++);
-            ResetShakeBufDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
+            SendWaveGoodbyeDeviceOne(idx++);
         }
         switch (n & CORE_QUEUE_MODE_NUM_7) {
             case CORE_QUEUE_MODE_NUM_7:
-                ResetShakeBufDeviceOne(idx++);
+                SendWaveGoodbyeDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_6:
-                ResetShakeBufDeviceOne(idx++);
+                SendWaveGoodbyeDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_5:
-                ResetShakeBufDeviceOne(idx++);
+                SendWaveGoodbyeDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_4:
-                ResetShakeBufDeviceOne(idx++);
+                SendWaveGoodbyeDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_3:
-                ResetShakeBufDeviceOne(idx++);
+                SendWaveGoodbyeDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_2:
-                ResetShakeBufDeviceOne(idx++);
+                SendWaveGoodbyeDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_1:
-                ResetShakeBufDeviceOne(idx++);
+                SendWaveGoodbyeDeviceOne(idx++);
                 [[fallthrough]];
             default:
                 break;
         }
     } else {
         for (int i = coreStart; i < coreEnd; ++i) {
-            ResetShakeBuf(i);
+            SendWaveGoodbye(i);
         }
     }
 }
 
-inline void AicoreHAL::ResetParallelDevTaskDeviceOne(int coreIdx)
+inline void AicoreHAL::ResetCoreStopSlotDeviceOne(int coreIdx)
 {
     volatile ParallelDevTask* task = &args_[coreIdx]->parallelDevTask;
     task->version = 0;
@@ -214,51 +214,53 @@ inline void AicoreHAL::ResetParallelDevTaskDeviceOne(int coreIdx)
         task->ptrElements[i] = 0;
         task->idElements[i] = 0;
     }
+    args_[coreIdx]->shakeBuffer[0] = 0;
+    args_[coreIdx]->shakeBufferCpuToCore[CPU_TO_CORE_SHAK_BUF_COREFUNC_DATA_INDEX] = 0;
 }
 
-inline void AicoreHAL::ResetParallelDevTask(int coreStart, int coreEnd)
+inline void AicoreHAL::ResetCoreStopSlot(int coreStart, int coreEnd)
 {
     if constexpr (IsDeviceMode()) {
         int i, idx = coreStart;
         int n = coreEnd - coreStart;
         for (i = 0; i < (n & (~CORE_QUEUE_MODE_NUM_7)); i += CORE_QUEUE_MODE_NUM_8) {
-            ResetParallelDevTaskDeviceOne(idx++);
-            ResetParallelDevTaskDeviceOne(idx++);
-            ResetParallelDevTaskDeviceOne(idx++);
-            ResetParallelDevTaskDeviceOne(idx++);
-            ResetParallelDevTaskDeviceOne(idx++);
-            ResetParallelDevTaskDeviceOne(idx++);
-            ResetParallelDevTaskDeviceOne(idx++);
-            ResetParallelDevTaskDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
+            ResetCoreStopSlotDeviceOne(idx++);
         }
         switch (n & CORE_QUEUE_MODE_NUM_7) {
             case CORE_QUEUE_MODE_NUM_7:
-                ResetParallelDevTaskDeviceOne(idx++);
+                ResetCoreStopSlotDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_6:
-                ResetParallelDevTaskDeviceOne(idx++);
+                ResetCoreStopSlotDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_5:
-                ResetParallelDevTaskDeviceOne(idx++);
+                ResetCoreStopSlotDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_4:
-                ResetParallelDevTaskDeviceOne(idx++);
+                ResetCoreStopSlotDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_3:
-                ResetParallelDevTaskDeviceOne(idx++);
+                ResetCoreStopSlotDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_2:
-                ResetParallelDevTaskDeviceOne(idx++);
+                ResetCoreStopSlotDeviceOne(idx++);
                 [[fallthrough]];
             case CORE_QUEUE_MODE_NUM_1:
-                ResetParallelDevTaskDeviceOne(idx++);
+                ResetCoreStopSlotDeviceOne(idx++);
                 [[fallthrough]];
             default:
                 break;
         }
     } else {
         for (int i = coreStart; i < coreEnd; ++i) {
-            ResetParallelDevTask(i);
+            ResetCoreStopSlot(i);
         }
     }
 }

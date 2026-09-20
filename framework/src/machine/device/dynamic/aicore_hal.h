@@ -363,21 +363,20 @@ public:
         }
     }
 
-    // We must makesure close 0x18 before aicore exit.
-    void ResetShakeBuf(int coreIdx)
+    // Device: publish GOODBYE only. Destask + HELLO zeros are in ResetCoreStopSlot.
+    void SendWaveGoodbye(int coreIdx)
     {
         if constexpr (IsDeviceMode()) {
-            ResetShakeBufDeviceOne(coreIdx);
+            SendWaveGoodbyeDeviceOne(coreIdx);
         } else {
-            // Clear parallelDevTask before GOODBYE (set inside model ResetShakeBuf).
-            ResetParallelDevTask(coreIdx);
+            ResetCoreStopSlot(coreIdx);
             GetActiveModel()->ResetShakeBuf(args_[coreIdx]);
         }
     }
 
-    void ResetShakeBuf(int coreStart, int coreEnd);
+    void SendWaveGoodbye(int coreStart, int coreEnd);
 
-    void ResetParallelDevTask(int coreStart, int coreEnd);
+    void ResetCoreStopSlot(int coreStart, int coreEnd);
 
     inline void InitKernelArgs(int coreIdx, int64_t buffer)
     {
@@ -443,9 +442,9 @@ public:
         DEV_VERBOSE_DEBUG("Refresh core %d parall version %u", coreIdx, version);
     }
 
-    void ResetParallelDevTask(int coreIdx)
+    void ResetCoreStopSlot(int coreIdx)
     {
-        DEV_IF_DEVICE { ResetParallelDevTaskDeviceOne(coreIdx); }
+        DEV_IF_DEVICE { ResetCoreStopSlotDeviceOne(coreIdx); }
         else
         {
             GetActiveModel()->ResetParallelDevTask(args_[coreIdx]);
@@ -460,16 +459,14 @@ public:
     }
 
 private:
-    void ResetShakeBufDeviceOne(int coreIdx)
+    // Device BatchStop: GOODBYE only. HELLO zeros are in ResetCoreStopSlotDeviceOne
+    // so they become visible before this store (see BatchStopAllManagedCores fence).
+    void SendWaveGoodbyeDeviceOne(int coreIdx)
     {
-        args_[coreIdx]->shakeBuffer[0] = 0;
-        args_[coreIdx]->shakeBufferCpuToCore[CPU_TO_CORE_SHAK_BUF_COREFUNC_DATA_INDEX] = 0;
-        // parallelDevTask is cleared in BatchStopAllManagedCores before the barrier
-        // that precedes ResetShakeBuf / GOODBYE.
         args_[coreIdx]->waveBufferCpuToCore[CPU_TO_CORE_SHAK_BUF_GOODBYE_INDEX] = AICORE_SAY_GOODBYE;
     }
 
-    void ResetParallelDevTaskDeviceOne(int coreIdx);
+    void ResetCoreStopSlotDeviceOne(int coreIdx);
 
     inline ModelBase* GetActiveModel()
     {

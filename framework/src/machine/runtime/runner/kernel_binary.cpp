@@ -113,18 +113,44 @@ KernelBinary::~KernelBinary()
 
 ToSubMachineConfig& KernelBinary::GetMachineConfig() { return toSubMachineConfig_; }
 
-bool KernelBinary::EnsureRingEventsCreated()
+bool KernelBinary::BeginRingLaunch(uintptr_t epoch, bool isCapture, int64_t& outSequence)
 {
-    if (ringEventsCreated_) {
+    BeginRingEpoch(epoch, isCapture);
+    if (!EnsureRingEventsCreated(isCapture)) {
+        return false;
+    }
+    outSequence = ++ringSequence_;
+    return true;
+}
+
+void KernelBinary::BeginRingEpoch(uintptr_t epoch, bool isCapture)
+{
+    if (ringEpochInited_ && ringEpoch_ == epoch) {
+        return;
+    }
+    if (isCapture) {
+        // Previous graph keeps its events for replay; this capture gets a new pool.
+        graphEventsCreated_ = false;
+    }
+    ringSequence_ = 0;
+    ringEpoch_ = epoch;
+    ringEpochInited_ = true;
+}
+
+bool KernelBinary::EnsureRingEventsCreated(bool isCapture)
+{
+    AclRtEvent* events = isCapture ? graphEvents_ : eagerEvents_;
+    bool& created = isCapture ? graphEventsCreated_ : eagerEventsCreated_;
+    if (created) {
         return true;
     }
     for (int64_t i = 0; i < kRingPingPongCount; ++i) {
-        if (AclRtCreateEventExWithFlag(&ringEvents_[i], ACL_EVENT_SYNC) < 0) {
+        if (AclRtCreateEventExWithFlag(&events[i], ACL_EVENT_SYNC) < 0) {
             MACHINE_LOGE(RtErr::RT_EVENT_FAILED, "AclRtCreateEvent failed for ping-pong event %ld.", i);
             return false;
         }
     }
-    ringEventsCreated_ = true;
+    created = true;
     return true;
 }
 

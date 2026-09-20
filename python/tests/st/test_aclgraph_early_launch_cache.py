@@ -101,6 +101,11 @@ def test_aclgraph_early_launch_host_cache_slot_reuse():
 
     assert torch.equal(npu_out.cpu(), golden.cpu())
 
+    # Capture -> eager must restart the ring; wait/record must not mix with the graph.
+    eager_out = model(data1, data2)
+    torch_npu.npu.synchronize()
+    assert torch.equal(eager_out.cpu(), golden.cpu())
+
 
 if __name__ == "__main__":
     test_aclgraph_early_launch_host_cache_slot_reuse()

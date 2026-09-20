@@ -56,10 +56,6 @@ bool IsEarlyLaunchActive(bool isCaptureMode, int launchEarlyMode)
 
 bool IsRingEventSyncEnabled(int launchEarlyMode, bool ctrlFlowCacheReplay)
 {
-    if (GetEnvVar("PYPTO_LAUNCH_RING_EVENT_SYNC") == "false") {
-        return false;
-    }
-    // launch_early_mode==2: RunPreSync every round, no deep pipeline / slot overlap.
     if (launchEarlyMode == 2) {
         return false;
     }
@@ -70,11 +66,41 @@ bool IsRingEventSyncEnabled(int launchEarlyMode, bool ctrlFlowCacheReplay)
     return true;
 }
 
-int RunRingEventWaitBeforeCtrl(int64_t sequence, RtStream ctrlStream, KernelBinary* kernel)
+uintptr_t ResolveRingEpoch(AclRtStream aicoreStream, bool isCapture)
 {
-    // Wait once in-flight launches exceed min(ping-pong, ringbuf). Ping-pong is 2, so
-    // the 3rd launch waits the 1st when ringbuf>=2; if ringbuf shrinks to 1, slot reuse
-    // starts at the 2nd launch and that round must wait as well.
+    if (!isCapture) {
+        return 0;
+    }
+    AclMdlRI rtModel = nullptr;
+    bool streamCapture = false;
+    if (GetStreamCaptureInfo(aicoreStream, rtModel, streamCapture) && streamCapture && rtModel != nullptr) {
+        return reinterpret_cast<uintptr_t>(rtModel);
+    }
+    return 1; // capturing, but model handle is unavailable
+}
+
+// Early-launch + CF-cache replay 时，ctrl 会复用 ring slot / 改 rawTensorAddr，而上一轮 aicore 可能还在读。
+// 用每 KernelBinary 一对 ping-pong event：ctrl 在 launch 前 wait「waitDepth 轮之前」的 aicore record，
+// 保证 slot 复用发生时，旧消费者已退场。waitDepth = min(ping-pong(=2), ringbuf)。
+//
+// ringbuf>=2（waitDepth=2）时序：第 3 轮 ctrl 等第 1 轮 aicore；第 2 轮仍可与第 1 轮重叠。
+//
+//   launch:     L1          L2          L3              L4
+//   ctrl:    --[c1]------[c2]----[c3 wait E0]----[c4 wait E1]-->
+//   aicore:  ----[a1]------[a2]------[a3]----------[a4]-------->
+//   record:       E0^       E1^       E0^           E1^
+//                          \__________/
+//                     L3.ctrl 等到 a1 完成后才进
+//
+// ringbuf==1（waitDepth=1）时序：第 2 轮起就会复用唯一 slot，故 L2.ctrl 就要等 L1.aicore。
+//
+//   launch:     L1              L2
+//   ctrl:    --[c1]----[c2 wait E0]-->
+//   aicore:  ----[a1]------[a2]------>
+//   record:       E0^       E1^
+//
+int RunRingEventWaitBeforeCtrl(int64_t sequence, RtStream ctrlStream, KernelBinary* kernel, bool isCapture)
+{
     const int64_t ringBufSize = static_cast<int64_t>(DEFAULT_RUNTIME_DATA_RING_BUFFER_COUNT);
     const int64_t waitDepth = KernelBinary::kRingPingPongCount < ringBufSize ? KernelBinary::kRingPingPongCount :
                                                                                ringBufSize;
@@ -82,7 +108,7 @@ int RunRingEventWaitBeforeCtrl(int64_t sequence, RtStream ctrlStream, KernelBina
         return 0;
     }
     const int64_t idx = (sequence - waitDepth - 1) % KernelBinary::kRingPingPongCount;
-    int rc = AclRtStreamWaitEvent(ctrlStream, kernel->RingEvent(idx));
+    int rc = AclRtStreamWaitEvent(ctrlStream, kernel->RingEvent(isCapture, idx));
     if (rc < 0) {
         MACHINE_LOGE(RtErr::RT_EVENT_FAILED, "AclRtStreamWaitEvent (ctrl) failed %d\n", rc);
         return rc;
@@ -90,10 +116,10 @@ int RunRingEventWaitBeforeCtrl(int64_t sequence, RtStream ctrlStream, KernelBina
     return 0;
 }
 
-int RunRingEventRecordAfterAicore(int64_t sequence, AclRtStream aicoreStream, KernelBinary* kernel)
+int RunRingEventRecordAfterAicore(int64_t sequence, AclRtStream aicoreStream, KernelBinary* kernel, bool isCapture)
 {
     const int64_t idx = (sequence - 1) % KernelBinary::kRingPingPongCount;
-    int rc = AclRtRecordEvent(kernel->RingEvent(idx), aicoreStream);
+    int rc = AclRtRecordEvent(kernel->RingEvent(isCapture, idx), aicoreStream);
     if (rc < 0) {
         MACHINE_LOGE(RtErr::RT_EVENT_FAILED, "AclRtRecordEvent failed %d\n", rc);
         return rc;
@@ -604,14 +630,18 @@ int DeviceLauncher::LaunchKernel(AclRtStream aicoreStream, uint8_t* ctrlFlowCach
     auto isCaptureMode = DeviceLauncher::IsCaptureMode();
     bool debugEnable = !isCaptureMode && isDebugMode;
     const bool ringSync = IsRingEventSyncEnabled(launchEarlyMode, kernel->IsCtrlFlowCacheReplay());
-    const int64_t ringSequence = ringSync ? kernel->NextRingSequence() : 0;
+    int64_t ringSequence = 0;
+    if (ringSync) {
+        MACHINE_ASSERT(
+            kernel->BeginRingLaunch(ResolveRingEpoch(aicoreStream, isCaptureMode), isCaptureMode, ringSequence))
+            << "create ping-pong events failed";
+    }
 
     int ret = LaunchSyncTask(aicoreStream, isCaptureMode, launchEarlyMode);
     MACHINE_ASSERT(ret == RT_SUCCESS) << "launch pre sync failed: " << ret;
 
     if (ringSync) {
-        MACHINE_ASSERT(kernel->EnsureRingEventsCreated()) << "create ping-pong events failed";
-        ret = RunRingEventWaitBeforeCtrl(ringSequence, GetStreamContext().GetCtrlStream(), kernel);
+        ret = RunRingEventWaitBeforeCtrl(ringSequence, GetStreamContext().GetCtrlStream(), kernel, isCaptureMode);
         MACHINE_ASSERT(ret == RT_SUCCESS) << "launch ring event wait failed: " << ret;
     }
 
@@ -639,7 +669,7 @@ int DeviceLauncher::LaunchKernel(AclRtStream aicoreStream, uint8_t* ctrlFlowCach
     MACHINE_ASSERT(ret == RT_SUCCESS) << "launch aicore failed: " << ret;
 
     if (ringSync) {
-        ret = RunRingEventRecordAfterAicore(ringSequence, aicoreStream, kernel);
+        ret = RunRingEventRecordAfterAicore(ringSequence, aicoreStream, kernel, isCaptureMode);
         MACHINE_ASSERT(ret == RT_SUCCESS) << "launch ring event record failed: " << ret;
     }
     return ret;

@@ -77,9 +77,15 @@ public:
     void SetCtrlFlowCacheReplay(bool replay) { ctrlFlowCacheReplay_ = replay; }
     bool IsCtrlFlowCacheReplay() const { return ctrlFlowCacheReplay_; }
 
-    int64_t NextRingSequence() { return ++ringSequence_; }
-    bool EnsureRingEventsCreated();
-    AclRtEvent RingEvent(int64_t idx) const { return ringEvents_[idx]; }
+    // Eager and aclgraph cannot share one record/wait pair. epoch=0 is eager;
+    // a non-zero epoch is the capture model. Switching epoch restarts sequence
+    // and (on capture) allocates a fresh graph event pool.
+    // Hot path after warm-up: epoch unchanged + events already created + one ++sequence.
+    bool BeginRingLaunch(uintptr_t epoch, bool isCapture, int64_t& outSequence);
+    AclRtEvent RingEvent(bool isCapture, int64_t idx) const
+    {
+        return isCapture ? graphEvents_[idx] : eagerEvents_[idx];
+    }
 
     static constexpr int64_t kRingPingPongCount = 2;
 
@@ -100,6 +106,9 @@ private:
     void InitLaunchArgs();
     void RefreshRuntimeDynamicCellMatchMeta(uint64_t needBytes);
 
+    void BeginRingEpoch(uintptr_t epoch, bool isCapture);
+    bool EnsureRingEventsCreated(bool isCapture);
+
     static void InitDeviceArgs();
     static int InitDeviceArgs(DeviceArgs& args);
     static int InitDeviceArgsCore(DeviceArgs& args);
@@ -117,8 +126,12 @@ private:
     std::vector<HostControlFlowCache> hostCtrlFlowCaches_;
     bool ctrlFlowCacheReplay_{false};
     int64_t ringSequence_{0};
-    AclRtEvent ringEvents_[kRingPingPongCount]{};
-    bool ringEventsCreated_{false};
+    uintptr_t ringEpoch_{0};
+    bool ringEpochInited_{false};
+    AclRtEvent eagerEvents_[kRingPingPongCount]{};
+    AclRtEvent graphEvents_[kRingPingPongCount]{};
+    bool eagerEventsCreated_{false};
+    bool graphEventsCreated_{false};
 
     std::vector<int64_t> aicpuArgBuf;
     uint64_t l2Offset{0};

@@ -365,13 +365,23 @@ struct DynMachineManager {
         int ctrlDecisionRet = WaitForCtrlDecision(archInfo, threadIdx, arbitratedScheNum, ctrlWaitLevel, ctrlRound,
                                                   scheRound);
         if (ctrlDecisionRet != DEVICE_MACHINE_OK) {
+            DEV_ERROR(SchedErr::WAIT_CTRL_TIMEOUT,
+                      "#sche.wait.ctrl_decision: WaitForCtrlDecision failed, ret=%d, threadIdx=%d, "
+                      "arbitratedScheNum=%d, ctrlWaitLevel=%d, ctrlRound=%lu, scheRound=%lu. "
+                      "Will skip SyncSchExit/RunSchDeInit.",
+                      ctrlDecisionRet, threadIdx, arbitratedScheNum, ctrlWaitLevel.load(std::memory_order_acquire),
+                      ctrlRound.load(std::memory_order_acquire), scheRound.load(std::memory_order_acquire));
             DeviceTrace::GetInstance().ReportTraceMsg();
             return ctrlDecisionRet;
         }
         if (threadIdx != -1) {
             int scheWaitRet = SplittedInfo::ScheWait(devProg);
             if (scheWaitRet != DEVICE_MACHINE_OK) {
-                DEV_ERROR(SchedErr::RINGBUFFER_WAIT_TIMEOUT, "#sche.wait: ScheWait failed, ret=%d.", scheWaitRet);
+                DEV_ERROR(SchedErr::RINGBUFFER_WAIT_TIMEOUT,
+                          "#sche.wait.ring: ScheWait failed, ret=%d, threadIdx=%d, arbitratedScheNum=%d, "
+                          "ctrlRound=%lu, scheRound=%lu. Will skip SyncSchExit/RunSchDeInit.",
+                          scheWaitRet, threadIdx, arbitratedScheNum, ctrlRound.load(std::memory_order_acquire),
+                          scheRound.load(std::memory_order_acquire));
                 DeviceTrace::GetInstance().ReportTraceMsg();
                 return scheWaitRet;
             }
@@ -410,8 +420,17 @@ struct DynMachineManager {
         int arbitratedScheNum = static_cast<int>(roundArgs.scheCpuNum);
         if (AllocThreadIdx(&roundArgs, threadIdx, globalThreadIdx_, cpumask_, arbitratedScheNum, arbitrationLevel_,
                            simCpuId_, arbitrationCpumask_, threadIdxBitmap_) != DEVICE_MACHINE_OK) {
-            DEV_ERROR(ThreadErr::THREAD_CPU_ALLOC_FAILED, "#sche.thread.init: Current cpu[%d] alloc thread failed.",
-                      sched_getcpu());
+            DEV_ERROR(
+                ThreadErr::THREAD_CPU_ALLOC_FAILED,
+                "#sche.thread.init: Current cpu[%d] alloc thread failed. round=%lu scheCpuNum=%u nrAicpu=%u "
+                "arbitratedScheNum=%d cpumask=0x%lx arbitrationCpumask=0x%lx arbitrationLevel=%d "
+                "threadIdxBitmap=0x%lx schExitNum=%u ctrlStartRound=%lu scheFinishRound=%lu. "
+                "Will skip SyncSchExit/RunSchDeInit.",
+                sched_getcpu(), kargs->parameter.globalRound, roundArgs.scheCpuNum, roundArgs.nrAicpu,
+                arbitratedScheNum, cpumask_.load(std::memory_order_acquire),
+                arbitrationCpumask_.load(std::memory_order_acquire), arbitrationLevel_.load(std::memory_order_acquire),
+                threadIdxBitmap_.load(std::memory_order_acquire), schExitNum_.load(std::memory_order_acquire),
+                ctrlStartRound_.load(std::memory_order_acquire), scheFinishRound_.load(std::memory_order_acquire));
             DEV_ATRACE("Schedule Current cpu[%d] alloc thread failed", sched_getcpu());
             DeviceTrace::GetInstance().ReportTraceMsg();
             return npu::tile_fwk::dynamic::DEVICE_MACHINE_ERROR;
@@ -420,12 +439,16 @@ struct DynMachineManager {
             int waitCtrlRet = WaitForCtrlAndRingBuffer(devProg, roundArgs.archInfo, threadIdx, arbitratedScheNum,
                                                        ctrlWaitLevel_, ctrlStartRound_, scheFinishRound_);
             if (waitCtrlRet != DEVICE_MACHINE_OK) {
-                DEV_ERROR(SchedErr::WAIT_CTRL_TIMEOUT,
-                          "#sche.wait: WaitForCtrlAndRingBuffer failed: arbitratedScheNum=%d, ctrlStartRound=%lu, "
-                          "scheFinishRound=%lu,"
-                          "cpumask=%lu, arbitrationLevel=%d",
-                          arbitratedScheNum, ctrlStartRound_.load(), scheFinishRound_.load(), cpumask_.load(),
-                          arbitrationLevel_.load());
+                DEV_ERROR(
+                    SchedErr::WAIT_CTRL_TIMEOUT,
+                    "#sche.wait: WaitForCtrlAndRingBuffer failed: ret=%d threadIdx=%d round=%lu "
+                    "arbitratedScheNum=%d ctrlStartRound=%lu scheFinishRound=%lu cpumask=0x%lx "
+                    "arbitrationLevel=%d threadIdxBitmap=0x%lx schExitNum=%u. "
+                    "Will skip SyncSchExit/RunSchDeInit.",
+                    waitCtrlRet, threadIdx, kargs->parameter.globalRound, arbitratedScheNum,
+                    ctrlStartRound_.load(std::memory_order_acquire), scheFinishRound_.load(std::memory_order_acquire),
+                    cpumask_.load(std::memory_order_acquire), arbitrationLevel_.load(std::memory_order_acquire),
+                    threadIdxBitmap_.load(std::memory_order_acquire), schExitNum_.load(std::memory_order_acquire));
                 return waitCtrlRet;
             }
         }

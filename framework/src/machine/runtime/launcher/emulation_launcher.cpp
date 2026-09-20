@@ -178,7 +178,13 @@ DevControlFlowCache* EmulationLauncher::CreateHostCtrlFlowCache(DevAscendProgram
 static void TryResetBlockDimForPreLaunch(DevControlFlowCache* ctrlFlowCache, DevAscendProgram* devProg,
                                          const DeviceLauncherConfig& config)
 {
+    // Force-disable host pre-launch control-core.
+    constexpr bool kForceDisablePreLaunchControlCore = true;
     devProg->ctrlBlockDim = static_cast<uint32_t>(config.blockdim);
+    if (kForceDisablePreLaunchControlCore) {
+        return;
+    }
+
     if (ctrlFlowCache == nullptr || ctrlFlowCache->deviceTaskCount > 1) {
         return; // close host control core when deviceTaskCount > 1
     }

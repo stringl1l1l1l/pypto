@@ -1864,7 +1864,6 @@ private:
     inline void Init(int threadIdx, DevStartArgs* startArgs, DeviceArgs* deviceArgs, int schedIdx,
                      int arbitratedScheNum)
     {
-        (void)startArgs;
         archInfo_ = deviceArgs->archInfo;
         aicNum_ = static_cast<int32_t>(deviceArgs->nrAic);
         aivNum_ = static_cast<int32_t>(deviceArgs->nrAiv);
@@ -1874,7 +1873,9 @@ private:
         aicValidNum_ = deviceArgs->nrValidAic;
         hasAicpuTask_ = deviceArgs->hasAicpuTask;
         enableEslModel_ = deviceArgs->enableEslModel;
-        disableControlCore_ = (startArgs->devProg->GetParallelism() > 1);
+        // Force-disable post-handshake control-core.
+        constexpr bool kForceDisableControlCore = true;
+        disableControlCore_ = kForceDisableControlCore || (startArgs->devProg->GetParallelism() > 1);
         aicoreHal_.Init(deviceArgs, &aicoreProf_);
         validGetPgMask_ = deviceArgs->validGetPgMask;
         runningIds_.fill(AICORE_STATUS_INIT);
@@ -1900,7 +1901,6 @@ private:
             }
         }
 #endif
-        (void)startArgs;
 
         if (deviceArgs->machineConfig != static_cast<uint8_t>(MachineScheduleConfig::DEFAULT_SCH)) {
             if (aicpuNum_ > 1) {
@@ -2231,13 +2231,14 @@ private:
             aicoreHal_.CloseFastPathReg(aicStart_, aicEnd_);
             aicoreHal_.CloseFastPathReg(aivStart_, aivEnd_);
         }
-        // Clear shared parallelDevTask after STOP is visible, fence once, then
-        // GOODBYE. Clearing too early races with aicores still reading ptrElements.
-        aicoreHal_.ResetParallelDevTask(aicStart_, aicEnd_);
-        aicoreHal_.ResetParallelDevTask(aivStart_, aivEnd_);
+        // Destask + HELLO zeros after STOP is visible, fence, then GOODBYE.
+        // HELLO must be globally cleared before GOODBYE; a post-GOODBYE
+        // shakeBuffer[0]=0 can wipe the next launch's HELLO.
+        aicoreHal_.ResetCoreStopSlot(aicStart_, aicEnd_);
+        aicoreHal_.ResetCoreStopSlot(aivStart_, aivEnd_);
         __sync_synchronize();
-        aicoreHal_.ResetShakeBuf(aicStart_, aicEnd_);
-        aicoreHal_.ResetShakeBuf(aivStart_, aivEnd_);
+        aicoreHal_.SendWaveGoodbye(aicStart_, aicEnd_);
+        aicoreHal_.SendWaveGoodbye(aivStart_, aivEnd_);
     }
 
     inline void AbnormalStop()

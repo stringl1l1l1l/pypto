@@ -172,12 +172,12 @@ TEST(AicoreHalTest, TryHandShakeByGm_CostModelReturnsFalse)
     EXPECT_FALSE(env.hal.TryHandShakeByGm(coreIdx, 0));
 }
 
-TEST(AicoreHalTest, ResetShakeBuf_CostModel)
+TEST(AicoreHalTest, SendWaveGoodbye_CostModel)
 {
     HalTestEnv env;
     int coreIdx = 0;
     env.hal.args_[coreIdx] = const_cast<KernelArgs*>(env.GetArgs(coreIdx));
-    env.hal.ResetShakeBuf(coreIdx);
+    env.hal.SendWaveGoodbye(coreIdx);
 }
 
 TEST(AicoreHalTest, InitKernelArgs_CostModel)
@@ -213,12 +213,12 @@ TEST(AicoreHalTest, GetSetParallelDevTask)
     env.hal.SetParallelDevTaskSize(pdt, 1, 3);
 }
 
-TEST(AicoreHalTest, ResetParallelDevTask_CostModel)
+TEST(AicoreHalTest, ResetCoreStopSlot_CostModel)
 {
     HalTestEnv env;
     int coreIdx = 0;
     env.hal.args_[coreIdx] = const_cast<KernelArgs*>(env.GetArgs(coreIdx));
-    env.hal.ResetParallelDevTask(coreIdx);
+    env.hal.ResetCoreStopSlot(coreIdx);
 }
 
 TEST(AicoreHalTest, InitCostModelDevTaskData)
