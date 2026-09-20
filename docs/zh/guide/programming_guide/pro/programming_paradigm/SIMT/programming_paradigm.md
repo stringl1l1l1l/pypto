@@ -41,7 +41,7 @@ Thread是SIMT结构中的最小编程单元。每个Thread具有独立的局部�
 当每个外层Vector核都调用同一`simt_func[threads](...)`一次时，启动的Thread总数为：
 
 $$
-\text{total\_threads} = grid_x \times grid_y \times grid_z
+threads = grid_x \times grid_y \times grid_z
 \times block_x \times block_y \times block_z
 $$
 
@@ -63,7 +63,55 @@ Warp是硬件在线程块内组织执行的单位，当前A5的Warp Size为32，
 | pypto_pro.language.simt.thread_idx() | 当前Thread在Thread Block内的三维坐标。 | dim3形式的三维对象，各分量为DT_UINT32 Scalar。 | 各维坐标范围由Thread Block对应维度的大小决定。 |
 | pypto_pro.language.simt.linear_thread_idx() | 当前Thread在块内按X维优先展开的编号。 | DT_UINT32 Scalar。 | 范围为[0, 块内线程总数)，不含Block偏移。 |
 
-块内线性索引和线程索引的具体使用方法参见[SIMT计算](../../development/vector_computation/simt_computation.md)。
+**示例：定位Thread处理的数据**
+
+假设Host使用`copy_kernel[None, 3](...)`启动3个Vector核，外层Kernel中的每个Vector核调用一次`copy_by_index[4, 2](...)`。此时，Grid包含3个Thread Block，即grid_dim为(3, 1, 1)，每个Thread Block的包含8个Thread，block_dim为(4, 2, 1)。
+
+下例在SIMT入口函数中获取当前Thread的位置并计算它对应的全局一维索引，外层JIT Kernel负责按(4, 2, 1)的尺寸启动Thread Block：
+
+```python
+import pypto_pro.language as pl
+
+
+@pl.vector_function(mode="simt", max_threads=8)
+def copy_by_index(
+    source: pl.Tensor[[1, 24], pl.DT_FP32],
+    output: pl.Tensor[[1, 24], pl.DT_FP32],
+):
+    grid_size = pl.simt.grid_dim()
+    block_size = pl.simt.block_dim()
+    block_pos = pl.simt.block_idx()
+    thread_pos = pl.simt.thread_idx()
+    local_idx = pl.simt.linear_thread_idx()
+
+    threads_per_block = block_size.x * block_size.y * block_size.z
+    global_idx = block_pos.x * threads_per_block + local_idx
+    threads_num = grid_size.x * grid_size.y * grid_size.z * threads_per_block
+    output[0, global_idx] = source[0, global_idx]
+
+
+@pl.jit(arch="a5")
+def copy_kernel(
+    source: pl.Tensor[[1, 24], pl.DT_FP32],
+    output: pl.Tensor[[1, 24], pl.DT_FP32],
+):
+    with pl.section_vector():
+        copy_by_index[4, 2](source, output)
+```
+
+以第2个Thread Block中坐标为(2, 1, 0)的Thread为例，各接口返回值及含义如下。接口返回的索引均从0开始，因此第2个Thread Block的X坐标为1。
+
+| 接口或变量 | 当前值 | 含义 |
+|---|---|---|
+| grid_dim() | (3, 1, 1) | Grid在X、Y、Z维分别包含多少个Thread Block。 |
+| block_dim() | (4, 2, 1) | 每个Thread Block在X、Y、Z维分别包含多少个Thread。 |
+| block_idx() | (1, 0, 0) | 当前Thread位于Grid中的第2个Thread Block。 |
+| thread_idx() | (2, 1, 0) | 当前Thread位于所属Thread Block的X维第3列、Y维第2行。 |
+| linear_thread_idx() | 6 | 将块内坐标(2, 1, 0)按X维优先展开，计算结果为2 + 1 × 4 + 0 × 4 × 2 = 6。 |
+| global_idx | 14 | 在第2个Thread Block前有8个Thread，因此全局一维索引为1 × 8 + 6 = 14。 |
+| threads_num | 24 | 3个Thread Block各包含8个Thread，因此本次启动共有24个Thread。 |
+
+如果每个Thread复制一个元素，可以使用output[0, global_idx] = source[0, global_idx]，则该Thread负责复制索引为14的元素。全部Thread共同覆盖索引0至23。
 
 ## SIMT函数
 
