@@ -168,25 +168,6 @@ using DrcoLocalReadyMatrix = DrcoLocalReadyMatrixBase<LeafTaskId, LOCAL_GROUP_SI
 #define DRCO_ENCODE_TASK(task) ((task) + 1)
 #define DRCO_DECODE_TASK(task) ((task) - 1)
 
-struct DrcoGlobalReadyQueue {
-    uint32_t head;
-    uint32_t tail;
-    uint32_t size;
-    uint8_t pad[64 - 3 * sizeof(uint32_t)];
-    uint32_t executedCount; // 独占 cacheline：每任务计数原子加，与 head/tail 的 pop/push CAS 隔离
-    uint8_t pad2[64 - sizeof(uint32_t)];
-    LeafTaskId taskList[0];
-#if defined(__TILE_FWK_HOST__)
-    DrcoGlobalReadyQueue() : head(0), tail(0), size(0), executedCount(0) {}
-
-    void UnsafeEnqueue(LeafTaskId task) { taskList[tail++] = DRCO_ENCODE_TASK(task); }
-#endif
-};
-
-struct DrcoGlobalReadyQueuePtr {
-    __gm__ DrcoGlobalReadyQueue* ptr;
-};
-
 } // namespace npu::tile_fwk
 
 #endif

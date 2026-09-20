@@ -513,7 +513,6 @@ TEST(CtrlFlowCacheDrcoUt, TaskAddrRelocProgramAndCtrlCache_WithDrco)
 
     DrcoQueueFixture drco;
     drco.Build();
-    drco.root.globalReadyQueueList[DRCO_QUEUE_AIV].ptr = reinterpret_cast<DrcoGlobalReadyQueue*>(0x8);
     dyntask->drcoRootFuncList = &drco.root;
 
     std::array<std::array<uint32_t, 16>, READY_QUEUE_SIZE> elemBuf{};
@@ -537,8 +536,6 @@ TEST(CtrlFlowCacheDrcoUt, TaskAddrRelocProgramAndCtrlCache_WithDrco)
 
     ctrl.ReadyQueueDataBackup(dyntask.get());
     ASSERT_NE(dyntask->readyQueueBackup, nullptr);
-    // Force the non-null reloc branch for the global ready queue backup.
-    dyntask->readyQueueBackup->globalReadyQueueList[0].ptr = reinterpret_cast<DrcoGlobalReadyQueue*>(0x10);
 
     DeviceTaskCache entry;
     entry.dynTaskBase = dyntask.get();
@@ -559,14 +556,14 @@ TEST(CtrlFlowCacheDrcoUt, DrcoReadyQueueDataRestore_WithMixWraps)
     drco.Build();
     dyntask->drcoRootFuncList = &drco.root;
 
-    // Set up non-null global ready queues so the DRCO_QUEUE_MAX reset loop is exercised.
-    constexpr size_t kGlobalQueueBytes = sizeof(DrcoGlobalReadyQueue) + 16 * sizeof(LeafTaskId);
-    std::array<std::array<uint8_t, kGlobalQueueBytes>, DRCO_QUEUE_MAX> globalStorage{};
-    for (uint32_t i = 0; i < DRCO_QUEUE_MAX; ++i) {
-        auto* gq = reinterpret_cast<DrcoGlobalReadyQueue*>(globalStorage[i].data());
-        gq->head = 1;
-        gq->tail = 1;
-        drco.root.globalReadyQueueList[i].ptr = gq;
+    // Dirty the MIX shared queue (localReadyQueueArray[DRCO_QUEUE_MIX] group 0) and counters
+    // so the DRCO reset loops are exercised.
+    drco.root.localReadyQueueArray[0][0]->head = 1;
+    drco.root.localReadyQueueArray[0][0]->tail = 1;
+    drco.root.localReadyQueueArray[DRCO_QUEUE_MIX][0]->head = 1;
+    drco.root.localReadyQueueArray[DRCO_QUEUE_MIX][0]->tail = 1;
+    for (uint32_t ct = 0; ct < DRCO_QUEUE_MAX; ++ct) {
+        drco.root.devTaskCountList.count[ct].executedCount = 3;
     }
 
     // Set up the ready queues (AIV/AIC/AICPU) on the DynDeviceTask.
@@ -625,12 +622,14 @@ TEST(CtrlFlowCacheDrcoUt, DrcoReadyQueueDataRestore_WithMixWraps)
     EXPECT_EQ(root->perCorePendingQueueArray[8]->size, 1U);
     EXPECT_EQ(root->perCorePendingQueueArray[8]->taskList[0], MakeTaskID(2, 302));
 
-    // Global ready queues reset to empty.
-    for (uint32_t i = 0; i < DRCO_QUEUE_MAX; ++i) {
-        auto* gq = drco.root.globalReadyQueueList[i].ptr;
-        ASSERT_NE(gq, nullptr);
-        EXPECT_EQ(gq->head, 0U);
-        EXPECT_EQ(gq->tail, 0U);
+    // Local ready queues (incl. the MIX shared queue at [DRCO_QUEUE_MIX][0]) reset to empty;
+    // executed counters cleared (size untouched).
+    EXPECT_EQ(drco.root.localReadyQueueArray[0][0]->head, 0U);
+    EXPECT_EQ(drco.root.localReadyQueueArray[0][0]->tail, 0U);
+    EXPECT_EQ(drco.root.localReadyQueueArray[DRCO_QUEUE_MIX][0]->head, 0U);
+    EXPECT_EQ(drco.root.localReadyQueueArray[DRCO_QUEUE_MIX][0]->tail, 0U);
+    for (uint32_t ct = 0; ct < DRCO_QUEUE_MAX; ++ct) {
+        EXPECT_EQ(drco.root.devTaskCountList.count[ct].executedCount, 0U);
     }
 }
 

@@ -268,18 +268,12 @@ void DevControlFlowCache::DrcoReadyQueueDataRestore(DynDeviceTaskBase* base, uin
     }
 
     __sync_synchronize();
-    uint32_t queueTaskListSize = base->devTask.coreFunctionCnt * sizeof(npu::tile_fwk::LeafTaskId);
-    for (size_t i = 0; i < npu::tile_fwk::DRCO_QUEUE_MAX; i++) {
-        auto* gq = base->drcoRootFuncList->globalReadyQueueList[i].ptr;
-        if (gq == nullptr) {
-            continue;
-        }
-        gq->head = 0;
-        gq->tail = 0;
-        gq->executedCount = 0;
-        (void)memset_s(reinterpret_cast<uint8_t*>(gq) + sizeof(DrcoGlobalReadyQueue), queueTaskListSize, 0,
-                       queueTaskListSize);
+    // 完成计数表随 rootFuncList 缓存快照恢复：size 为程序静态属性保持，executedCount 复位
+    for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
+        base->drcoRootFuncList->devTaskCountList.count[ct].executedCount = 0;
     }
+    // 就绪队列复位按各队列自身容量清理（MIX 行容量 = coreFunctionCnt + HUB_MIX op 数，
+    // 大于 coreFunctionCnt）；三行（AIC/AIV/MIX）均全组分配
     for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
         for (uint32_t i = 0; i < npu::tile_fwk::NUM_LOCAL_GROUPS; i++) {
             auto* dst = base->drcoRootFuncList->localReadyQueueArray[ct][i];
@@ -288,8 +282,9 @@ void DevControlFlowCache::DrcoReadyQueueDataRestore(DynDeviceTaskBase* base, uin
             }
             dst->head = 0;
             dst->tail = 0;
-            (void)memset_s(reinterpret_cast<uint8_t*>(dst) + sizeof(DrcoLocalReadyQueue), queueTaskListSize, 0,
-                           queueTaskListSize);
+            uint32_t taskListSize = dst->size * sizeof(npu::tile_fwk::LeafTaskId);
+            (void)memset_s(reinterpret_cast<uint8_t*>(dst) + sizeof(DrcoLocalReadyQueue), taskListSize, 0,
+                           taskListSize);
         }
     }
     for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
@@ -1288,11 +1283,6 @@ void DevControlFlowCache::TaskAddrRelocProgramAndCtrlCache(uint64_t srcProgram, 
             relocCtrlCache.RelocNullable(readyQueueBackup->pongElem[i]);
         }
 
-        for (size_t i = 0; i < npu::tile_fwk::DRCO_QUEUE_MAX; i++) {
-            if (readyQueueBackup->globalReadyQueueList[i].ptr != nullptr) {
-                RelocControlFlowCachePointer(readyQueueBackup->globalReadyQueueList[i].ptr, relocCtrlCache);
-            }
-        }
         for (size_t i = 0; i < npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE; i++) {
             if (readyQueueBackup->perCorePendingQueueList[i] != nullptr) {
                 RelocControlFlowCachePointer(readyQueueBackup->perCorePendingQueueList[i], relocCtrlCache);
@@ -1342,14 +1332,10 @@ void DevControlFlowCache::RelocDrcoRootFuncList(RelocRange& relocCtrlCache, DynD
         drcoRootFuncList = RelocControlFlowCachePointer(drcoRootFuncListRef, relocCtrlCache);
     }
     if (drcoRootFuncList != nullptr) {
-        for (size_t i = 0; i < npu::tile_fwk::DRCO_QUEUE_MAX; i++) {
-            if (drcoRootFuncList->globalReadyQueueList[i].ptr != nullptr) {
-                RelocControlFlowCachePointer(drcoRootFuncList->globalReadyQueueList[i].ptr, relocCtrlCache);
-            }
-        }
         for (size_t i = 0; i < npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE; i++) {
             relocCtrlCache.Reloc(drcoRootFuncList->perCorePendingQueueArray[i]);
         }
+
         for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
             for (uint32_t i = 0; i < npu::tile_fwk::NUM_LOCAL_GROUPS; i++) {
                 relocCtrlCache.Reloc(drcoRootFuncList->localReadyQueueArray[ct][i]);

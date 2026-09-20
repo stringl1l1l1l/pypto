@@ -26,8 +26,6 @@ void DeviceTaskContext::InitDrcoRootFuncList(DynDeviceTask* dyntask)
             .ptr);
     dyntask->drcoRootFuncList = rootFuncList;
     uint32_t queueCapacity = dyntask->devTask.coreFunctionCnt;
-    uint32_t globalReadyQueueSize = sizeof(npu::tile_fwk::DrcoGlobalReadyQueue) +
-                                    queueCapacity * sizeof(npu::tile_fwk::LeafTaskId);
     uint32_t aicTaskCnt = 0;
     uint32_t aivTaskCnt = 0;
     for (uint64_t funcId = 0; funcId < dyntask->dynFuncDataCacheListSize; ++funcId) {
@@ -42,18 +40,10 @@ void DeviceTaskContext::InitDrcoRootFuncList(DynDeviceTask* dyntask)
             }
         }
     }
-    for (size_t i = 0; i < npu::tile_fwk::DRCO_QUEUE_MAX; i++) {
-        auto* q = workspace_->AllocateDrcoGlobalReadyQueue(globalReadyQueueSize);
-        new (q) npu::tile_fwk::DrcoGlobalReadyQueue();
-        (void)memset_s(reinterpret_cast<uint8_t*>(q) + sizeof(DrcoGlobalReadyQueue), queueCapacity * sizeof(LeafTaskId),
-                       0, queueCapacity * sizeof(LeafTaskId));
-        if (i == npu::tile_fwk::DRCO_QUEUE_AIC) {
-            q->size = aicTaskCnt;
-        } else if (i == npu::tile_fwk::DRCO_QUEUE_AIV) {
-            q->size = aivTaskCnt;
-        }
-        rootFuncList->globalReadyQueueList[i].ptr = q;
-    }
+    // 完成计数表内嵌 rootFuncList（承接原全局队列的 executedCount/size），MIX 恒为 0
+    new (&rootFuncList->devTaskCountList) npu::tile_fwk::DrcoDevTaskCountList();
+    rootFuncList->devTaskCountList.count[npu::tile_fwk::DRCO_QUEUE_AIC].size = aicTaskCnt;
+    rootFuncList->devTaskCountList.count[npu::tile_fwk::DRCO_QUEUE_AIV].size = aivTaskCnt;
     uint32_t perCoreSize = sizeof(npu::tile_fwk::PerCorePendingQueue) +
                            queueCapacity * sizeof(npu::tile_fwk::LeafTaskId);
     for (uint32_t i = 0; i < npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE; i++) {
@@ -85,7 +75,7 @@ void DeviceTaskContext::InitDrcoRootFuncList(DynDeviceTask* dyntask)
     for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
         for (uint32_t i = 0; i < npu::tile_fwk::NUM_LOCAL_GROUPS; i++) {
             uint32_t validCoreNum = 0;
-            if (ct == npu::tile_fwk::DRCO_QUEUE_AIC) {
+            if (ct == npu::tile_fwk::DRCO_QUEUE_AIC || ct == npu::tile_fwk::DRCO_QUEUE_MIX) {
                 validCoreNum = matrixValidCoreNum(i, nrValidAic);
             } else if (ct == npu::tile_fwk::DRCO_QUEUE_AIV) {
                 validCoreNum = matrixValidCoreNum(i, nrValidAic * 2);

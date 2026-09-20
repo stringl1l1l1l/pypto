@@ -977,15 +977,20 @@ TEST_F(TestDeviceTaskContext, InitReadyQueues_EnableAicoreResolve_CreatesDrcoRoo
     ASSERT_NE(dyntask->drcoRootFuncList, nullptr);
     EXPECT_EQ(dyntask->drcoRootFuncList->totalTaskCount, 16U);
     EXPECT_EQ(dyntask->drcoRootFuncList->devTaskFinished, 0U);
-    for (size_t i = 0; i < npu::tile_fwk::DRCO_QUEUE_MAX; ++i) {
-        EXPECT_NE(dyntask->drcoRootFuncList->globalReadyQueueList[i].ptr, nullptr);
+    // 完成计数表内嵌 rootFuncList：mock 无函数缓存，各 coreType size/executedCount 均为 0
+    for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ++ct) {
+        EXPECT_EQ(dyntask->drcoRootFuncList->devTaskCountList.count[ct].size, 0U);
+        EXPECT_EQ(dyntask->drcoRootFuncList->devTaskCountList.count[ct].executedCount, 0U);
     }
     for (uint32_t i = 0; i < npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE; ++i) {
         EXPECT_NE(dyntask->drcoRootFuncList->perCorePendingQueueArray[i], nullptr);
     }
-    for (uint32_t ct = 0; ct < npu::tile_fwk::NUM_CORE_TYPES; ++ct) {
+    // 三行（AIC/AIV/MIX）local queue/matrix 均全组分配：MIX 行承载 HUB_MIX 后继
+    // （mixhub 与 AIC/AIV 同模型 batch push 多组分布），消费者为 AIC（validCoreNum 同 AIC 行）
+    for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ++ct) {
         for (uint32_t i = 0; i < npu::tile_fwk::NUM_LOCAL_GROUPS; ++i) {
             EXPECT_NE(dyntask->drcoRootFuncList->localReadyQueueArray[ct][i], nullptr);
+            EXPECT_NE(dyntask->drcoRootFuncList->localReadyMatrixArray[ct][i], nullptr);
         }
     }
     // 全核共享 stitch 节点矩阵：行 = 全局 blockIdx，初始全空

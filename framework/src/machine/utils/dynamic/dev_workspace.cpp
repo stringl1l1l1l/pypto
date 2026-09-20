@@ -531,13 +531,6 @@ DynFuncHeader* DeviceWorkspaceAllocator::AllocateDynFuncData(uint64_t size)
     return header;
 }
 
-npu::tile_fwk::DrcoGlobalReadyQueue* DeviceWorkspaceAllocator::AllocateDrcoGlobalReadyQueue(uint64_t size)
-{
-    WsAllocation allocation = ControlFlowAllocateSlab(devProg_, size,
-                                                      SlabAlloc(size, WsAicpuSlabMemType::GLOBAL_READY_QUE));
-    return allocation.As<npu::tile_fwk::DrcoGlobalReadyQueue>();
-}
-
 npu::tile_fwk::PerCorePendingQueue* DeviceWorkspaceAllocator::AllocatePerCorePendingQueue(uint64_t size)
 {
     WsAllocation allocation = ControlFlowAllocateSlab(devProg_, size,
@@ -885,10 +878,12 @@ void DeviceWorkspaceAllocator::InitMetadataAllocators(DevAscendProgram* devProg,
         none(), WorkspaceMetadataGeneral(Range(generalAddr, generalAddr + devProg->memBudget.metadata.general))));
 
     uint64_t stitchPoolAddr = devStartArgs->deviceRuntimeDataDesc.stitchPoolAddr;
-    // stitch 池预算必须 < 4GB：池内对象以 u32 偏移被引用（DrcoGlobalStitchNodeMatrix 槽位），
-    // 且下方传参存在 u64 -> u32 隐式截断
-    DEV_ASSERT_MSG(WsErr::WORKSPACE_INIT_PARAM_INVALID, devProg->memBudget.metadata.stitchPool <= UINT32_MAX,
-                   "Stitch pool size %lu exceeds u32 limit", devProg->memBudget.metadata.stitchPool);
+    // stitch 池预算 < 4GB 仅 AICore 解依赖（DRCO）需要：池内对象以 u32 偏移被引用
+    // （DrcoGlobalStitchNodeMatrix 槽位），且下方传参存在 u64 -> u32 截断；
+    if (devProg->devArgs.enableAicoreResolve) {
+        DEV_ASSERT_MSG(WsErr::WORKSPACE_INIT_PARAM_INVALID, devProg->memBudget.metadata.stitchPool <= UINT32_MAX,
+                       "Stitch pool size %lu exceeds u32 limit", devProg->memBudget.metadata.stitchPool);
+    }
     InitAicpuStitchSlabAllocator(reinterpret_cast<void*>(stitchPoolAddr), devProg->memBudget.metadata.stitchPool);
     DEV_TRACE_DEBUG(CtrlEvent(none(), WorkspaceMetadataStitch(Range(
                                           stitchPoolAddr, stitchPoolAddr + devProg->memBudget.metadata.stitchPool))));
@@ -1084,11 +1079,6 @@ uint32_t DeviceWorkspaceAllocator::LocalReadyQueSlabMemObjSize()
     uint32_t localMatrixSize = sizeof(npu::tile_fwk::DrcoLocalReadyMatrix);
     uint32_t stitchMatrixSize = sizeof(npu::tile_fwk::DrcoGlobalStitchNodeMatrix);
     return std::max({queueSize, localMatrixSize, stitchMatrixSize});
-}
-
-uint32_t DeviceWorkspaceAllocator::GlobalReadyQueSlabMemObjSize()
-{
-    return sizeof(npu::tile_fwk::DrcoGlobalReadyQueue) + devProg_->stitchFunctionsize * sizeof(uint32_t);
 }
 
 uint32_t DeviceWorkspaceAllocator::PredCountSlabMemObjSize()

@@ -337,8 +337,6 @@ public:
 
     DynFuncHeader* AllocateDynFuncData(uint64_t size);
 
-    npu::tile_fwk::DrcoGlobalReadyQueue* AllocateDrcoGlobalReadyQueue(uint64_t size);
-
     npu::tile_fwk::PerCorePendingQueue* AllocatePerCorePendingQueue(uint64_t size);
 
     npu::tile_fwk::DrcoLocalReadyQueue* AllocateDrcoLocalReadyQueue(uint64_t size);
@@ -427,8 +425,6 @@ private:
 
     uint32_t LocalReadyQueSlabMemObjSize();
 
-    uint32_t GlobalReadyQueSlabMemObjSize();
-
     uint32_t PredCountSlabMemObjSize();
 
     uint32_t (DeviceWorkspaceAllocator::*slabMemObjSizeFunc[ToUnderlying(WsAicpuSlabMemType::SLAB_MEM_TYPE_BUTT)])() = {
@@ -443,7 +439,6 @@ private:
         &DeviceWorkspaceAllocator::WrapQueSlabMemObjSize,
         &DeviceWorkspaceAllocator::PerCorePendingQueSlabMemObjSize,
         &DeviceWorkspaceAllocator::LocalReadyQueSlabMemObjSize,
-        &DeviceWorkspaceAllocator::GlobalReadyQueSlabMemObjSize,
         &DeviceWorkspaceAllocator::PredCountSlabMemObjSize,
         &DeviceWorkspaceAllocator::DuppedStitchSlabMemObjSize,
     };

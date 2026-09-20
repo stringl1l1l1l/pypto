@@ -27,7 +27,13 @@ namespace npu::tile_fwk {
 
 constexpr uint32_t HCCL_GROUP_NUM = 2;
 
-enum class CoreType { AIV = 0, AIC = 1, MIX = 2, AICPU = 3, HUB = 4, GMATOMIC = 5, HUB_MIX = 6, INVALID = 20 };
+// AIV/AIC/HUB_MIX 取值与 DRCO_QUEUE_AIV/AIC/MIX 一一对应：DRCO 设备侧把 taskId 中解码出的 coreType
+// 直接用作就绪队列下标；调整取值须与 DRCO_QUEUE_* 联动（下方 static_assert 强校验）
+enum class CoreType { AIV = 0, AIC = 1, HUB_MIX = 2, AICPU = 3, HUB = 4, GMATOMIC = 5, MIX = 6, INVALID = 20 };
+static_assert(static_cast<uint32_t>(CoreType::AIV) == DRCO_QUEUE_AIV, "CoreType::AIV must align with DRCO_QUEUE_AIV");
+static_assert(static_cast<uint32_t>(CoreType::AIC) == DRCO_QUEUE_AIC, "CoreType::AIC must align with DRCO_QUEUE_AIC");
+static_assert(static_cast<uint32_t>(CoreType::HUB_MIX) == DRCO_QUEUE_MIX,
+              "CoreType::HUB_MIX must align with DRCO_QUEUE_MIX");
 
 struct CoreFuncParam {
     __gm__ npu::tile_fwk::DynFuncData* funcData;

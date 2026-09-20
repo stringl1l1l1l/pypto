@@ -73,9 +73,11 @@ struct DynFuncHeader {
     INLINE DynFuncData& At(int index) { return (reinterpret_cast<DynFuncData*>(this + 1))[index]; }
 };
 
-constexpr uint32_t DRCO_QUEUE_AIV = 0;
-constexpr uint32_t DRCO_QUEUE_AIC = 1;
-constexpr uint32_t DRCO_QUEUE_MIX = 2;
+// 取值与 CoreType::AIV/AIC/HUB_MIX 数值对齐（aikernel_data.h 中有 static_assert 强校验）：
+// 设备侧解码 taskId 的 coreType 后可直接用作队列下标，无需映射
+constexpr uint32_t DRCO_QUEUE_AIV = 0; // 与 CoreType::AIV 一致
+constexpr uint32_t DRCO_QUEUE_AIC = 1; // 与 CoreType::AIC 一致
+constexpr uint32_t DRCO_QUEUE_MIX = 2; // 与 CoreType::HUB_MIX 一致（MIX 行承载 HUB_MIX 后继）
 constexpr uint32_t DRCO_QUEUE_MAX = 3;
 
 // 全局 stitch 节点矩阵：按核类型各一个（DRCO_QUEUE_MAX 个），每个合并对应类型的
@@ -108,29 +110,46 @@ struct DrcoGlobalStitchNodeMatrix {
 };
 
 struct DrcoDevTaskFinishFlagList {
-    struct GroupFlag {
-        uint32_t devTaskFinishFlag; // 本 coreType 全部 leaf task 执行完成后置 1，组内核轮询到即返回全完成
+    // 每类型共享一个完成标志（原每组一个）：本 coreType 全部 leaf task 计数到 size 后置 1，
+    // 本类型全部核经 DrcoGmLoad（dcci 失效读）轮询同一 flag；广播只写单个 cacheline
+    struct TypeFlag {
+        uint32_t devTaskFinishFlag;
         uint8_t pad[64 - sizeof(uint32_t)]; // 独占 cacheline
     };
-    GroupFlag flag[DRCO_QUEUE_MAX][NUM_LOCAL_GROUPS];
+    TypeFlag flag[DRCO_QUEUE_MAX];
 #ifdef __TILE_FWK_HOST__
     DrcoDevTaskFinishFlagList()
     {
         for (uint32_t ct = 0; ct < DRCO_QUEUE_MAX; ct++) {
-            for (uint32_t g = 0; g < NUM_LOCAL_GROUPS; g++) {
-                flag[ct][g].devTaskFinishFlag = 0;
-            }
+            flag[ct].devTaskFinishFlag = 0;
+        }
+    }
+#endif
+};
+
+// leaf task 完成计数表：承接原 DrcoGlobalReadyQueue 的 executedCount/size 计数职责，
+// 内嵌 DrcoRootFuncList（不再独立分配）；每 coreType 一项、独占 cacheline，
+// 仅 executedCount 加到 size 的最后一次累加方广播 devTaskFinishFlagList
+struct DrcoDevTaskCountList {
+    struct CoreTypeCount {
+        uint32_t size;          // 本 coreType leaf task 总数，host 初始化后只读
+        uint32_t executedCount; // 已执行 leaf 计数（原子加）
+        uint8_t pad[64 - 2 * sizeof(uint32_t)];
+    };
+    CoreTypeCount count[DRCO_QUEUE_MAX];
+#ifdef __TILE_FWK_HOST__
+    DrcoDevTaskCountList()
+    {
+        for (uint32_t ct = 0; ct < DRCO_QUEUE_MAX; ct++) {
+            count[ct].size = 0;
+            count[ct].executedCount = 0;
         }
     }
 #endif
 };
 
 struct DrcoRootFuncList {
-    DrcoGlobalReadyQueuePtr globalReadyQueueList[DRCO_QUEUE_MAX];
-    uint32_t globalQueueInitTail[DRCO_QUEUE_MAX];
-
     __gm__ PerCorePendingQueue* perCorePendingQueueArray[MAX_AICORE_NUM_FOR_QUEUE];
-
     __gm__ DrcoLocalReadyQueue* localReadyQueueArray[DRCO_QUEUE_MAX][NUM_LOCAL_GROUPS];
     __gm__ DrcoLocalReadyMatrix* localReadyMatrixArray[DRCO_QUEUE_MAX][NUM_LOCAL_GROUPS];
     // 全核共享 stitch 节点矩阵：行 = 全局 blockIdx（AIC [0,nrValidAic) + AIV [nrValidAic,3*nrValidAic)），
@@ -143,6 +162,7 @@ struct DrcoRootFuncList {
 
     alignas(64) uint32_t totalTaskCount;
     alignas(64) uint32_t devTaskFinished;
+    alignas(64) DrcoDevTaskCountList devTaskCountList;
     alignas(64) DrcoDevTaskFinishFlagList devTaskFinishFlagList;
     alignas(64) uint8_t pad[64];
 };

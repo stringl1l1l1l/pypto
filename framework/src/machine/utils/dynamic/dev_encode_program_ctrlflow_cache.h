@@ -37,11 +37,9 @@ struct ReadyQueueCache {
     uint32_t coreFunctionCnt;
     ReadyCoreFunctionQueueUnsafe queueList[READY_QUEUE_SIZE];
     uint32_t readyTaskNum;
-
     uint32_t* pingElem[READY_QUEUE_SIZE];
     uint32_t* pongElem[READY_QUEUE_SIZE];
 
-    npu::tile_fwk::DrcoGlobalReadyQueuePtr globalReadyQueueList[npu::tile_fwk::DRCO_QUEUE_MAX];
     npu::tile_fwk::PerCorePendingQueue* perCorePendingQueueList[npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE]{};
 };
 
