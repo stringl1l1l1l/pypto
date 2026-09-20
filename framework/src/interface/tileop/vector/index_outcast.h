@@ -20,14 +20,15 @@
 
 template <typename T0, typename T1, typename T2, int srcrawShape1, int srcTileH, int srcTileW, int src1SAligned,
           typename DstDtype, typename SrcDtype, typename IdxDtype>
-TILEOP void TIndexOutcastMode2(T0 dst, T1 src, T2 src1, unsigned b, unsigned s, unsigned srcShape3, unsigned srcShape4)
+TILEOP void TIndexOutcastMode2(T0 dst, T1 src, T2 src1, unsigned b, unsigned s, unsigned srcShape3, unsigned srcShape4,
+                               uint64_t offset)
 {
     set_flag(PIPE_MTE2, PIPE_S, EVENT_ID0);
     wait_flag(PIPE_MTE2, PIPE_S, EVENT_ID0);
 
     __ubuf__ SrcDtype* srcBase = reinterpret_cast<__ubuf__ SrcDtype*>(src.GetAddr());
     __ubuf__ IdxDtype* idxBase = reinterpret_cast<__ubuf__ IdxDtype*>(src1.GetAddr());
-    __gm__ DstDtype* dstBase = reinterpret_cast<__gm__ DstDtype*>(dst.GetAddr());
+    __gm__ DstDtype* dstBase = reinterpret_cast<__gm__ DstDtype*>(dst.GetAddr()) + offset;
 
     __ubuf__ SrcDtype* curSrc = srcBase;
     __ubuf__ IdxDtype* dstIdx = idxBase;
@@ -92,7 +93,7 @@ TILEOP void TIndexOutcast(T0 dst, T1 src, T2 src1, C coordinate)
     constexpr int FULL_ROW_CACHE_MODE = 2;
     if constexpr (cacheMode == FULL_ROW_CACHE_MODE) {
         TIndexOutcastMode2<T0, T1, T2, srcrawShape1, srcTileH, srcTileW, src1SAligned, DstDtype, SrcDtype, IdxDtype>(
-            dst, src, src1, src1Shape3, src1Shape4, srcShape3, srcShape4);
+            dst, src, src1, src1Shape3, src1Shape4, srcShape3, srcShape4, offset);
         return;
     }
 
