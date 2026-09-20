@@ -41,8 +41,11 @@ struct BoundaryTensorInfo {
 struct MergeInput {
     int numSubgraph{0};
     int maxLatency{0};
-    int maxSubgraphAICOpNum{0};
-    int maxSubgraphAIVOpNum{0};
+    int maxSubgraphAICOpNum{0}; // 合并后子图 AIC op 数上限, 0=不启用(自定义档仅约束总 op 数)
+    int maxSubgraphAIVOpNum{0}; // 合并后子图 AIV op 数上限, 0=不启用(自定义档仅约束总 op 数)
+    // 自定义档(auto_mix_partition>100)的总 op 数上限: 合并后子图 AIC+AIV op 总数不超过该值,
+    // 此时 AIC/AIV 不再各自受限; 0=不启用(0/1/2 档位走 AIC/AIV 独立上限)
+    int maxSubgraphTotalOpNum{0};
     std::pair<double, double> aivRatio;
     std::vector<int> subgraphAICLatency;
     std::vector<int> subgraphAIVLatency;
@@ -128,10 +131,13 @@ class ReduceCopyMerge : public Pass {
 public:
     ReduceCopyMerge() : Pass("ReduceCopyMerge") { SetSupportedArches({NPUArch::DAV_3510}); }
     ~ReduceCopyMerge() override = default;
+    // 将 auto_mix_partition 配置映射为合图 op 数上限, 返回是否开启自动 CV Mix 合图:
+    // 0=关闭(上限仅作 enforce 路径 WARN 观测阈值); 1=high 档(旧值兼容, 行为同旧版);
+    // 2=default 档(推荐收紧值); >100=自定义总 op 数上限; 3~100=非法自定义值, 回退 default 档
+    static bool MapAutoMixPartitionToLimits(int autoMixPartition, int& maxSubgraphAICOpNum, int& maxSubgraphAIVOpNum,
+                                            int& maxSubgraphTotalOpNum);
 
 private:
-    int maxSubgraphAICOpNum{2000};
-    int maxSubgraphAIVOpNum{2240};
     Status BuildGraph(Function& function, MergeInput& mergeInput);
     Status BuildMergeGroup(Function& function, MergeInput& mergeInput);
     void CombineForkSubgraph(Function& function, MergeInput& mergeInput);

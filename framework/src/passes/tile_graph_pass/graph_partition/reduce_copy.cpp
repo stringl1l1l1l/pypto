@@ -23,6 +23,7 @@
 #include <numeric>
 #include <algorithm>
 #include <map>
+#include <string>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -40,9 +41,25 @@ namespace npu::tile_fwk {
 // mha_grad 101,220 cycles; 拒绝 mla 巨型组与 sparse 跨拷贝组(>250k)。
 constexpr int kAutoMixMaxMergeLatency = 250000;
 
+// auto_mix_partition 档位编码: 0=关闭自动 CV Mix 合图(上限仅作 enforce/CV scope 路径的 WARN 观测阈值);
+// 1=high 档(旧值兼容: 旧版本 =1 开启即此上限, 行为保持不变); 2=default 档(推荐收紧值);
+// >100=自定义档, 约束合并后子图总 op 数(AIC+AIV)不超过配置值, 不再分别限制 AIC/AIV;
+// 3~100 为非法自定义值, 回退 default 档并打 WARN(对外文档仅暴露 'off'/'default'/'high' 与 N>100)
+constexpr int kAutoMixPartitionDefaultLevel = 2;
+constexpr int kAutoMixCustomMinOpNum = 100;
+// default 档独立上限: 自历史默认 2000/2240 收紧, 控制合并后 kernel 规模与编译时间
+constexpr int kAutoMixDefaultMaxAICOpNum = 1700;
+constexpr int kAutoMixDefaultMaxAIVOpNum = 400;
+// high 档独立上限: 沿用历史默认值
+constexpr int kAutoMixHighMaxAICOpNum = 2000;
+constexpr int kAutoMixHighMaxAIVOpNum = 2240;
+
 // 串行损失阈值: 汇聚 sink 合并的串行化损失(Σbranch − max)超过合入 root 总 latency 的
 // 该倍数时, 为省边界通信付出的代价远超 root 可消化的规模, 拒绝合并(经验调优值)。
 constexpr int64_t kSerialLossRatio = 8;
+
+// 目的: 日志可读性——上限 0 表示不启用, 打印为 unlimited 而非裸 0, 避免与有效上限数值混淆造成误解
+static std::string LimitToStr(int limit) { return limit > 0 ? std::to_string(limit) : "unlimited"; }
 
 static bool IsValidMergeGroup(const std::vector<int>& mergeGroup, const std::unordered_set<int>& noMergeSubgraph)
 {
@@ -52,6 +69,35 @@ static bool IsValidMergeGroup(const std::vector<int>& mergeGroup, const std::uno
         }
     }
     return true;
+}
+
+bool ReduceCopyMerge::MapAutoMixPartitionToLimits(int autoMixPartition, int& maxSubgraphAICOpNum,
+                                                  int& maxSubgraphAIVOpNum, int& maxSubgraphTotalOpNum)
+{
+    maxSubgraphTotalOpNum = 0;
+    if (autoMixPartition > kAutoMixCustomMinOpNum) {
+        // 自定义档: 仅约束合并后子图总 op 数(AIC+AIV), AIC/AIV 上限置 0 表示不启用
+        maxSubgraphAICOpNum = 0;
+        maxSubgraphAIVOpNum = 0;
+        maxSubgraphTotalOpNum = autoMixPartition;
+    } else if (autoMixPartition > kAutoMixPartitionDefaultLevel) {
+        // 拦截 3~100 的非法自定义值: 回退 default 档, WARN 观测不阻断编译
+        APASS_LOG_WARN_F(Elements::Operation,
+                         "Invalid auto_mix_partition=%d: custom total op limit must be > %d, fallback to default "
+                         "level.",
+                         autoMixPartition, kAutoMixCustomMinOpNum);
+        maxSubgraphAICOpNum = kAutoMixDefaultMaxAICOpNum;
+        maxSubgraphAIVOpNum = kAutoMixDefaultMaxAIVOpNum;
+    } else if (autoMixPartition == kAutoMixPartitionDefaultLevel) {
+        maxSubgraphAICOpNum = kAutoMixDefaultMaxAICOpNum;
+        maxSubgraphAIVOpNum = kAutoMixDefaultMaxAIVOpNum;
+    } else {
+        // 0(关闭)与 1(旧值兼容的 high 档)共用 high 上限: 关闭时上限仅作 enforce 路径的 WARN 观测阈值,
+        // 1 保持旧版开启行为不变
+        maxSubgraphAICOpNum = kAutoMixHighMaxAICOpNum;
+        maxSubgraphAIVOpNum = kAutoMixHighMaxAIVOpNum;
+    }
+    return autoMixPartition != 0;
 }
 
 Status ReduceCopyMerge::RunOnFunction(Function& function)
@@ -66,18 +112,22 @@ Status ReduceCopyMerge::RunOnFunction(Function& function)
     size_t subgraphNumBefore = function.GetTotalSubGraphCount();
     MergeInput mergeInput;
     mergeInput.maxLatency = kAutoMixMaxMergeLatency;
-    mergeInput.maxSubgraphAICOpNum = maxSubgraphAICOpNum;
-    mergeInput.maxSubgraphAIVOpNum = maxSubgraphAIVOpNum;
+    int autoMixPartition = function.paramConfigs_.autoMixPartition;
+    bool enableAutoMix = MapAutoMixPartitionToLimits(autoMixPartition, mergeInput.maxSubgraphAICOpNum,
+                                                     mergeInput.maxSubgraphAIVOpNum, mergeInput.maxSubgraphTotalOpNum);
     mergeInput.aivRatio = {1e-6, 1e6};
-    APASS_LOG_DEBUG_F(Elements::Operation, "Merge limits: graph=%s maxSubgraphAICOpNum=%d maxSubgraphAIVOpNum=%d.",
-                      function.GetMagicName().c_str(), mergeInput.maxSubgraphAICOpNum, mergeInput.maxSubgraphAIVOpNum);
+    APASS_LOG_DEBUG_F(
+        Elements::Operation,
+        "Merge limits: graph=%s auto_mix_partition=%d, maxSubgraphAICOpNum=%s, maxSubgraphAIVOpNum=%s, "
+        "maxSubgraphTotalOpNum=%s.",
+        function.GetMagicName().c_str(), autoMixPartition, LimitToStr(mergeInput.maxSubgraphAICOpNum).c_str(),
+        LimitToStr(mergeInput.maxSubgraphAIVOpNum).c_str(), LimitToStr(mergeInput.maxSubgraphTotalOpNum).c_str());
     APASS_LOG_INFO_F(Elements::Operation, "Subgraph Info before ReduceCopy Pass:");
     BuildGraph(function, mergeInput);
     MarkNoMergeSubgraph(function, mergeInput);
     BuildMergeGroup(function, mergeInput);
     CombineForkSubgraph(function, mergeInput);
     MixGraphMerger merger;
-    bool enableAutoMix = (function.paramConfigs_.autoMixPartition != 0);
     APASS_LOG_INFO_F(Elements::Operation, "Enable auto CV mix partition: %s", enableAutoMix ? "True" : "False");
     merger.enableAutoMix = enableAutoMix;
     MergeOutput output = merger.Merge(mergeInput);
@@ -843,13 +893,18 @@ void MixGraphMerger::WarnIfEnforceOpNumExceeds(const std::vector<int>& actualGro
             }
         }
     }
-    if (totalAICOpNum > mInput.maxSubgraphAICOpNum) {
+    if (mInput.maxSubgraphAICOpNum > 0 && totalAICOpNum > mInput.maxSubgraphAICOpNum) {
         APASS_LOG_WARN_F(Elements::Operation, "Enforce merged group=%s aicOps=%d exceeds maxSubgraphAICOpNum=%d.",
                          IntVecToStr(actualGroup).c_str(), totalAICOpNum, mInput.maxSubgraphAICOpNum);
     }
-    if (totalAIVOpNum > mInput.maxSubgraphAIVOpNum) {
+    if (mInput.maxSubgraphAIVOpNum > 0 && totalAIVOpNum > mInput.maxSubgraphAIVOpNum) {
         APASS_LOG_WARN_F(Elements::Operation, "Enforce merged group=%s aivOps=%d exceeds maxSubgraphAIVOpNum=%d.",
                          IntVecToStr(actualGroup).c_str(), totalAIVOpNum, mInput.maxSubgraphAIVOpNum);
+    }
+    int totalOpNum = totalAICOpNum + totalAIVOpNum;
+    if (mInput.maxSubgraphTotalOpNum > 0 && totalOpNum > mInput.maxSubgraphTotalOpNum) {
+        APASS_LOG_WARN_F(Elements::Operation, "Enforce merged group=%s totalOps=%d exceeds maxSubgraphTotalOpNum=%d.",
+                         IntVecToStr(actualGroup).c_str(), totalOpNum, mInput.maxSubgraphTotalOpNum);
     }
 }
 
@@ -912,14 +967,20 @@ bool MixGraphMerger::CheckLatencyConstraint(const std::vector<int>& actualGroup)
                           "Merge skipped: merged subgraph must be mixed (both AIC and AIV non-zero).");
         return false;
     }
-    if (totalAICOpNum > mInput.maxSubgraphAICOpNum) {
+    if (mInput.maxSubgraphAICOpNum > 0 && totalAICOpNum > mInput.maxSubgraphAICOpNum) {
         APASS_LOG_DEBUG_F(Elements::Operation, "Merge skipped: group=%s aicOps=%d exceeds maxSubgraphAICOpNum=%d.",
                           IntVecToStr(actualGroup).c_str(), totalAICOpNum, mInput.maxSubgraphAICOpNum);
         return false;
     }
-    if (totalAIVOpNum > mInput.maxSubgraphAIVOpNum) {
+    if (mInput.maxSubgraphAIVOpNum > 0 && totalAIVOpNum > mInput.maxSubgraphAIVOpNum) {
         APASS_LOG_DEBUG_F(Elements::Operation, "Merge skipped: group=%s aivOps=%d exceeds maxSubgraphAIVOpNum=%d.",
                           IntVecToStr(actualGroup).c_str(), totalAIVOpNum, mInput.maxSubgraphAIVOpNum);
+        return false;
+    }
+    int totalOpNum = totalAICOpNum + totalAIVOpNum;
+    if (mInput.maxSubgraphTotalOpNum > 0 && totalOpNum > mInput.maxSubgraphTotalOpNum) {
+        APASS_LOG_DEBUG_F(Elements::Operation, "Merge skipped: group=%s totalOps=%d exceeds maxSubgraphTotalOpNum=%d.",
+                          IntVecToStr(actualGroup).c_str(), totalOpNum, mInput.maxSubgraphTotalOpNum);
         return false;
     }
     int totalLatency = totalAIC + totalAIV;

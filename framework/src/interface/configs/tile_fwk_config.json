@@ -6,7 +6,7 @@
         "mg_copyin_upper_bound": 104857600,
         "mg_vec_parallel_lb": 48,
         "copyout_resolve_coalescing": 0,
-        "auto_mix_partition": 0,
+        "auto_mix_partition": 2,
         "sg_set_tunevf_mode": 0,
         "enable_slice": false,
         "sg_set_scope": [-1, 0, 0],

@@ -530,18 +530,31 @@ TEST_F(ReduceCopyTest, MixGraphMerger_CacheRestoreAfterRejection)
     EXPECT_NE(output.subgraphIdUpdated[0], output.subgraphIdUpdated[3]);
 }
 
-// RunOnFunction 端到端注入收紧上限: BuildMatmulAddsGraph 每个合并组 {cube,vec,vec} 的 AIC op=6
-// AIC 上限收紧为 5 -> 走 automix valid 路径被拒, 子图数保持 6
-TEST_F(ReduceCopyTest, RunOnFunction_InjectedAICOpNumLimitBlocksMerge)
+// RunOnFunction 端到端: 非法自定义值(3~100)回退 default 档, 合图正常进行, 子图合并到 2
+TEST_F(ReduceCopyTest, RunOnFunction_InvalidCustomFallsBackToDefaultLevel)
 {
     ComputationalGraphBuilder G;
     BuildMatmulAddsGraph(G);
     Function* function = G.GetFunction();
-    function->paramConfigs_.autoMixPartition = 1;
+    function->paramConfigs_.autoMixPartition = 50;
     ReduceCopyMerge merger;
-    merger.maxSubgraphAICOpNum = 5;
     EXPECT_EQ(merger.RunOnFunction(*function), SUCCESS);
-    EXPECT_EQ(function->GetTotalSubGraphCount(), 6);
+    const int Num2 = 2;
+    EXPECT_EQ(function->GetTotalSubGraphCount(), Num2);
+}
+
+// RunOnFunction 端到端自定义档: N=101 时合并组 {cube,vec,vec} 共 12 op(AIC 6 + AIV 6) 远小于
+// 总 op 上限, 合图正常进行, 子图合并到 2
+TEST_F(ReduceCopyTest, RunOnFunction_CustomTotalOpNumMerges)
+{
+    ComputationalGraphBuilder G;
+    BuildMatmulAddsGraph(G);
+    Function* function = G.GetFunction();
+    function->paramConfigs_.autoMixPartition = 101;
+    ReduceCopyMerge merger;
+    EXPECT_EQ(merger.RunOnFunction(*function), SUCCESS);
+    const int Num2 = 2;
+    EXPECT_EQ(function->GetTotalSubGraphCount(), Num2);
 }
 
 // 经历多轮「合并-拒绝-合并」后, 直接对比缓存图与 BuildMergedGraph 全量重建结果
@@ -1560,7 +1573,113 @@ TEST_F(ReduceCopyTest, MixGraphMerger_HingeGuardExemptsPureVecLightFanin)
     EXPECT_EQ(output.numSubgraphUpdated, 1);
 }
 
-// 对照: 同图无 slotScope 时门控不启用, 全部合并到 1 子图 (mla / gqa-PATH0 场景)
+// 档位映射: 0=关闭(high 上限仅作 enforce WARN 观测), 1=high 档(旧值兼容, 行为同旧版),
+// 2=default 档, 3~100=非法自定义值回退 default 档, >100=自定义总 op 数上限(AIC/AIV 上限置 0 表示不启用)
+// 数值与 reduce_copy.cpp 的 kAutoMixHighMaxAICOpNum/kAutoMixHighMaxAIVOpNum/
+// kAutoMixDefaultMaxAICOpNum/kAutoMixDefaultMaxAIVOpNum 保持一致
+TEST_F(ReduceCopyTest, ReduceCopyMerge_MapAutoMixPartitionToLimits)
+{
+    int maxAIC = 0;
+    int maxAIV = 0;
+    int maxTotal = 0;
+    EXPECT_FALSE(ReduceCopyMerge::MapAutoMixPartitionToLimits(0, maxAIC, maxAIV, maxTotal));
+    EXPECT_EQ(maxAIC, 2000);
+    EXPECT_EQ(maxAIV, 2240);
+    EXPECT_EQ(maxTotal, 0);
+    EXPECT_TRUE(ReduceCopyMerge::MapAutoMixPartitionToLimits(1, maxAIC, maxAIV, maxTotal));
+    EXPECT_EQ(maxAIC, 2000);
+    EXPECT_EQ(maxAIV, 2240);
+    EXPECT_EQ(maxTotal, 0);
+    EXPECT_TRUE(ReduceCopyMerge::MapAutoMixPartitionToLimits(2, maxAIC, maxAIV, maxTotal));
+    EXPECT_EQ(maxAIC, 1700);
+    EXPECT_EQ(maxAIV, 400);
+    EXPECT_EQ(maxTotal, 0);
+    // 3~100 非法自定义值: 回退 default 档上限
+    EXPECT_TRUE(ReduceCopyMerge::MapAutoMixPartitionToLimits(3, maxAIC, maxAIV, maxTotal));
+    EXPECT_EQ(maxAIC, 1700);
+    EXPECT_EQ(maxAIV, 400);
+    EXPECT_EQ(maxTotal, 0);
+    EXPECT_TRUE(ReduceCopyMerge::MapAutoMixPartitionToLimits(100, maxAIC, maxAIV, maxTotal));
+    EXPECT_EQ(maxAIC, 1700);
+    EXPECT_EQ(maxAIV, 400);
+    EXPECT_EQ(maxTotal, 0);
+    // >100 自定义档: 仅约束总 op 数
+    EXPECT_TRUE(ReduceCopyMerge::MapAutoMixPartitionToLimits(101, maxAIC, maxAIV, maxTotal));
+    EXPECT_EQ(maxAIC, 0);
+    EXPECT_EQ(maxAIV, 0);
+    EXPECT_EQ(maxTotal, 101);
+}
+
+// 总 op 数上限独立检查: {0,1} 总 op 120 超限拒绝, {2,3} 总 op 20 限内通过(自定义档不分别限制 AIC/AIV)
+TEST_F(ReduceCopyTest, MixGraphMerger_TotalOpNumLimitRejectsMerge)
+{
+    MergeInput input = BuildSimpleMergeInput(4, {{1}, {}, {3}, {}}, {{0, 1}, {2, 3}});
+    input.subgraphAICOpNum = {30, 30, 5, 5};
+    input.subgraphAIVOpNum = {30, 30, 5, 5};
+    input.maxSubgraphTotalOpNum = 50;
+    MixGraphMerger merger;
+    merger.mInput = input;
+    merger.mParent = {0, 1, 2, 3};
+    EXPECT_FALSE(merger.CheckLatencyConstraint({0, 1}));
+    EXPECT_TRUE(merger.CheckLatencyConstraint({2, 3}));
+}
+
+// 对照: 同图走 default 档(独立上限 1700/400)不受影响, 子图合并到 2
+TEST_F(ReduceCopyTest, RunOnFunction_DefaultLevelMerges)
+{
+    ComputationalGraphBuilder G;
+    BuildMatmulAddsGraph(G);
+    Function* function = G.GetFunction();
+    function->paramConfigs_.autoMixPartition = 2;
+    ReduceCopyMerge merger;
+    EXPECT_EQ(merger.RunOnFunction(*function), SUCCESS);
+    const int Num2 = 2;
+    EXPECT_EQ(function->GetTotalSubGraphCount(), Num2);
+}
+
+// 对照: 同图走 high 档(独立上限 2000/2240, 旧值 1 兼容)不受影响, 子图合并到 2
+TEST_F(ReduceCopyTest, RunOnFunction_HighLevelMerges)
+{
+    ComputationalGraphBuilder G;
+    BuildMatmulAddsGraph(G);
+    Function* function = G.GetFunction();
+    function->paramConfigs_.autoMixPartition = 1;
+    ReduceCopyMerge merger;
+    EXPECT_EQ(merger.RunOnFunction(*function), SUCCESS);
+    const int Num2 = 2;
+    EXPECT_EQ(function->GetTotalSubGraphCount(), Num2);
+}
+
+// 自定义档单侧上限置 0 不启用: 单侧检查跳过(不因 0 上限误拒), 总 op 数上限仍生效:
+// {0,1} 总 op 120 超总限 50 拒绝, {2,3} 总 op 20 限内通过
+TEST_F(ReduceCopyTest, MixGraphMerger_ZeroSideLimitSkipsSideCheck)
+{
+    MergeInput input = BuildSimpleMergeInput(4, {{1}, {}, {3}, {}}, {{0, 1}, {2, 3}});
+    input.subgraphAICOpNum = {30, 30, 5, 5};
+    input.subgraphAIVOpNum = {30, 30, 5, 5};
+    input.maxSubgraphAICOpNum = 0;
+    input.maxSubgraphAIVOpNum = 0;
+    input.maxSubgraphTotalOpNum = 50;
+    MixGraphMerger merger;
+    merger.mInput = input;
+    merger.mParent = {0, 1, 2, 3};
+    EXPECT_FALSE(merger.CheckLatencyConstraint({0, 1}));
+    EXPECT_TRUE(merger.CheckLatencyConstraint({2, 3}));
+}
+
+// 对照: 同图关闭 auto-mix(0), 子图数保持 6
+TEST_F(ReduceCopyTest, RunOnFunction_DisabledKeepsSubgraphs)
+{
+    ComputationalGraphBuilder G;
+    BuildMatmulAddsGraph(G);
+    Function* function = G.GetFunction();
+    function->paramConfigs_.autoMixPartition = 0;
+    ReduceCopyMerge merger;
+    EXPECT_EQ(merger.RunOnFunction(*function), SUCCESS);
+    EXPECT_EQ(function->GetTotalSubGraphCount(), 6);
+}
+
+// 对照: 同上拓扑无 slotScope 时门控不启用, 全部合并到 1 子图 (mla / gqa-PATH0 场景)
 TEST_F(ReduceCopyTest, RunOnFunction_NoSlotScopeMergesAll)
 {
     ComputationalGraphBuilder G;

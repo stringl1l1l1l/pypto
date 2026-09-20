@@ -173,13 +173,13 @@
                 },
                 "auto_mix_partition": {
                     "type": "integer",
-                    "default": 0,
+                    "default": 2,
                     "label": {
-                        "zh": "控制ReduceCopyMerge Pass中的自动混合子图切分行为。",
-                        "en": "Controls the automatic mixed subgraph partitioning behavior in the ReduceCopyMerge Pass."
+                        "zh": "控制ReduceCopyMerge Pass中的自动混合子图切分行为。0：不进行自动CV Mix合图；1：high档，合并后子图Cube op数不超过2000且Vector op数不超过2240（旧版本取值，行为兼容）；2：default档，合并后子图Cube op数不超过1700且Vector op数不超过400；N（N>100）：自定义档，合并后子图总op数（Cube+Vector）不超过N，不再分别限制Cube/Vector op数；3~100：非法自定义值，回退default档并打WARN日志。",
+                        "en": "Controls the automatic mixed subgraph partitioning behavior in the ReduceCopyMerge Pass. 0: disable auto CV Mix merging; 1: high level, Cube ops <= 2000 and Vector ops <= 2240 per merged subgraph (legacy value, backward compatible); 2: default level, Cube ops <= 1700 and Vector ops <= 400; N (>100): custom level, total op count (Cube + Vector) per merged subgraph must not exceed N; 3~100: invalid custom value, falls back to default level with a WARN log."
                     },
                     "minimum": 0,
-                    "maximum": 1
+                    "maximum": 100000
                 },
                 "sg_set_tunevf_mode": {
                     "type": "integer",
