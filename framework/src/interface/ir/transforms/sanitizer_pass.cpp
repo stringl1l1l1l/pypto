@@ -516,7 +516,8 @@ StmtPtr SanitizerInstrumenter::CollectMakeTensor(const CallPtr& call)
     // tensor's shape scaled by its element width. A raw pointer has no
     // known bound (-1); the record skips the check then.
     ExprPtr src_bytes = Int64Const(-1);
-    if (auto src_tensor = As<TensorType>(call->args_[0]->GetType())) {
+    auto src_tensor = As<TensorType>(call->args_[0]->GetType());
+    if (src_tensor != nullptr) {
         int64_t src_elem = std::max<int64_t>(1, static_cast<int64_t>(src_tensor->dtype_.GetBit()) / 8);
         src_bytes = MakeMul(ShapeProduct(src_tensor, call->span_), Int64Const(src_elem), call->span_);
     }
@@ -524,6 +525,12 @@ StmtPtr SanitizerInstrumenter::CollectMakeTensor(const CallPtr& call)
     std::vector<ExprPtr> fields;
     for (uint32_t i = 0; i < kSanitizerMaxTensorDims; ++i) {
         fields.push_back(i < shape_tuple->elements_.size() ? shape_tuple->elements_[i] : Int64Const(0));
+    }
+    // Source dims for the report display; a raw-pointer source pads zeros
+    // (its records skip the check via src_bytes = -1 anyway).
+    for (uint32_t i = 0; i < kSanitizerMaxTensorDims; ++i) {
+        fields.push_back((src_tensor != nullptr && i < src_tensor->shape_.size()) ? src_tensor->shape_[i] :
+                                                                                    Int64Const(0));
     }
     fields.push_back(std::move(fp_bytes));
     fields.push_back(std::move(src_bytes));

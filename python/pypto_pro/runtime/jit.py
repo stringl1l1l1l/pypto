@@ -36,7 +36,6 @@ from pypto.pypto_impl.codegen import CCECodegen
 from pypto.pypto_impl.ir import ConstInt, PtrType, ScalarType, TensorType, TupleType, Var
 from pypto_pro import DataType
 from pypto_pro.runtime.compile_config import KernelTarget, get_jit_compile_config
-from pypto_pro.runtime.sanitizer_replay import MAX_RECORD_U32
 
 from .._errors import (
     CommonInner,
@@ -67,6 +66,19 @@ using namespace pto;
 # pl DataType -> the torch.dtype a tensor argument for that parameter must have (used to
 # validate tensor args against the kernel signature).
 _PL_DTYPE_TO_TORCH: dict[str, "torch.dtype"] = {}
+
+# Sanitizer GM log budget for one launch (~1GB, split across all regions).
+# Each executing core owns one region laid out as [ctr u32, records...] and is
+# the region's single writer, so no atomics are needed. The per-region record
+# capacity is derived from the budget at launch time; with hundreds of
+# thousands of record slots per core the capacity is effectively unlimited
+# for debugging use. Allocation stays lazy-cost: only the per-region ctr word
+# is zeroed and only the written part of each region is copied back to the
+# host. KSANITIZER_SUB_BLOCKS mirrors the device-side region layout (an A5
+# vector section addresses each AIV sub-block by its own get_block_idx, so
+# each gets an independent region).
+KSANITIZER_LOG_BUDGET_BYTES = 1 * 1024**3
+KSANITIZER_SUB_BLOCKS = 4
 
 
 def _register_pl_dtype(pl_dtype: DataType, torch_name: str) -> None:
@@ -1665,22 +1677,33 @@ def _launch(compiled: "CompiledKernel", args: tuple, block_dim: int, stream):
     entry(args, block_dim, stream)
 
 
-# Per-block record capacity of the sanitizer GM log buffer, and the max
-# sub-block count per launched block (A5 vector section addresses each AIV
-# sub-block by its own get_block_idx, so each gets an independent region —
-# safe without atomics). Capacity is expressed in u32 words per region; the
-# granularity is the largest fixed record (MAX_RECORD_U32 from the replay
-# tool's record formats, currently the 11-u32 GM record).
-ksanitizer_log_slots = 8192              # max records per region (GM record = 16 u32)
-ksanitizer_log_capacity_u32 = ksanitizer_log_slots * MAX_RECORD_U32
-ksanitizer_sub_blocks = 4
+def _format_findings(findings) -> str:
+    """One block of human-readable findings (or the clean-run marker).
+
+    Multi-line findings (message + Hint) are indented to the kind column so
+    the Hint lines up with the leading G of GM_OUT_OF_BOUNDS et al.
+    """
+    if not findings:
+        return "PyPTO Sanitizer: no issues detected\n"
+    lines = [f"PyPTO Sanitizer: {len(findings)} issue(s) detected\n"]
+    for i, finding in enumerate(findings, 1):
+        prefix = f"[{i}/{len(findings)}] "
+        pad = " " * len(prefix)
+        for j, line in enumerate(str(finding).split("\n")):
+            lines.append(f"{prefix}{line}\n" if j == 0 else f"{pad}{line}\n")
+    return "".join(lines)
 
 
-def _replay_sanitizer(log_buffer, block_dim, args, tensor_names, build_dir, source_file):
-    """Wait for the launch, read the device log buffer back, merge it with the
-    compile-time metadata into one ``sanitizer_report.bin``, scan that file
-    with the registered detections and raise an aggregated report when
-    findings exist.
+def _replay_sanitizer(log_buffer, capacity_u32, block_dim, build_dir, kernel_name, source_file):
+    """Wait for the launch, read the written part of the device log buffer
+    back, merge it with the compile-time metadata into one
+    ``sanitizer_report.bin``, scan that file with the registered detections
+    and raise an aggregated report when findings exist.
+
+    Results go to pypto_sanitizer_report.txt next to sanitizer_report.bin in
+    the kernel's build dir (one file per compile instance), appended per
+    launch (kernel-tagged). No terminal output; an uncaught
+    SanitizerReplayError is the only on-screen signal.
 
     Replay failures are never swallowed: when the sanitizer is enabled the
     developer expects the detection result to be trustworthy, so a broken
@@ -1690,30 +1713,28 @@ def _replay_sanitizer(log_buffer, block_dim, args, tensor_names, build_dir, sour
     from pypto_pro.runtime.sanitizer_replay import SanitizerReplayError, build_report_file, scan_report_file
 
     torch.npu.synchronize()
-    raw = log_buffer.cpu().numpy().tobytes()
-    tensor_args = [a for a in args if isinstance(a, torch.Tensor) and a is not log_buffer]
-    regions = ksanitizer_sub_blocks * block_dim
+    words_per_region = capacity_u32 + 1
+    flat = log_buffer.view(torch.int32)
+    # Lazy copy-back stage 1: the per-region write counters only.
+    ctrs = flat[::words_per_region].cpu().tolist()
+    # Stage 2: for each region copy back just the ctr word and the records
+    # actually written (a region that never executed copies one word).
+    region_chunks = []
+    for region_idx, ctr in enumerate(ctrs):
+        written = min(int(ctr), capacity_u32)
+        start = region_idx * words_per_region
+        region_chunks.append(flat[start:start + 1 + written].cpu().numpy().tobytes())
     report_path = os.path.join(build_dir, "sanitizer_report.bin")
-    build_report_file(
-        raw, regions, ksanitizer_log_capacity_u32,
-        tensor_names, [tuple(int(d) for d in a.shape) for a in tensor_args],
-        report_path,
-    )
+    build_report_file(region_chunks, report_path)
     findings = scan_report_file(report_path, source_file)
+    # Detection result file, appended per launch (kernel-tagged), next to
+    # sanitizer_report.bin in the build dir.
+    report_file = os.path.join(build_dir, "pypto_sanitizer_report.txt")
+    with open(report_file, "a", encoding="utf-8") as f:
+        f.write(f"===== kernel '{kernel_name}' ({build_dir}) =====\n")
+        f.write(_format_findings(findings))
+        f.write("\n")
     if findings:
-        # Log each finding at a level matching its severity so the report
-        # survives the default WARNING threshold even when the caller swallows
-        # the exception (e.g. pytest.raises or a try/except around the launch).
-        # Levels come from the detection registry (ERROR: definite bounds
-        # breaches; WARNING: suspicious but possibly deliberate overlap).
-        for f in findings:
-            # str(f) already embeds kind + message + location + hint on one
-            # formatted line, so log it verbatim (single line for greppability).
-            msg = f"PyPTO Sanitizer: {str(f).replace(chr(10), ' | ')}"
-            if f.level == "WARNING":
-                logging.warning(msg)
-            else:
-                logging.error(msg)
         raise SanitizerReplayError(findings)
 
 
@@ -1746,21 +1767,21 @@ def _build_sanitizer_entry(compiled: "CompiledKernel", build_dir: str):
     Loaded lazily on the first launch via ``compiled.entry``, exactly like the
     non-sanitizer path.
     """
-    tensor_names = [
-        s.name for s in compiled.param_specs
-        if s.kind in (ParamKind.TENSOR, ParamKind.PTR)
-        and s.name not in ("sanitizer_log", "sanitizer_log_capacity")
-    ]
     base_entry = _build_launch_entry(compiled)
 
     def entry(args: tuple, block_dim: int, stream):
         # One region per AIV sub-block, mirroring the device-side buffer layout.
-        regions = ksanitizer_sub_blocks * block_dim
-        nbytes = (ksanitizer_log_capacity_u32 + 1) * 4 * regions
-        log_buffer = torch.zeros(nbytes, dtype=torch.uint8, device="npu")
-        full_args = (*args, log_buffer, ksanitizer_log_capacity_u32)
+        regions = KSANITIZER_SUB_BLOCKS * block_dim
+        words_per_region = KSANITIZER_LOG_BUDGET_BYTES // (4 * regions)
+        capacity_u32 = words_per_region - 1  # one u32 per region is the write counter
+        nbytes = words_per_region * 4 * regions
+        log_buffer = torch.empty(nbytes, dtype=torch.uint8, device="npu")
+        # Only the per-region ctr word must start at zero; the record area is
+        # write-before-read on the device, so zeroing it would be wasted cost.
+        log_buffer.view(torch.int32)[::words_per_region] = 0
+        full_args = (*args, log_buffer, capacity_u32)
         base_entry(full_args, block_dim, stream)
-        _replay_sanitizer(log_buffer, block_dim, full_args, tensor_names, build_dir, compiled.source_file)
+        _replay_sanitizer(log_buffer, capacity_u32, block_dim, build_dir, compiled.kernel_name, compiled.source_file)
 
     return entry
 

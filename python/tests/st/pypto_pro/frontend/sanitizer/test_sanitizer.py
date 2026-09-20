@@ -263,16 +263,16 @@ def test_tile_bounds_combined_check():
     # 无 offset：窗口超出声明维度
     hits = _check_tile_bounds([rec(0, 0, 80, 32)], ctx)
     assert len(hits) == 1, f"expected 1 finding, got {len(hits)}"
-    assert "dim0: offset 0+window 80=80 > declared 64" in hits[0].message
+    assert "dim0: offset 0 + valid_shape 80 = 80 > 64 (over by 16)" in hits[0].message
     # 有 offset：offset+window 超出声明维度（核心回归场景）
     hits = _check_tile_bounds([rec(32, 0, 64, 32)], ctx)
     assert len(hits) == 1, f"expected 1 finding, got {len(hits)}"
-    assert "dim0: offset 32+window 64=96 > declared 64" in hits[0].message
+    assert "dim0: offset 32 + valid_shape 64 = 96 > 64 (over by 32)" in hits[0].message
     # 两维都越界
     hits2 = _check_tile_bounds([rec(32, 16, 64, 64)], ctx)
     assert len(hits2) == 1, f"expected 1 finding, got {len(hits2)}"
-    assert "dim0: offset 32+window 64=96 > declared 64" in hits2[0].message
-    assert "dim1: offset 16+window 64=80 > declared 64" in hits2[0].message
+    assert "dim0: offset 32 + valid_shape 64 = 96 > 64 (over by 32)" in hits2[0].message
+    assert "dim1: offset 16 + valid_shape 64 = 80 > 64 (over by 16)" in hits2[0].message
     # 正样本：offset+window 在声明维度内
     hits3 = _check_tile_bounds([rec(16, 0, 32, 32)], ctx)
     assert len(hits3) == 0, f"expected 0, got {len(hits3)}"
@@ -1266,7 +1266,7 @@ def test_view_over_source_detected():
     with pytest.raises(SanitizerReplayError) as exc_info:
         view_over_source_kernel(x, z)
         torch.npu.synchronize()
-    assert any("exceeds its source" in str(f) for f in exc_info.value.findings)
+    assert any("source tensor" in str(f) for f in exc_info.value.findings)
     logging.info("test_view_over_source_detected OK")
 
 
@@ -1341,7 +1341,7 @@ def test_wide_stride_view_detected():
     with pytest.raises(SanitizerReplayError) as exc_info:
         wide_stride_view_kernel(x, z)
         torch.npu.synchronize()
-    assert any("footprint" in str(f) for f in exc_info.value.findings)
+    assert any("make_tensor view" in str(f) for f in exc_info.value.findings)
     logging.info("test_wide_stride_view_detected OK")
 
 
@@ -1444,7 +1444,7 @@ def test_dynamic_view_over_source_detected():
     with pytest.raises(SanitizerReplayError) as exc_info:
         dynamic_view_over_source_kernel(x, z)
         torch.npu.synchronize()
-    assert any("exceeds its source" in str(f) for f in exc_info.value.findings)
+    assert any("source tensor" in str(f) for f in exc_info.value.findings)
     logging.info("test_dynamic_view_over_source_detected OK")
 
 
@@ -1601,11 +1601,23 @@ if __name__ == "__main__":
     """python3 直接执行入口：跑本文件全部 sanitizer 自研日志回放用例。
 
     Usage:
-        python3 test_sanitizer_selflog.py              # 跑全部用例
-        python3 test_sanitizer_selflog.py -k oob       # 只跑名字含 oob 的用例
+        python3 test_sanitizer.py                              # 跑全部用例
+        python3 test_sanitizer.py test_gm_out_of_bounds_detected   # 跑指定用例（可多个）
+        python3 test_sanitizer.py -k oob                       # pytest 选项原样透传
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     import sys
 
-    args = [__file__, "-v", "-s", "--tb=short", "--no-header"] + sys.argv[1:]
+    raw = sys.argv[1:]
+    base = ["-v", "-s", "--tb=short", "--no-header"]
+    if any(a.startswith("-") for a in raw):
+        # Any pytest option (e.g. -k oob / -m mark): pass everything
+        # through verbatim -- splitting raw ourselves would break options
+        # whose value is a separate argument.
+        args = [__file__, *base, *raw]
+    elif raw:
+        # Bare test names only: address them as this file's nodes.
+        args = [*(f"{__file__}::{n}" for n in raw), *base]
+    else:
+        args = [__file__, *base]
     sys.exit(pytest.main(args))
