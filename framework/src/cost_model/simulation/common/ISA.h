@@ -97,6 +97,7 @@ const std::map<std::string, CorePipeType> SCHED_CORE_PIPE_TYPE{// Unary Vector
                                                                {"ATAN", CorePipeType::PIPE_VECTOR_ALU},
                                                                {"ASIN", CorePipeType::PIPE_VECTOR_ALU},
                                                                {"ACOS", CorePipeType::PIPE_VECTOR_ALU},
+                                                               {"ERF", CorePipeType::PIPE_VECTOR_ALU},
                                                                {"ERFC", CorePipeType::PIPE_VECTOR_ALU},
                                                                {"Log1p", CorePipeType::PIPE_VECTOR_ALU},
                                                                // Binary Vector

@@ -115,15 +115,15 @@ int Tile::SizeinBytes()
 void TileOp::GetPipeType()
 {
     auto coreTypeQuery = SCHED_CORE_PIPE_TYPE.find(opcode);
-    if (coreTypeQuery == SCHED_CORE_PIPE_TYPE.end() && !IsCall() && opcode != "LOOP") {
-        ASSERT(static_cast<unsigned>(CostModel::ForwardSimErrorScene::INVALID_PIPE_TYPE), false)
-            << ",[SIMULATION]: "
-            << "No pipe type corresponding to opcode is found. opcode=" << opcode;
-    }
     if (IsCall()) {
         pipeType = CorePipeType::PIPE_CALL;
-    } else {
+    } else if (coreTypeQuery != SCHED_CORE_PIPE_TYPE.end()) {
         pipeType = coreTypeQuery->second;
+    } else {
+        SIMULATION_LOGW("[SIMULATION]: No pipe type corresponding to opcode is found, "
+                        "fallback to PIPE_VECTOR_ALU. opcode=%s",
+                        opcode.c_str());
+        pipeType = CorePipeType::PIPE_VECTOR_ALU;
     }
 }
 
