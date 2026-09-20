@@ -456,9 +456,9 @@ private:
         }
 
         // RUNTIME_TernaryOP(c, lhs, rhs) with a decided condition folds to the selected operand
-        if (newOps.size() == 4 && e->IsExpressionCall(TernaryOpCallName())) {
-            if (auto condVal = GetConstVal(newOps[1])) {
-                return condVal.value() != 0 ? newOps[2] : newOps[3];
+        if (newOps.size() == 0x4 && e->IsExpressionCall(TernaryOpCallName())) {
+            if (auto condVal = GetConstVal(newOps[0x1])) {
+                return condVal.value() != 0 ? newOps[0x2] : newOps[0x3];
             }
         }
 

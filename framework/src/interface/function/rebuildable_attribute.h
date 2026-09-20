@@ -118,7 +118,7 @@ struct RebuildableAttrInitContext {
         const std::string name = typeid(TyAttr).name();                      \
         ctx->manager->InitAttr(ctx->func, name, base);                       \
     }                                                                        \
-    static EntryRegistrarNode node##TyAttr(RebuildableAttributeManager::GetRegistrarGroup(), Entry##TyAttr, #TyAttr);
+    static EntryRegistrarNode node##TyAttr(RebuildableAttributeManager::GetRegistrarGroup(), Entry##TyAttr, #TyAttr)
 
 struct RebuildableRequiresSimt : RebuildableAttribute<bool> {
     RebuildableRequiresSimt() { data = false; }

@@ -202,7 +202,6 @@ int TorchTensorConverter::Convert(py::sequence& tensors, py::sequence& tensor_de
         tensors_data.emplace_back();
 
         TensorDeviceInfo tensorDeviceInfo = ConvertSingleTensor(torchTensor, tensorDef, torch_npu, tensors_data.back());
-
         // Skip device consistency check for cpu tensors (used as host-side data for value-depend).
         if (tensorDeviceInfo.type == "cpu") {
             continue;

@@ -239,7 +239,7 @@ static std::any ConvertListList(const std::string& key, const py::list& lst)
                                  ". Expected list, but got " + GetElemTypeName(lst[i]));
         }
         py::list innerList = py::cast<py::list>(lst[i]);
-        if (innerList.size() != 2) {
+        if (innerList.size() != 0x2) {
             throw py::type_error("Option '" + key + "' has invalid inner list length at index " + std::to_string(i) +
                                  ". Expected 2 elements [device_name, cpu_name], but got " +
                                  std::to_string(innerList.size()));

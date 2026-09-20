@@ -694,13 +694,12 @@ void DevAscendFunction::PopulateOperationEncodedContent(
 
 static int64_t MaybeRawTensorIndex(int64_t val, const OrderedSet<std::shared_ptr<RawTensor>>& rawList)
 {
-    const int64_t kRawTensorIndexBit = 1L << 62;
-    if ((val == -1) || !(val & kRawTensorIndexBit)) {
+    if ((val == -1) || !(val & RAW_TENSOR_INDEX_BIT_MASK)) {
         // concrete may -1, ignore this bad case
         return val;
     }
 
-    auto magic = val & (~kRawTensorIndexBit);
+    auto magic = val & (~RAW_TENSOR_INDEX_BIT_MASK);
     for (auto rawTensor : rawList) {
         if (rawTensor->GetRawMagic() == magic) {
             return rawList.GetIndex(rawTensor);

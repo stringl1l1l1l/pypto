@@ -3154,7 +3154,7 @@ static const SymbolicScalar RUNTIME_COA_GetParam = AddRuntimeCoaPrefix("GET_PARA
 
 static int64_t MakeTensorIndex(int64_t magic)
 {
-    return magic | (1UL << 62);
+    return magic | RAW_TENSOR_INDEX_BIT_MASK;
 } // Create tensor index by setting bit 62 of magic number
 
 static void MaybeNormalizeValue(const SymbolicScalar& coaFunc, std::vector<SymbolicScalar>& operandCoaList,

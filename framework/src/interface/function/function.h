@@ -42,6 +42,7 @@ using namespace pypto;
 namespace npu::tile_fwk {
 constexpr int FUNCTION_MAX_INCASTS = 10000;
 constexpr int FUNCTION_MAX_CV_CORES = 10000;
+constexpr int64_t RAW_TENSOR_INDEX_BIT_MASK = 1L << 62;
 
 inline const BiMap<FunctionType>& GetFunctionTypeNameDict()
 {

@@ -976,8 +976,8 @@ SymbolicScalar SymbolicScalar::SubstituteVars(const std::unordered_map<ir::VarPt
 SymbolicScalar SymbolicScalar::Substitute(
     const std::vector<std::pair<RawSymbolicScalarPtr, RawSymbolicScalarPtr>>& vals)
 {
-    std::function<RawSymbolicScalarPtr(const RawSymbolicScalarPtr&)> substitute;
-    substitute = [&](const RawSymbolicScalarPtr& raw) -> RawSymbolicScalarPtr {
+    std::function<RawSymbolicScalarPtr(const RawSymbolicScalarPtr&)> substitute =
+        [&](const RawSymbolicScalarPtr& raw) -> RawSymbolicScalarPtr {
         if (!raw) {
             return raw;
         }
