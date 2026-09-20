@@ -17,6 +17,21 @@ mkdir -p $PYPTO_GOLDEN_PATH
 PYPTO_3RD_LIB_PATH="/home/opensource"
 CHANGED_FILES_PARAM="$BASE_DIR/pr_filelist.txt"
 
+# ===== slog 日志打包：注册为 EXIT trap，无论脚本从哪里退出（成功/失败）都会执行 =====
+pack_slog() {
+    local slog_name="slog.tar.gz"
+    if [ -n "${soc_version:-}" ]; then
+        slog_name="slog_${soc_version}.tar.gz"
+    fi
+    mkdir -p /root/ascend
+    if tar -zcf "${BASE_DIR}/${slog_name}" -C /root/ascend log 2>/dev/null; then
+        echo "[INFO] slog packaged: ${BASE_DIR}/${slog_name}"
+    else
+        echo "[WARN] no slog log dir to package, skip"
+    fi
+}
+trap pack_slog EXIT
+
 echo "run branch \${GIT_TARGET_BRANCH} smoke test"
 
 SHM_SIZE_GB=$(df -BG /dev/shm 2>/dev/null | awk 'NR==2 {print $2}' | sed 's/G//')
@@ -96,7 +111,6 @@ if [ $ret -ne 0 ]; then
     exit $ret
 fi
 echo "[INFO] Python Examples succeeded"
-
 # ===== gym 测试阶段 =====
 # PYTEST_AVAILABLE_DEVICES 用于 conftest 按 worker 分卡
 GYM_DEVICES=(0 1 2 3)
