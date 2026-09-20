@@ -288,36 +288,38 @@ def index_select(input: Tensor, dim: int, index: Tensor) -> Tensor:
 
 @op_wrapper
 def scatter_update(input: Tensor, dim: int, index: Tensor, src: Tensor) -> Tensor:
-    """Write all values from the tensor 'src' into 'input' at the indices specified in the 'index' tensor.
+    """Update 'input' in place with values from 'src' at the positions specified by 'index'.
 
     This function calculates the formula:
-    For dim2,
-    input[index[i][j]][:] = src[i][:]
-    For dim4,
-    input[index[i][j]][index[i][j]][0][:] = src[i][j][0][:]
+    For dim2, with s = index.shape[1],
+    input[index[i][j]][:] = src[i * s + j][:]
+    For dim4, with block_size = input.shape[1],
+    input[index[i][j] // block_size][index[i][j] % block_size][0][:] = src[i][j][0][:]
 
     Parameters
     ----------
     input : Tensor
-        The input tensor to be chenged.
+        The initialized destination tensor to update in place.
     dim : int
-        The axis along which to index.
+        Must be -2 for this specialized scatter operation.
     index : Tensor
-        The indices of elements to scatter.
+        Global token indices. For 4-D input, each index addresses the flattened
+        first two dimensions; indices are not broadcast across blocks.
     src : Tensor
         The source elements to scatter.
 
     Returns
     -------
     Tensor
-        A new tensor containing the elements of input after scatter.
+        The updated input tensor. Non-index positions retain their existing values.
+        Use move to write the result back to the same destination. To preserve
+        the original input, clone it before calling the kernel and update the clone.
 
     Raises
     ------
     RuntimeError
         If the dimension of 'index' is not equal 2.
         If the dimension of 'input' and 'src' is not equal 2 or 4.
-        If the value of 'index' is not less than the blockSize of 'input'.
 
     See Also
     --------
@@ -325,56 +327,59 @@ def scatter_update(input: Tensor, dim: int, index: Tensor, src: Tensor) -> Tenso
 
     Examples
     --------
+    # Input values below are supplied by the caller; pypto.tensor does not initialize them.
     # dim2
     x = pypto.tensor([8, 3], pypto.DT_INT32)
     y = pypto.tensor([2, 2], pypto.DT_INT64)
     z = pypto.tensor([4, 3], pypto.DT_INT32)
-    o = pypto.scatter_update(x, -2, y, z)
+    pypto.set_vec_tile_shapes(4, 3)
+    x.move(pypto.scatter_update(x, -2, y, z))
 
-    Input x:[[0 0 0],
-             [0 0 0],
-             [0 0 0],
-             [0 0 0],
-             [0 0 0],
-             [0 0 0],
-             [0 0 0],
-             [0 0 0]]
+    Input x:[[1 2 3],
+             [4 5 6],
+             [7 8 9],
+             [10 11 12],
+             [13 14 15],
+             [16 17 18],
+             [19 20 21],
+             [22 23 24]]
     Input y:[[1 2],
              [4 5]]
     Input z:[[1 2 3],
              [4 5 6],
              [7 8 9],
              [10 11 12]]
-    Output o:[[0 0 0],
+    Output x:[[1 2 3],
               [1 2 3],
               [4 5 6],
-              [0 0 0],
+              [10 11 12],
               [7 8 9],
               [10 11 12],
-              [0 0 0],
-              [0 0 0]])
+              [19 20 21],
+              [22 23 24]]
 
     #dim4
     x = pypto.tensor([2, 6, 1, 3], pypto.DT_INT32)
     y = pypto.tensor([2, 2], pypto.DT_INT64)
     z = pypto.tensor([2, 2, 1, 3], pypto.DT_INT32)
-    o = pypto.scatter_update(x, -2, y, z)
+    pypto.set_vec_tile_shapes(1, 2, 1, 3)
+    x.move(pypto.scatter_update(x, -2, y, z))
 
     Input x:[[
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
+                [[1 2 3]],
+                [[4 5 6]],
+                [[7 8 9]],
+                [[10 11 12]],
+                [[13 14 15]],
+                [[16 17 18]],
              ],
              [
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
-                [[0 0 0]],
+                [[19 20 21]],
+                [[22 23 24]],
+                [[25 26 27]],
+                [[28 29 30]],
+                [[31 32 33]],
+                [[34 35 36]],
              ]]
     Input y:[[1 8],
              [4 10]]
@@ -386,21 +391,21 @@ def scatter_update(input: Tensor, dim: int, index: Tensor, src: Tensor) -> Tenso
                 [[7 8 9]],
                 [[10 11 12]],
              ]]
-    Output o:[[
-                [[0 0 0]],
+    Output x:[[
                 [[1 2 3]],
-                [[0 0 0]],
-                [[0 0 0]],
+                [[1 2 3]],
                 [[7 8 9]],
-                [[0 0 0]],
+                [[10 11 12]],
+                [[7 8 9]],
+                [[16 17 18]],
              ],
              [
-                [[0 0 0]],
-                [[0 0 0]],
+                [[19 20 21]],
+                [[22 23 24]],
                 [[4 5 6]],
-                [[0 0 0]],
+                [[28 29 30]],
                 [[10 11 12]],
-                [[0 0 0]],
+                [[34 35 36]],
              ]]
     """
     if dim != -2:

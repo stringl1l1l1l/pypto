@@ -2016,6 +2016,14 @@ void TiledGatherInUB(Function& function, const TileShape& tileShape, const Logic
                      const LogicalTensorPtr& result, int blockSize)
 {
     const auto& vecTile = tileShape.GetVecTile();
+    CHECK(VectorErrorCode::ERR_CONFIG_TILE, vecTile.size() >= NUM_VALUE_2)
+        << "GatherInUB requires at least two vec_tile dimensions. "
+        << "Please call pypto.set_vec_tile_shapes(rows, cols) before gather_in_ub; got " << vecTile.size()
+        << " dimensions.";
+    CHECK(VectorErrorCode::ERR_CONFIG_TILE, vecTile[0] > 0 && vecTile[1] > 0)
+        << "GatherInUB requires positive vec_tile dimensions. "
+        << "Please call pypto.set_vec_tile_shapes(rows, cols) with rows > 0 and cols > 0; got " << vecTile[0] << ", "
+        << vecTile[1] << ".";
     const int64_t firstDimTileShape = vecTile[0];
     const int64_t secondDimTileShape = vecTile[1];
     for (int64_t i = 0; i < result->GetShape()[0]; i += firstDimTileShape) {
@@ -2049,7 +2057,11 @@ Tensor experimental::GatherInUB(const Tensor& params, const Tensor& indices, con
     const auto& supportedTypes = ConfigManager::Instance().GetOpSupportedInputDtypes(Opcode::OP_GATHER_IN_UB);
     CheckTensorDataType(params.GetStorage(), supportedTypes, "GatherInUB");
 
-    (void)axis;
+    CheckTensorDimRange(params.GetStorage(), NUM_VALUE_2, NUM_VALUE_2, "GatherInUB params");
+    CheckTensorDimRange(indices.GetStorage(), NUM_VALUE_2, NUM_VALUE_2, "GatherInUB indices");
+    CHECK(VectorErrorCode::ERR_PARAM_INVALID, indices.GetShape()[0] == 1)
+        << "GatherInUB requires indices with shape [1, c]; got first dimension " << indices.GetShape()[0] << ".";
+    CHECK(VectorErrorCode::ERR_PARAM_INVALID, axis == -2) << "GatherInUB only supports axis = -2; got " << axis << ".";
     Tensor result{params.GetStorage()->Datatype(), {indices.GetShape()[1], params.GetShape()[1]}};
     if (!indices.GetStorage()->GetDynValidShape().empty()) {
         result.GetStorage()->UpdateDynValidShape(
