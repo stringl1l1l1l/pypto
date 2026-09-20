@@ -23,6 +23,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "tilefwk/symbolic_scalar.h"
 #include "interface/utils/entry_registrar.h"
@@ -122,6 +123,11 @@ struct RebuildableAttrInitContext {
 
 struct RebuildableRequiresSimt : RebuildableAttribute<bool> {
     RebuildableRequiresSimt() { data = false; }
+};
+
+struct RebuildableMultiIterNoOverlap : RebuildableAttribute<std::unordered_set<int>> {
+    void Mark(int rawMagic) { data.insert(rawMagic); }
+    bool Has(int rawMagic) const { return data.count(rawMagic) != 0; }
 };
 
 } // namespace npu::tile_fwk

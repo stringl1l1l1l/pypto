@@ -34,6 +34,7 @@ def _build_default_pipeline():
     simplify_symbolic_scalar = ir.Pass.simplify_symbolic_scalar()
     remove_redundant_tokens = ir.Pass.remove_redundant_token_pass()
     create_root_functions = ir.Pass.create_root_functions()
+    infer_multi_iter_overlap = ir.Pass.infer_multi_iter_overlap()
     finalize = ir.Pass.finalize_dynamic_function()
 
     return [
@@ -44,6 +45,7 @@ def _build_default_pipeline():
         ("simplify_symbolic_scalar", simplify_symbolic_scalar),
         ("remove_redundant_token_pass", remove_redundant_tokens),
         ("create_root_functions", create_root_functions),
+        ("infer_multi_iter_overlap", infer_multi_iter_overlap),
         ("finalize", finalize),
     ]
 

@@ -28,6 +28,7 @@
 #include "interface/tensor/raw_tensor.h"
 #include "interface/operation/operation.h"
 #include "interface/function/function.h"
+#include "interface/function/rebuildable_attribute.h"
 #include "machine/utils/dynamic/rebuildable_workspace_desc.h"
 #include "interface/program/program.h"
 #include "interface/configs/config_manager.h"
@@ -41,8 +42,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <stdexcept>
+#include <cstdlib>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -2863,41 +2863,6 @@ static bool HasAtomicWriteInOutcast(DevAscendFunction* devFunc, const DevAscendF
     return false;
 }
 
-static bool OutcastHasAtomicProducer(Function* root, int outcastIndex)
-{
-    if (root == nullptr) {
-        return false;
-    }
-    const auto& outcasts = root->GetOutcast();
-    if (outcastIndex < 0 || static_cast<size_t>(outcastIndex) >= outcasts.size()) {
-        return false;
-    }
-    const auto& outTensor = outcasts[outcastIndex];
-    if (outTensor == nullptr) {
-        return false;
-    }
-    const int rawMagic = outTensor->GetRawMagic();
-    for (auto& op : root->Operations(false)) {
-        if (op.GetOpcode() != Opcode::OP_CALL) {
-            continue;
-        }
-        const auto& oOperands = op.GetOOperands();
-        for (size_t k = 0; k < oOperands.size(); ++k) {
-            const auto& o = oOperands[k];
-            if (o == nullptr) {
-                continue;
-            }
-            if (o.get() != outTensor.get() && o->GetRawMagic() != rawMagic) {
-                continue;
-            }
-            if (op.GetOOpAttr(static_cast<int>(k)).isAtomic()) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 static void FillEmptyPartialUpdateStub(DevAscendProgram* prog, int slotIndex)
 {
     auto& partialUpdate = prog->At(prog->updateList, slotIndex);
@@ -2932,32 +2897,43 @@ static size_t CountSlotRootFuncNum(
     return funcKeys.size();
 }
 
+static bool HasMultiIterNoOverlap(Function* root, const LogicalTensorPtr& outTensor)
+{
+    if (root == nullptr || outTensor == nullptr) {
+        return false;
+    }
+    auto* attr = RebuildableAttributeManager::GetInstance().GetAttr<RebuildableMultiIterNoOverlap>(root);
+    return attr != nullptr && attr->Has(outTensor->GetRawMagic());
+}
+
 static uint8_t CalculateStitchCtrlBitMaskForSlot(
     int slotIndex, const std::vector<std::vector<uint8_t>>& devEncodeListInput,
     const std::unordered_map<Function*, int>& rootFuncKeyDict,
     const std::unordered_map<int, std::unordered_map<Function*, int>>& slotRootIncastDict,
     const std::unordered_map<int, std::unordered_map<Function*, int>>& slotRootOutcastDict,
-    const std::unordered_set<int>& kernelInputAssembleSlots, uint32_t* outMaxReadCount = nullptr,
-    bool* outHasAtomicWrite = nullptr)
+    uint32_t* outMaxReadCount = nullptr, bool* outHasAtomicWrite = nullptr)
 {
-    bool hasNormalAttr = false;
+    bool hasWaw = false;
     bool hasAtomicWrite = false;
-    bool hasAtomicProducer = false;
 
     auto outcastIt = slotRootOutcastDict.find(slotIndex);
     if (outcastIt == slotRootOutcastDict.end()) {
         return STITCH_CTRL_NONE;
     }
+
+    const size_t rootFuncNum = CountSlotRootFuncNum(slotIndex, rootFuncKeyDict, slotRootIncastDict,
+                                                    slotRootOutcastDict);
+
     for (auto& [root, outcastIndex] : outcastIt->second) {
         auto rootIt = rootFuncKeyDict.find(root);
         if (rootIt == rootFuncKeyDict.end()) {
             continue;
         }
-        if (!hasNormalAttr && root->GetOutcast()[outcastIndex]->HasAttr("NORMAL")) {
-            hasNormalAttr = true;
-        }
-        if (!hasAtomicProducer && OutcastHasAtomicProducer(root, outcastIndex)) {
-            hasAtomicProducer = true;
+        const auto& outTensor = root->GetOutcast()[outcastIndex];
+
+        if (outTensor != nullptr && outTensor->HasAttr("NORMAL") &&
+            !(rootFuncNum < 2 && HasMultiIterNoOverlap(root, outTensor))) {
+            hasWaw = true;
         }
         if (!hasAtomicWrite) {
             int funcKey = rootIt->second;
@@ -2978,22 +2954,11 @@ static uint8_t CalculateStitchCtrlBitMaskForSlot(
     }
 
     uint8_t stitchCtrlBitMask = STITCH_CTRL_NONE;
-    const bool gateByRootFuncNum = kernelInputAssembleSlots.count(slotIndex) != 0;
-    const bool rootFuncOk = !gateByRootFuncNum || CountSlotRootFuncNum(slotIndex, rootFuncKeyDict, slotRootIncastDict,
-                                                                       slotRootOutcastDict) >= 2;
-
     if (maxReadCount > 0) {
         stitchCtrlBitMask |= static_cast<StitchCtrlBitMask>(STITCH_CTRL_WAR | STITCH_CTRL_RAW);
     }
-    if (rootFuncOk) {
-        if (hasNormalAttr) {
-            stitchCtrlBitMask |= STITCH_CTRL_WAW;
-        }
-    } else {
-        // Determinism: isAtomic producers are NORMAL_WRITE; serialize them with WAW.
-        if (IsComputeDeterminismEnabled() && hasAtomicProducer) {
-            stitchCtrlBitMask |= STITCH_CTRL_WAW;
-        }
+    if (hasWaw) {
+        stitchCtrlBitMask |= STITCH_CTRL_WAW;
     }
     return stitchCtrlBitMask;
 }
@@ -3003,14 +2968,6 @@ std::unordered_map<int, SlotMaskEntry> BuildStitchUpdateSlotMaskMap(
 {
     std::unordered_map<int, SlotMaskEntry> stitchUpdateSlotMaskMap;
     const auto& inoutLink = dyndevAttr->inoutLink;
-    std::unordered_set<int> assembleSlots(inoutLink.assembleSlotIndexList.begin(),
-                                          inoutLink.assembleSlotIndexList.end());
-    std::unordered_set<int> kernelInputAssembleSlots;
-    for (int slotIndex : inoutLink.inputSlotIndexList) {
-        if (assembleSlots.count(slotIndex) != 0) {
-            kernelInputAssembleSlots.insert(slotIndex);
-        }
-    }
     std::unordered_set<int> partialSlotSet(inoutLink.partialUpdateSlotIdexList.begin(),
                                            inoutLink.partialUpdateSlotIdexList.end());
     for (int slotIndex = 0; slotIndex < inoutLink.totalSlot; slotIndex++) {
@@ -3018,7 +2975,7 @@ std::unordered_map<int, SlotMaskEntry> BuildStitchUpdateSlotMaskMap(
         bool hasAtomicWrite = false;
         uint8_t mask = CalculateStitchCtrlBitMaskForSlot(
             slotIndex, dyndevAttr->devEncodeList, dyndevAttr->rootFuncKeyDict, dyndevAttr->slotRootIncastDict,
-            dyndevAttr->slotRootOutcastDict, kernelInputAssembleSlots, &maxReadCount, &hasAtomicWrite);
+            dyndevAttr->slotRootOutcastDict, &maxReadCount, &hasAtomicWrite);
         if (mask == STITCH_CTRL_NONE) {
             continue;
         }
@@ -3026,6 +2983,7 @@ std::unordered_map<int, SlotMaskEntry> BuildStitchUpdateSlotMaskMap(
     }
     return stitchUpdateSlotMaskMap;
 }
+
 void DevAscendFunction::RefilterStitchUpdateSlotLists(
     const std::unordered_map<int, SlotMaskEntry>& stitchUpdateSlotMaskMap)
 {

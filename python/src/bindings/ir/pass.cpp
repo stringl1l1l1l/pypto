@@ -98,6 +98,8 @@ void BindPasses(py::module_& m)
         .def_static("simplify_symbolic_scalar", &pass::SimplifySymbolicScalar,
                     "Simplify symbolic scalars under their enclosing branch condition")
         .def_static("create_root_functions", &pass::CreateRootFunctions, "Create root functions from IR")
+        .def_static("infer_multi_iter_overlap", &pass::InferMultiIterOverlap,
+                    "Mark Function RebuildableMultiIterNoOverlap for assemble-level loop-carried non-overlap")
         .def_static("finalize_dynamic_function", &pass::FinalizeDynamicFunction,
                     "Finalize dynamic functions built from new IR")
         .def_static("sanitizer", &pass::Sanitizer,

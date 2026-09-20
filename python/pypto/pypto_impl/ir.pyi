@@ -2477,6 +2477,10 @@ class Pass:
         """Create root functions."""
 
     @staticmethod
+    def infer_multi_iter_overlap() -> Pass:
+        """Mark outcast multi_iter_no_overlap for assemble-level loop-carried non-overlap."""
+
+    @staticmethod
     def finalize_dynamic_function() -> Pass:
         """Finalize dynamic functions."""
 

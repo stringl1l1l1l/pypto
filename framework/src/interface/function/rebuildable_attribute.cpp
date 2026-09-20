@@ -50,5 +50,6 @@ void RebuildableAttributeManager::InitAttrsForFunc(Function* func)
 }
 
 RBUILDABLE_ATTRIBUTE_REGISTER(RebuildableRequiresSimt);
+RBUILDABLE_ATTRIBUTE_REGISTER(RebuildableMultiIterNoOverlap);
 
 } // namespace npu::tile_fwk

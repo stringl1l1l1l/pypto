@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "interface/function/function.h"
+#include "interface/function/rebuildable_attribute.h"
 #include "interface/tensor/irbuilder.h"
 #include "passes/pass_utils/pass_operation_utils.h"
 #include "interface/tensor/logical_tensor.h"
@@ -959,6 +960,11 @@ void SubgraphToFunction::InitializeRootFunction(Function& function, Function& ro
     if (function.IsFunctionTypeAndGraphType(FunctionType::DYNAMIC_LOOP_PATH,
                                             {GraphType::TENSOR_GRAPH, GraphType::TILE_GRAPH})) {
         rootFunc.SetDynloopAttribute(function.GetDynloopAttribute());
+    }
+
+    auto marked = RebuildableAttributeManager::GetInstance().GetAttr<RebuildableMultiIterNoOverlap>(&function)->Get();
+    if (!marked.empty()) {
+        RebuildableAttributeManager::GetInstance().ResetAttr<RebuildableMultiIterNoOverlap>(&rootFunc, &marked);
     }
 
     for (auto& tensor : function.outCasts_) {

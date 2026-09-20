@@ -248,6 +248,12 @@ Pass SimplifySymbolicScalar();
 Pass CreateRootFunctions();
 
 /**
+ * \brief Mark Function RebuildableMultiIterNoOverlap (by outcast rawMagic) when
+ * single-assemble writes are provably disjoint across loop iterations (after create_root_functions).
+ */
+Pass InferMultiIterOverlap();
+
+/**
  * \brief Finalize dynamic functions built from new IR (post create_root_functions).
  */
 Pass FinalizeDynamicFunction();

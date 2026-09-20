@@ -34,6 +34,7 @@
 #include "interface/program/program.h"
 #include "interface/configs/config_manager.h"
 #include "interface/configs/config_manager_ng.h"
+#include "interface/function/rebuildable_attribute.h"
 #include "tilefwk/tilefwk_op.h"
 #include "tilefwk/data_type.h"
 
@@ -541,6 +542,52 @@ TEST(StitchCtrlBitMaskEncodeTest, Waw_ParallelFalse_HasWaw)
     DevAscendProgram* devProg = EncodeAndGetDevProg();
     ASSERT_NE(devProg, nullptr);
     EXPECT_NE(GetOutAssembleSlotBitmask(devProg) & STITCH_CTRL_WAW, 0u);
+}
+
+// Encode-side: FUNCTION path does not run InferMultiIterOverlap.
+// Hand-Mark simulates PASS → stitchCtrlBitMask must drop WAW.
+
+TEST(StitchCtrlBitMaskEncodeTest, MultiIterDisjoint_RootKeepsNoOverlapMark)
+{
+    SetupAssembleBitmaskEncodeTest();
+
+    Tensor t0(DT_FP32, {kAssembleMaskTile, kAssembleMaskTile}, "t0");
+    Tensor t1(DT_FP32, {kAssembleMaskTile, kAssembleMaskTile}, "t1");
+    Tensor out(DT_FP32, {kAssembleMaskIters * kAssembleMaskTile, kAssembleMaskTile}, "out");
+    FUNCTION("assemble_multi_iter_disjoint", {t0, t1}, {out})
+    {
+        LOOP("loop_disjoint", FunctionType::DYNAMIC_LOOP, i, LoopRange(kAssembleMaskIters))
+        {
+            auto temp = Add(t0, t1);
+            Assemble(temp, {i * kAssembleMaskTile, 0}, out);
+        }
+        for (const auto& [name, func] : Program::GetInstance().GetFunctionMap()) {
+            (void)name;
+            for (const auto& oc : func->GetOutcast()) {
+                RebuildableAttributeManager::GetInstance()
+                    .GetAttr<RebuildableMultiIterNoOverlap>(func.get())
+                    ->Mark(oc->GetRawMagic());
+            }
+        }
+    }
+
+    auto dynAttr = Program::GetInstance().GetLastFunction()->GetDyndevAttribute();
+    EXPECT_EQ(GetOutAssembleSlotBitmask(EncodeAndGetDevProg()) & STITCH_CTRL_WAW, 0u);
+
+    bool anyRootMarked = false;
+    for (Function* root : dynAttr->funcGroup.devRootList) {
+        auto* attr = RebuildableAttributeManager::GetInstance().GetAttr<RebuildableMultiIterNoOverlap>(root);
+        for (const auto& oc : root->GetOutcast()) {
+            if (attr->Has(oc->GetRawMagic())) {
+                anyRootMarked = true;
+                break;
+            }
+        }
+        if (anyRootMarked) {
+            break;
+        }
+    }
+    EXPECT_TRUE(anyRootMarked);
 }
 
 // WAR: Assemble tmp→mid, then View(mid)→Assemble→out → stitchCtrlBitMask has WAR|RAW
