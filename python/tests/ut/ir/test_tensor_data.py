@@ -58,5 +58,5 @@ def test_get_tensor_data():
     y = pypto.Tensor([k, n], pypto.DT_BF16, "y")
     out = pypto.Tensor([m, n], pypto.DT_FP32, "out")
 
-    func = compile_new_ir(grouped_matmul, x, y, out)
+    func = compile_new_ir(grouped_matmul, x, y, out, create_new_logical_tensor = True)
     ssa_verify(func, "get_tensor_data")

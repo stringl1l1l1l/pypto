@@ -148,7 +148,7 @@ def call_function(func: Function, args: tuple, kwargs: dict, ctx: BuildContext):
 
         try:
             if isinstance(ctx, CollectContext):
-                collect(func.body, rewriter=frame_rewrite(namemap))
+                collect(func.body, rewriter=frame_rewrite(namemap, caller, scope))
             else:
                 dispatch_block(func.body, True)
         except ReturnSignal as sig:
@@ -181,7 +181,7 @@ def block_jump(scope, ctx, block: Block):
         return scope.resolve(block.result)
 
 
-def frame_rewrite(namemap: dict):
+def frame_rewrite(namemap: dict, caller: Scope, callee: Scope):
     def rewrite(name: str) -> Optional[str]:
         parts = name.split(".", 1)
         if parts[0] in namemap:
@@ -191,6 +191,14 @@ def frame_rewrite(namemap: dict):
                 return None
             parts[0] = namemap[parts[0]]
             return ".".join(parts)
+        # A free name must refer to the same object in both frames. A standalone
+        # helper can have a separate global binding with the same spelling.
+        if (
+            parts[0] not in callee.locals
+            and caller[parts[0]] is not None
+            and caller[parts[0]] is callee[parts[0]]
+        ):
+            return name
         return None
 
     return rewrite

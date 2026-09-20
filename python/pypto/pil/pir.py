@@ -406,13 +406,27 @@ class Scope:
     def get_canonical_name(self, value: Any) -> str:
         key = id(value)
         self._drop_if_dead(key)
-        return self.canonical_name.get(key, "")
+        name = self.canonical_name.get(key, "")
+        if name:
+            return name
+        if self.parent is not None:
+            name = self.parent.get_canonical_name(value)
+            if name and name.split(".", 1)[0] not in self.locals:
+                return name
+            # The parent's canonical name may be shadowed, but another alias
+            # can still name the same object in this scope.
+            return next(iter(sorted(self.aliases(value))), "")
+        return ""
 
     def aliases(self, value: Any) -> set[str]:
-        """Name set bound to this object; a recycled id yields an empty set."""
+        """Names bound to this object, excluding shadowed parent aliases."""
         key = id(value)
         self._drop_if_dead(key)
-        return self.name_aliases.get(key, set())
+        names = set(self.name_aliases.get(key, set()))
+        if self.parent is not None:
+            names.update(name for name in self.parent.aliases(value)
+                         if name.split(".", 1)[0] not in self.locals)
+        return names
 
     def is_global_scope(self) -> bool:
         return self.parent is None
@@ -581,7 +595,8 @@ def slot_write_inplace(obj) -> None:
     assert scope is not None
 
     name = scope.get_canonical_name(obj)
-    block.store_names.add(name)
+    if name:
+        block.store_names.add(name)
     block.store_names.update(scope.aliases(obj))
 
     Journal.record(obj)
