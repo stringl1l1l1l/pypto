@@ -53,7 +53,7 @@ mask_reg模式同样支持三类搬运接口（普通搬运/PostUpdate/AddrReg�
 ## 函数原型
 
 ```python
-store_align(tile, src, *args, dist: Optional[StoreDist] = None, data_copy_mode: Optional[DataCopyMode] = None, block_stride=None, repeat_stride=None, post_update: bool = False)
+store_align(tile, src, preg, offset, dist=None, data_copy_mode=None, block_stride=None, repeat_stride=None, post_update=False)
 ```
 
 ## 参数说明
@@ -61,8 +61,7 @@ store_align(tile, src, *args, dist: Optional[StoreDist] = None, data_copy_mode: 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
 | tile | 输出 | 目的操作数，Tile地址。地址需要32字节对齐。 |
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。<br>- 当源为reg_tensor时，为**reg_tensor单搬出模式**。<br>- 当源已通过vf.create_mask预声明为mask_reg时，自动分派mask_reg存储路径，将mask_reg中的数据搬出到Tile。 |
-| src_even / src_odd | 输入 | **reg_tensor双搬出模式**的偶数/奇数源操作数，[reg_tensor](../reg_tensor.md)，数据类型与src一致。 |
+| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。<br>- 当源为reg_tensor时，单一src时，为**reg_tensor单搬出模式**；输入src_even和src_odd两个src时，为**reg_tensor双搬出模式**。<br>- 当源已通过vf.create_mask预声明为mask_reg时，自动分派mask_reg存储路径，将mask_reg中的数据搬出到Tile。 |
 | preg | 输入 | [mask_reg](../mask_reg.md)，指定写入的元素范围。**mask_reg模式**时无需传入。<br>- **连续搬运模式**下，mask中对应的bit为1时，该元素被写入Tile；为0时，该元素不被写入，Tile对应位置保持原值不变。**非连续搬运模式**（DataBlock模式下data_copy_mode=pypto_pro.language.DataCopyMode.DATA_BLOCK_COPY），该位置改为传入控制有效元素的mask_reg，mask控制规则如下：某个DataBlock在mask中对应的32bit有任意一位为1时搬出，全为0时不写入且Tile对应位置不更新，即使Tile越界也不会报错。 |
 | offset | 输入 | 可选，末尾位置参数（第4个），根据模式和post_update取值自动分派语义，单位为元素个数。在**非连续搬运模式**（data_copy_mode=pypto_pro.language.DataCopyMode.DATA_BLOCK_COPY）下该参数位置为block_stride（见下）。<br>- **连续搬运模式 + post_update=False**：作为地址偏移量。<br>&nbsp;&nbsp;- **整数或[row, col]列表**：整数偏移在代码生成时转换为指针算术Tile + offset。传入[row, col]列表或元组，此时线性偏移为row * shape[1] + col，row单位为Tile的列数（即set_validshape[m, n]的n），col单位为元素个数，两者均支持表达式。<br>&nbsp;&nbsp;- **AddrReg**（由vf.create_addr_reg创建）：实际搬运Tile地址为Tile + AddrReg中存储的偏移量。每次迭代需先调用vf.create_addr_reg设定偏移量再调用搬运指令。<br>- **连续搬运模式 + post_update=True**：作为PostUpdate地址累进步长（元素数），搬运后目标地址自动更新为dstAddr += stride。默认0。64位宽数据类型（DT_INT64、DT_UINT64）自动翻倍。<br>- **mask_reg模式**（源为mask_reg时）：<br>&nbsp;&nbsp;- **整数**：仅在post_update=True时生效，作为地址更新步长；post_update=False时不支持整数offset。<br>&nbsp;&nbsp;- **AddrReg**（由vf.create_addr_reg创建）：实际搬运Tile地址为dstAddr + AddrReg中存储的偏移量。 |
 | dist | 输入 | 可选，数据存储分布模式，对应[StoreDist](../types/StoreDist.md)类型，具体模式根据是**reg_tensor单搬出模式**、**reg_tensor双搬出模式**还是**mask_reg模式**请分别参见[约束说明](#约束说明)中各表。 |

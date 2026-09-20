@@ -178,7 +178,7 @@ class Vf:
 
     @staticmethod
     @_api_decl
-    def store_align(tile, src, *args, dist: Optional[StoreDist] = None,
+    def store_align(tile, src, preg, offset, dist: Optional[StoreDist] = None,
                     data_copy_mode: Optional[DataCopyMode] = None,
                     block_stride=None, repeat_stride=None,
                     post_update: bool = False):
@@ -196,10 +196,14 @@ class Vf:
             vf.store_align(dst_tile, src, preg, [i, j])   # list offset
             vf.store_align(dst_tile, src, preg, addr_reg)  # AddrReg offset
 
+        When ``src`` is a MaskReg, ``preg`` is omitted (the mask_reg IS the
+        source). For interleaved dual-register store (``dist=StoreDist.INTLV*``),
+        use ``store_align(tile, src_even, src_odd, preg, dist=...)``.
+
         Args:
-            dst: Destination UB Tile pointer
-            src: Source register
-            preg: Predicate mask register (omitted when src is a MaskReg)
+            tile: Destination UB Tile pointer
+            src: Source register (RegTensor or MaskReg)
+            preg: Predicate mask register (None when src is a MaskReg)
             offset: Optional trailing positional arg — integer, AddrReg, or
                 ``[row, col]`` list/tuple (linear offset = ``row * shape[1] + col``)
 
