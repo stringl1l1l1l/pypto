@@ -40,6 +40,10 @@ transposed_batchmatmul(tensor_a: Tensor, tensor_b: Tensor, out_dtype: dtype) -> 
 
 返回输出Tensor，Tensor的数据类型由`out_dtype`指定，形状为(M, B, N)。
 
+## 约束说明
+
+本接口为试验特性，后续版本可能会存在变更，不支持应用于生产环境中。
+
 ## 调用示例
 
 ```python

@@ -43,7 +43,7 @@ gather_in_l1(src: Tensor, indices: Tensor, block_table: Tensor, block_size: int,
 
 ## 约束说明
 
-无。
+本接口为试验特性，后续版本可能会存在变更，不支持应用于生产环境中。
 
 ## 调用示例
 
