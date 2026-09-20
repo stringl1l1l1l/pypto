@@ -31,6 +31,70 @@ def _in_subscript(bracket_stack):
     return False
 
 
+def _update_bracket_stack(bracket_stack, tok_string):
+    """Update *bracket_stack* for an opening/closing bracket.
+
+    Return True if *tok_string* is a bracket token.
+    """
+    if tok_string in ("[", "{", "("):
+        bracket_stack.append(tok_string)
+        return True
+    if tok_string in ("]", "}", ")"):
+        if bracket_stack:
+            bracket_stack.pop()
+        return True
+    return False
+
+
+def _prev_token(tokens, i):
+    return tokens[i - 1] if i > 0 else None
+
+
+def _next_token(tokens, i):
+    return tokens[i + 1] if i + 1 < len(tokens) else None
+
+
+def _colon_space_fixes(tokens, i, tok):
+    """Strip spaces around a subscript colon, except after a comma."""
+    row, col = tok.start
+    end_col = tok.end[1]
+    prev_tok = _prev_token(tokens, i)
+    next_tok = _next_token(tokens, i)
+    fixes = []
+    # Remove space before colon, unless the previous token is a comma:
+    # a comma in a subscript must keep a following space (e.g. a[1:2, :]),
+    # which is handled by the comma rule below.
+    if (
+        prev_tok
+        and prev_tok.string != ","
+        and prev_tok.end[0] == row
+        and prev_tok.end[1] < col
+    ):
+        fixes.append((row - 1, prev_tok.end[1], col, ""))
+    if next_tok and next_tok.start[0] == row and end_col < next_tok.start[1]:
+        fixes.append((row - 1, end_col, next_tok.start[1], ""))
+    return fixes
+
+
+def _comma_space_fixes(tokens, i, tok):
+    """Insert a space after a subscript comma when the next token is adjacent."""
+    row = tok.start[0]
+    end_col = tok.end[1]
+    next_tok = _next_token(tokens, i)
+    # Ensure a space after the comma when the next token is on the same
+    # line and is not a closing bracket or a line break
+    # (e.g. a[1:2,:] -> a[1:2, :]).
+    if (
+        next_tok
+        and next_tok.type not in (tokenize.NL, tokenize.NEWLINE)
+        and next_tok.start[0] == row
+        and next_tok.string not in ("]", "}", ")")
+        and end_col == next_tok.start[1]
+    ):
+        return [(row - 1, end_col, end_col, " ")]
+    return []
+
+
 def _find_fixes(source):
     """Return ``(line_idx, start_col, end_col, replacement)`` edits to apply."""
     tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
@@ -40,43 +104,12 @@ def _find_fixes(source):
     for i, tok in enumerate(tokens):
         if tok.type != tokenize.OP:
             continue
-        if tok.string in ("[", "{", "("):
-            bracket_stack.append(tok.string)
-        elif tok.string in ("]", "}", ")"):
-            if bracket_stack:
-                bracket_stack.pop()
-        elif tok.string == ":" and _in_subscript(bracket_stack):
-            row, col = tok.start
-            end_col = tok.end[1]
-            prev_tok = tokens[i - 1] if i > 0 else None
-            next_tok = tokens[i + 1] if i + 1 < len(tokens) else None
-            # Remove space before colon, unless the previous token is a comma:
-            # a comma in a subscript must keep a following space (e.g. a[1:2, :]),
-            # which is handled by the comma rule below.
-            if (
-                prev_tok
-                and prev_tok.string != ","
-                and prev_tok.end[0] == row
-                and prev_tok.end[1] < col
-            ):
-                fixes.append((row - 1, prev_tok.end[1], col, ""))
-            if next_tok and next_tok.start[0] == row and end_col < next_tok.start[1]:
-                fixes.append((row - 1, end_col, next_tok.start[1], ""))
+        if _update_bracket_stack(bracket_stack, tok.string):
+            continue
+        if tok.string == ":" and _in_subscript(bracket_stack):
+            fixes.extend(_colon_space_fixes(tokens, i, tok))
         elif tok.string == "," and _in_subscript(bracket_stack):
-            row, col = tok.start
-            end_col = tok.end[1]
-            next_tok = tokens[i + 1] if i + 1 < len(tokens) else None
-            # Ensure a space after the comma when the next token is on the same
-            # line and is not a closing bracket or a line break
-            # (e.g. a[1:2,:] -> a[1:2, :]).
-            if (
-                next_tok
-                and next_tok.type not in (tokenize.NL, tokenize.NEWLINE)
-                and next_tok.start[0] == row
-                and next_tok.string not in ("]", "}", ")")
-                and end_col == next_tok.start[1]
-            ):
-                fixes.append((row - 1, end_col, end_col, " "))
+            fixes.extend(_comma_space_fixes(tokens, i, tok))
     return fixes
 
 
