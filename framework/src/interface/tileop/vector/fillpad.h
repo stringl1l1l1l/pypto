@@ -19,7 +19,7 @@
 #include "utils/layout.h"
 #include "utils/tile_tensor.h"
 
-template <pto::PadValue padValue, typename DstTensor, typename SrcTensor>
+template <pto::PadValue padValue, size_t dstCols, typename DstTensor, typename SrcTensor>
 TILEOP void TFillPad(DstTensor dst, SrcTensor src)
 {
     constexpr auto dstShapeSize = Std::tuple_size<typename DstTensor::Shape>::value;
@@ -52,6 +52,8 @@ TILEOP void TFillPad(DstTensor dst, SrcTensor src)
     constexpr auto srcTileH = TileOp::GetTensorTileShapeDim<SrcTensor, DIM_4TH, MAX_DIMS>();
     constexpr auto srcTileW = TileOp::GetTensorTileShapeDim<SrcTensor, DIM_5TH, MAX_DIMS>();
     constexpr size_t PAD_TILE_INNER_SIZE = 512;
+    constexpr size_t blockElements = 32 / sizeof(DstDtype);
+    constexpr size_t rowTileW = (dstCols + blockElements - 1) / blockElements * blockElements;
     using DstTileType = pto::Tile<pto::TileType::Vec, DstDtype, dstTileH, dstTileW, pto::BLayout::RowMajor, -1, -1,
                                   pto::SLayout::NoneBox, PAD_TILE_INNER_SIZE, padValue>;
     using SrcTileType = pto::Tile<pto::TileType::Vec, SrcDtype, srcTileH, srcTileW, pto::BLayout::RowMajor, -1, -1>;
@@ -61,7 +63,7 @@ TILEOP void TFillPad(DstTensor dst, SrcTensor src)
             for (LoopVar n2Index = 0; n2Index < dstShape2; ++n2Index) {
                 auto dstOffset = n0Index * dstStride0 + n1Index * dstStride1 + n2Index * dstStride2;
                 auto srcOffset = n0Index * srcStride0 + n1Index * srcStride1 + n2Index * srcStride2;
-                if constexpr (dstTileH >= srcTileH && dstTileW >= srcTileW) {
+                if constexpr (dstTileH >= srcTileH && dstTileW >= srcTileW && dstTileW == rowTileW) {
                     DstTileType dstTile(dstShape3, dstShape4);
                     auto dstAddr = dst.GetAddr() + dstOffset * sizeof(DstDtype);
                     pto::TASSIGN(dstTile, dstAddr);
@@ -70,9 +72,11 @@ TILEOP void TFillPad(DstTensor dst, SrcTensor src)
                     pto::TASSIGN(srcTile, srcAddr);
                     pto::TFILLPAD_EXPAND(dstTile, srcTile);
                 } else {
-                    using DstRowTileType = pto::Tile<pto::TileType::Vec, DstDtype, 1, dstTileW, pto::BLayout::RowMajor,
+                    // A subview keeps the parent stride, but may only pad its own columns.
+                    // TFILLPAD_EXPAND pads to static Cols, irrespective of the valid columns.
+                    using DstRowTileType = pto::Tile<pto::TileType::Vec, DstDtype, 1, rowTileW, pto::BLayout::RowMajor,
                                                      -1, -1, pto::SLayout::NoneBox, PAD_TILE_INNER_SIZE, padValue>;
-                    using SrcRowTileType = pto::Tile<pto::TileType::Vec, SrcDtype, 1, dstTileW, pto::BLayout::RowMajor,
+                    using SrcRowTileType = pto::Tile<pto::TileType::Vec, SrcDtype, 1, rowTileW, pto::BLayout::RowMajor,
                                                      -1, -1>;
                     for (LoopVar row = 0; row < dstShape3; ++row) {
                         auto srcValidRow = row < srcShape3 ? 1 : 0;

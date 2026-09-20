@@ -1282,12 +1282,15 @@ std::string CodeGenOpNPU::PrintPadTileTensor() const
     std::vector<std::string> tileOpParamList = GetTileOpParamsByOrder();
     std::ostringstream oss;
 
+    const std::string fillPadCols = originalOp.GetOpcode() == Opcode::OP_FILLPAD ?
+                                        ", " + std::to_string(shape[0].back()) :
+                                        "";
     bool isFloatType = (dstDtype == DT_FP32 || dstDtype == DT_FP16 || dstDtype == DT_BF16);
 
     if (isFloatType) {
         auto c = extOperandVal.Cast<float>();
         if (std::isinf(c)) {
-            oss << tileOpName << "<" << (c < 0 ? "pto::PadValue::Min" : "pto::PadValue::Max") << ">"
+            oss << tileOpName << "<" << (c < 0 ? "pto::PadValue::Min" : "pto::PadValue::Max") << fillPadCols << ">"
                 << WrapParamByParentheses(tileOpParamList) << STMT_END;
             return oss.str();
         }
@@ -1305,8 +1308,8 @@ std::string CodeGenOpNPU::PrintPadTileTensor() const
     }
 
     std::string padValueArg = "(" + std::string(DataType2CCEStr(dstDtype)) + ")" + padValueStr;
-    oss << tileOpName << "<pto::PadValueCustom(" << padValueArg << ")>" << WrapParamByParentheses(tileOpParamList)
-        << STMT_END;
+    oss << tileOpName << "<pto::PadValueCustom(" << padValueArg << ")" << fillPadCols << ">"
+        << WrapParamByParentheses(tileOpParamList) << STMT_END;
     return oss.str();
 }
 
