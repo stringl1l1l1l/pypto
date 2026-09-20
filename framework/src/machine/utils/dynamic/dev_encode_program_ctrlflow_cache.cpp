@@ -302,11 +302,8 @@ void DevControlFlowCache::DrcoReadyQueueDataRestore(DynDeviceTaskBase* base, uin
         }
     }
     // 槽内为 stitch 节点指针，复位为 nullptr，避免 cache 重放后残留悬空指针
-    for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
-        auto* stitchNodeMatrix = base->drcoRootFuncList->stitchNodeMatrixArray[ct];
-        if (stitchNodeMatrix == nullptr) {
-            continue;
-        }
+    auto* stitchNodeMatrix = base->drcoRootFuncList->stitchNodeMatrix;
+    if (stitchNodeMatrix != nullptr) {
         (void)memset_s(stitchNodeMatrix->stitchNodeList, sizeof(stitchNodeMatrix->stitchNodeList), 0,
                        sizeof(stitchNodeMatrix->stitchNodeList));
     }
@@ -1363,9 +1360,7 @@ void DevControlFlowCache::RelocDrcoRootFuncList(RelocRange& relocCtrlCache, DynD
                 relocCtrlCache.Reloc(drcoRootFuncList->localReadyMatrixArray[ct][i]);
             }
         }
-        for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
-            relocCtrlCache.Reloc(drcoRootFuncList->stitchNodeMatrixArray[ct]);
-        }
+        relocCtrlCache.Reloc(drcoRootFuncList->stitchNodeMatrix);
         // 基址与 stitch 节点指针同域，走同一平移；slot 内偏移相对基址，平移不变
         relocCtrlCache.Reloc(drcoRootFuncList->stitchNodeBase);
     }

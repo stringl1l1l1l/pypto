@@ -133,7 +133,10 @@ struct DrcoRootFuncList {
 
     __gm__ DrcoLocalReadyQueue* localReadyQueueArray[DRCO_QUEUE_MAX][NUM_LOCAL_GROUPS];
     __gm__ DrcoLocalReadyMatrix* localReadyMatrixArray[DRCO_QUEUE_MAX][NUM_LOCAL_GROUPS];
-    __gm__ DrcoGlobalStitchNodeMatrix* stitchNodeMatrixArray[DRCO_QUEUE_MAX];
+    // 全核共享 stitch 节点矩阵：行 = 全局 blockIdx（AIC [0,nrValidAic) + AIV [nrValidAic,3*nrValidAic)），
+    // 任何核可 push 任意行、每核只 pop 自己行——AIC/AIV 空闲侧可帮忙展开忙侧的 defer 节点
+    // （节点展开类型无关：盲减 + 按 succCoreType 路由），消除分池时"一边排队一边空转"
+    __gm__ DrcoGlobalStitchNodeMatrix* stitchNodeMatrix;
     // stitch pool 基址（设备地址）：stitchNodeList 槽位偏移以此为原点还原节点地址，
     // 写入于 InitDrcoRootFuncList，cache 激活时随矩阵指针一同 reloc（偏移本身平移不变）
     uint64_t stitchNodeBase;

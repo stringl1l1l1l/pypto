@@ -95,15 +95,14 @@ void DeviceTaskContext::InitDrcoRootFuncList(DynDeviceTask* dyntask)
             rootFuncList->localReadyMatrixArray[ct][i] = localMatrix;
         }
     }
-    // 全局 stitch 节点矩阵按核类型各一个：行 = blockIdx，列 = LOCAL_GROUP_SIZE，
-    // 每个核只向本类型的矩阵 push/由本类型核 pop；slot 语义为节点相对 stitch pool 基址的
-    // u32 偏移（0 = 空闲），基址随 rootFuncList 透传给 aicore 侧
-    for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
-        auto* stitchNodeMatrix = workspace_->AllocateDrcoStitchNodeMatrix(
-            sizeof(npu::tile_fwk::DrcoGlobalStitchNodeMatrix));
-        new (stitchNodeMatrix) npu::tile_fwk::DrcoGlobalStitchNodeMatrix();
-        rootFuncList->stitchNodeMatrixArray[ct] = stitchNodeMatrix;
-    }
+    // 全局共享 stitch 节点矩阵（单实例）：行 = 全局 blockIdx（AIC [0,nrValidAic) + AIV
+    // [nrValidAic,3*nrValidAic)），任何核可 push 任意行、每核只 pop 自己行；
+    // slot 语义为节点相对 stitch pool 基址的 u32 偏移（0 = 空闲），基址随 rootFuncList
+    // 透传给 aicore 侧
+    auto* stitchNodeMatrix = workspace_->AllocateDrcoStitchNodeMatrix(
+        sizeof(npu::tile_fwk::DrcoGlobalStitchNodeMatrix));
+    new (stitchNodeMatrix) npu::tile_fwk::DrcoGlobalStitchNodeMatrix();
+    rootFuncList->stitchNodeMatrix = stitchNodeMatrix;
     rootFuncList->stitchNodeBase = workspace_->GetStitchPoolBase();
     rootFuncList->totalTaskCount = dyntask->devTask.coreFunctionCnt;
     rootFuncList->devTaskFinished = 0;

@@ -988,14 +988,12 @@ TEST_F(TestDeviceTaskContext, InitReadyQueues_EnableAicoreResolve_CreatesDrcoRoo
             EXPECT_NE(dyntask->drcoRootFuncList->localReadyQueueArray[ct][i], nullptr);
         }
     }
-    // 全局 stitch 节点矩阵按核类型各一个：行 = blockIdx，列 = LOCAL_GROUP_SIZE，初始全空
-    for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ++ct) {
-        auto* stitchNodeMatrix = dyntask->drcoRootFuncList->stitchNodeMatrixArray[ct];
-        ASSERT_NE(stitchNodeMatrix, nullptr);
-        for (uint32_t r = 0; r < npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE; ++r) {
-            for (uint32_t c = 0; c < npu::tile_fwk::LOCAL_GROUP_SIZE; ++c) {
-                EXPECT_EQ(stitchNodeMatrix->stitchNodeList[r].slot[c], 0U);
-            }
+    // 全核共享 stitch 节点矩阵：行 = 全局 blockIdx，初始全空
+    auto* stitchNodeMatrix = dyntask->drcoRootFuncList->stitchNodeMatrix;
+    ASSERT_NE(stitchNodeMatrix, nullptr);
+    for (uint32_t r = 0; r < npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE; ++r) {
+        for (uint32_t c = 0; c < npu::tile_fwk::LOCAL_GROUP_SIZE; ++c) {
+            EXPECT_EQ(stitchNodeMatrix->stitchNodeList[r].slot[c], 0U);
         }
     }
     for (size_t i = 0; i < READY_QUEUE_SIZE; ++i) {

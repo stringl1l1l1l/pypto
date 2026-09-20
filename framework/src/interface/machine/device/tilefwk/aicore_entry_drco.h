@@ -61,6 +61,9 @@ using npu::tile_fwk::TaskID;
 #define DRCO_DCCI_ENTIRE_DATA_CACHE() dcci((__gm__ void*)0, ENTIRE_DATA_CACHE, CACHELINE_OUT)
 
 #define DRCO_BUSY_BACKOFF_CYC 500
+// 共享 stitch 矩阵的全核行域倍率：AIC [0,nrValidAic) + AIV [nrValidAic, 3*nrValidAic)，
+// 即全核数 = AIC 1 倍 + AIV 2 倍；矩阵行 = 全局 blockIdx，行数上限钳到 MAX_AICORE_NUM_FOR_QUEUE
+constexpr uint32_t DRCO_ALL_CORES_PER_AIC = 3;
 
 #if ENABLE_AICORE_PRINT
 #define DRCO_LOG(ctx, fmt, ...) AICORE_LOGE((ctx)->logger.Context(), fmt, ##__VA_ARGS__)
@@ -573,11 +576,12 @@ INLINE __gm__ DrcoLocalReadyMatrix* DrcoRootFuncListGetLocalReadyMatrix(
     return nullptr;
 }
 
-template <uint32_t stitchMatrixCoreType>
+// 全核共享 stitch 矩阵（行 = 全局 blockIdx）：AIC/AIV 任意核可 push/pop，
+// 展开动作类型无关，空闲侧核帮忙消化忙侧 defer 链
 INLINE __gm__ DrcoGlobalStitchNodeMatrix* DrcoRootFuncListGetStitchNodeMatrix(
     __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList)
 {
-    return rootFuncList->stitchNodeMatrixArray[stitchMatrixCoreType];
+    return rootFuncList->stitchNodeMatrix;
 }
 
 // 类型内本地编号模型（AIC: blockIdx ∈ [0, aicCoreNum)，AIV: blockIdx - aicCoreNum ∈ [0, 2*aicCoreNum)）
@@ -897,13 +901,14 @@ INLINE void DrcoResolveDepend(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoR
             // 首个 push 失败起的剩余链尾（矩阵写不进则整段链尾就地兜底，保证前向推进）
             __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* firstNode = succStitchList[stitchIndex];
             __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* fallbackNode = nullptr;
-            __gm__ DrcoGlobalStitchNodeMatrix* matrix = DrcoRootFuncListGetStitchNodeMatrix<DRCO_CORE_TYPE>(
-                rootFuncList);
+            __gm__ DrcoGlobalStitchNodeMatrix* matrix = DrcoRootFuncListGetStitchNodeMatrix(rootFuncList);
 
             BlockDesc blockDesc = state->blockDesc;
-            uint32_t rowCnt = BlockDescValidCoreNum(blockDesc, IS_AIV);
-            uint32_t coreTypeIdx = BlockDescTypedBlockIdx(blockDesc);
-            uint32_t colIdx = BlockDescBlockIdx(blockDesc) % npu::tile_fwk::DrcoGlobalStitchNodeMatrix::COL_SIZE;
+            // 行 = 全局 blockIdx（AIC [0,nrValidAic) + AIV [nrValidAic,3*nrValidAic)）：
+            // 全核共享池，节点落在任意空行即被该行主人 pop 展开（类型无关）
+            uint32_t rowCnt = state->ctx.aicCoreNum * DRCO_ALL_CORES_PER_AIC;
+            uint32_t coreTypeIdx = BlockDescBlockIdx(blockDesc);
+            uint32_t colIdx = coreTypeIdx % npu::tile_fwk::DrcoGlobalStitchNodeMatrix::COL_SIZE;
             if (firstNode != nullptr) {
                 uint32_t start = 0;
                 uint64_t stitchNodeBase = rootFuncList->stitchNodeBase;
@@ -1070,11 +1075,10 @@ INLINE void DrcoStitchNodeMatrixPopResolve(DrcoEntryState* state, __gm__ npu::ti
 
 INLINE void DrcoDynFuncDataListFetchResolveStitchNodeMatrix(DrcoEntryState* state,
                                                             __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
-                                                            uint32_t typedBlockIdx)
+                                                            uint32_t blockIdx)
 {
-    __gm__ DrcoGlobalStitchNodeMatrix* stitchNodeMatrix = DrcoRootFuncListGetStitchNodeMatrix<DRCO_CORE_TYPE>(
-        rootFuncList);
-    DrcoStitchNodeMatrixPopResolve(state, rootFuncList, stitchNodeMatrix, typedBlockIdx);
+    __gm__ DrcoGlobalStitchNodeMatrix* stitchNodeMatrix = DrcoRootFuncListGetStitchNodeMatrix(rootFuncList);
+    DrcoStitchNodeMatrixPopResolve(state, rootFuncList, stitchNodeMatrix, blockIdx);
 }
 
 INLINE bool DrcoDynFuncDataListFetchTaskMixHubC2VReadyQueue(DrcoEntryState* state,
@@ -1176,6 +1180,14 @@ INLINE uint32_t DrcoDynFuncDataListFetchTask(DrcoEntryState* state,
     uint32_t colIdx = DrcoLocalReadyMatrixGetRowIdx(typedBlockIdx);
     __gm__ uint32_t* devTaskFinishFlag = &rootFuncList->devTaskFinishFlagList.flag[DRCO_CORE_TYPE][groupIdx]
                                               .devTaskFinishFlag;
+    // 对方类型完成 flag（读组 0：完成广播只写本类型活跃组，组 0 对 AIC/AIV 恒活跃）。
+    // 全局退出 = 两类型 flag 均置位；本类型先完成时进入帮忙模式（只扫共享 stitch 矩阵，
+    // 跳过本类型 leaf 矩阵/队列 pop——必然空，省 CAS 竞争），避免对侧链节点落在已退出核的行无人 pop
+    constexpr uint32_t DRCO_OTHER_QUEUE_TYPE = (DRCO_CORE_TYPE == static_cast<uint32_t>(npu::tile_fwk::CoreType::AIC)) ?
+                                                   npu::tile_fwk::DRCO_QUEUE_AIV :
+                                                   npu::tile_fwk::DRCO_QUEUE_AIC;
+    __gm__ uint32_t* otherTaskFinishFlag = &rootFuncList->devTaskFinishFlagList.flag[DRCO_OTHER_QUEUE_TYPE][0]
+                                                .devTaskFinishFlag;
     uint32_t resultTaskIdCount = 0;
 
     uint64_t t0 = get_sys_cnt();
@@ -1184,27 +1196,34 @@ INLINE uint32_t DrcoDynFuncDataListFetchTask(DrcoEntryState* state,
             Trap();
         }
 
-        DrcoDynFuncDataListFetchResolveStitchNodeMatrix(state, rootFuncList, typedBlockIdx);
+        DrcoDynFuncDataListFetchResolveStitchNodeMatrix(state, rootFuncList, blockIdx);
 
-        if (DrcoDynFuncDataListFetchTaskMixHubC2VReadyQueue(state, rootFuncList, resultCoreType, resultTaskIdList,
-                                                            resultTaskIdCount, blockIdx)) {
-            break;
-        }
-        if (DrcoDynFuncDataListFetchTaskMixHub(state, rootFuncList, resultCoreType, resultTaskIdList,
-                                               resultTaskIdCount)) {
-            break;
-        }
-        if (DrcoDynFuncDataListFetchTaskLocalReadyMatrix(state, rootFuncList, resultCoreType, resultTaskIdList,
-                                                         resultTaskIdCount, localReadyMatrix, colIdx)) {
-            break;
-        }
-        if (DrcoDynFuncDataListFetchTaskLocalReadyQueue(state, rootFuncList, resultCoreType, resultTaskIdList,
-                                                        resultTaskIdCount, groupIdx)) {
-            break;
-        }
-        // flag 置 1 蕴含本 coreType 全部 leaf task 已执行完、各就绪队列已空，
-        // 读用 cas(ptr,1,1) 探测，避免 atomicAdd(ptr,0) 的加 0 伪读；
-        if (DrcoAtomicCasToU32(devTaskFinishFlag, 1, 1) != 0) {
+        // 本类型 leaf 全部执行完（flag 置位）后跳过本类型 leaf 矩阵/队列/mixhub 消费
+        // （必然空，省 CAS 竞争——mixhub 任务的写入方即本类型核，全部完成后不再有新任务），
+        // 仅保留上方共享 stitch 矩阵扫描帮忙对侧展开
+        if (DrcoAtomicCasToU32(devTaskFinishFlag, 1, 1) == 0) {
+            if (DrcoDynFuncDataListFetchTaskMixHubC2VReadyQueue(state, rootFuncList, resultCoreType, resultTaskIdList,
+                                                                resultTaskIdCount, blockIdx)) {
+                break;
+            }
+            if (DrcoDynFuncDataListFetchTaskMixHub(state, rootFuncList, resultCoreType, resultTaskIdList,
+                                                   resultTaskIdCount)) {
+                break;
+            }
+            if (DrcoDynFuncDataListFetchTaskLocalReadyMatrix(state, rootFuncList, resultCoreType, resultTaskIdList,
+                                                             resultTaskIdCount, localReadyMatrix, colIdx)) {
+                break;
+            }
+            if (DrcoDynFuncDataListFetchTaskLocalReadyQueue(state, rootFuncList, resultCoreType, resultTaskIdList,
+                                                            resultTaskIdCount, groupIdx)) {
+                break;
+            }
+        } // 本类型未完成（帮忙模式跳过 leaf 消费）
+
+        // 全局退出 = 本类型 + 对方类型 flag 均置位（leaf 计数含 mix 任务，两类型齐全即全部完成）；
+        // 单侧完成不退出——继续循环扫共享 stitch 矩阵帮忙对侧，防对侧链节点落在己方行无人 pop；
+        // 读用 cas(ptr,1,1) 探测，避免 atomicAdd(ptr,0) 的加 0 伪读
+        if (DrcoAtomicCasToU32(devTaskFinishFlag, 1, 1) != 0 && DrcoAtomicCasToU32(otherTaskFinishFlag, 1, 1) != 0) {
             resultTaskIdCount = static_cast<uint32_t>(AICORE_TASK_ALL_FINISH);
             break;
         }
