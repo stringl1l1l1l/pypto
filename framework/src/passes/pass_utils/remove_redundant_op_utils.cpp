@@ -1677,6 +1677,18 @@ Status RemoveRedundantOpUtils::ProcessContractSliceImpl(Function& function, std:
         function.EraseOperations(true, false);
         operationUpdated = true;
     }
+    bool contractSliceContractUpdated = false;
+    // 顺序约束：该消除必须早于 AssignMemoryType 执行（本函数经 SplitLargeFanoutTensor 挂接于
+    // PVC2_OOO 流水线，先于 ASSIGN_MEMORY_TYPE），否则 L0C2UB pattern 的固定深度生产者窗口
+    // （cube op -> contract -> reshape）仍会因三明治失配，matmul 结果静默退回 DDR 中转。
+    if (ProcessContractSliceContract(function, contractSliceContractUpdated) != SUCCESS) {
+        APASS_LOG_ERROR_F(Elements::Function, "ProcessContractSliceContract failed.");
+        return FAILED;
+    }
+    if (contractSliceContractUpdated) {
+        function.EraseOperations(true, false);
+        operationUpdated = true;
+    }
     if (ProcessMultiContractSingleSlice(function, operationUpdated) != SUCCESS) {
         APASS_LOG_ERROR_F(Elements::Function, "ProcessMultiContractSingleSlice failed.");
         return FAILED;
@@ -1689,6 +1701,132 @@ Status RemoveRedundantOpUtils::ProcessContractSliceImpl(Function& function, std:
         return FAILED;
     }
     function.EraseOperations(true, false);
+    return SUCCESS;
+}
+
+// ===== 收窄守卫（临时）：仅处理 matmul 输出侧场景 =====
+// middle 的 producers 必须全是单输入单输出 CONTRACT，且每个 CONTRACT 的输入直接产自
+// matmul（A_MUL_B/A_MULACC_B）。非 matmul 来源的 CONTRACT→SLICE→CONTRACT 结构保持原状；
+// 验证充分后删除本函数中的 matmul 检查即可放开到通用 CONTRACT 来源。
+bool RemoveRedundantOpUtils::IsMatmulBackedContractProducers(
+    const std::set<Operation*, LogicalTensor::CompareOp>& producers)
+{
+    if (producers.empty()) {
+        return false;
+    }
+    for (auto* producer : producers) {
+        if (producer == nullptr || producer->GetOpcode() != Opcode::OP_CONTRACT ||
+            producer->GetIOperands().size() != 1 || producer->GetIOperands().front() == nullptr ||
+            GetAssembleAttr(*producer) == nullptr) {
+            return false;
+        }
+        const auto& inputProducers = producer->GetIOperands().front()->GetProducers();
+        if (inputProducers.empty()) {
+            return false;
+        }
+        for (auto* inputProducer : inputProducers) {
+            if (inputProducer == nullptr || inputProducer->IsDeleted() ||
+                (inputProducer->GetOpcode() != Opcode::OP_A_MUL_B &&
+                 inputProducer->GetOpcode() != Opcode::OP_A_MULACC_B)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// 匹配 CONTRACT₁ → SLICE → CONTRACT₂ 三明治（整块匹配）：SLICE 从 middle 切出的区域与
+// 某个 CONTRACT₁ 的写入区域完全重合（shape/validshape/offset 均相同）。
+// 匹配成功时输出该 CONTRACT₁，否则返回 false。
+bool RemoveRedundantOpUtils::MatchContractSliceContract(Operation& sliceOp, Operation*& matchedProducer)
+{
+    matchedProducer = nullptr;
+    auto sliceAttr = GetViewAttr(sliceOp);
+    auto middle = sliceOp.GetIOperands().front();
+    auto tile = sliceOp.GetOOperands().front();
+    if (sliceAttr == nullptr || sliceAttr->GetFromOffset().size() != middle->GetShape().size() ||
+        !IsConcreteDynOffsetConsistent(sliceAttr->GetFromOffset(), sliceAttr->GetFromDynOffset()) ||
+        !IsMatmulBackedContractProducers(middle->GetProducers())) {
+        return false;
+    }
+    const auto& tileConsumers = tile->GetConsumers();
+    if (tileConsumers.empty() || std::any_of(tileConsumers.begin(), tileConsumers.end(), [](Operation* consumer) {
+            return consumer == nullptr || consumer->GetOpcode() != Opcode::OP_CONTRACT ||
+                   consumer->GetIOperands().size() != 1;
+        })) {
+        return false;
+    }
+    bool ambiguous = false;
+    for (auto* producer : middle->GetProducers()) {
+        auto contractAttr = GetAssembleAttr(*producer);
+        auto producerInput = producer->GetIOperands().front();
+        if (!IsConcreteDynOffsetConsistent(contractAttr->GetToOffset(), contractAttr->GetToDynOffset()) ||
+            !IsEqualShapeWithDynShape(producerInput, tile) ||
+            contractAttr->GetToOffset() != sliceAttr->GetFromOffset()) {
+            continue;
+        }
+        if (matchedProducer != nullptr) {
+            ambiguous = true;
+            break;
+        }
+        matchedProducer = producer;
+    }
+    return matchedProducer != nullptr && !ambiguous;
+}
+
+// middle 不再有存活消费者时，其全部 producer 均为死写，一并删除
+void RemoveRedundantOpUtils::EraseOrphanMiddleProducers(const LogicalTensorPtr& middle)
+{
+    for (auto* consumer : middle->GetConsumers()) {
+        if (consumer != nullptr && !consumer->IsDeleted()) {
+            return;
+        }
+    }
+    for (auto* producer : middle->GetProducers()) {
+        if (producer != nullptr && !producer->IsDeleted()) {
+            producer->SetAsDeleted();
+        }
+    }
+}
+
+// 消除 CONTRACT₁ → SLICE → CONTRACT₂ 三明治（整块匹配）。
+// 该三明治由恒等 ASSEMBLE/VIEW 的 tile 展开产生：SLICE 只是把 CONTRACT₁ 刚拼入 middle 的
+// 数据原样切回。消除时让 SLICE 下游的 CONTRACT₂ 直接消费 CONTRACT₁ 的输入（搬运 shape 与
+// 写偏移均不变），删除 SLICE；middle 死亡后其全部 producer 一并删除。消除后 cube 计算结果
+// 与 reshape 之间不再有切分/拼装往返，data path pattern（如 L0C2UB）的固定深度窗口才能匹配。
+Status RemoveRedundantOpUtils::ProcessContractSliceContract(Function& function, bool& operationUpdated)
+{
+    std::vector<LogicalTensorPtr> eliminatedMiddles;
+    auto opList = function.Operations().DuplicatedOpList();
+    for (auto* op : opList) {
+        if (op == nullptr || op->GetOpcode() != Opcode::OP_SLICE || op->GetIOperands().size() != 1 ||
+            op->GetOOperands().size() != 1) {
+            continue;
+        }
+        Operation* matchedProducer = nullptr;
+        if (!MatchContractSliceContract(*op, matchedProducer)) {
+            continue;
+        }
+        auto middle = op->GetIOperands().front();
+        auto matchedInput = matchedProducer->GetIOperands().front();
+        auto tileConsumers = op->GetOOperands().front()->GetConsumers();
+        for (auto* consumer : tileConsumers) {
+            consumer->ReplaceIOperand(0, matchedInput);
+        }
+        op->SetAsDeleted();
+        operationUpdated = true;
+        eliminatedMiddles.emplace_back(middle);
+    }
+    std::set<LogicalTensorPtr> processedMiddles;
+    for (auto& middle : eliminatedMiddles) {
+        if (processedMiddles.insert(middle).second) {
+            EraseOrphanMiddleProducers(middle);
+        }
+    }
+    if (operationUpdated) {
+        APASS_LOG_INFO_F(Elements::Function, "Eliminated %zu contract-slice-contract sandwich(es).",
+                         processedMiddles.size());
+    }
     return SUCCESS;
 }
 

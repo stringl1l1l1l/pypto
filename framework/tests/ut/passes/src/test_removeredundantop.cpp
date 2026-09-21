@@ -2054,13 +2054,17 @@ TEST_F(TestRemoveRedundantOpPass, MultiContractSingleSliceWithMaterializedMatmul
     bool operationUpdated = false;
     ASSERT_EQ(RemoveRedundantOpUtils::ProcessContractSlice(*function, newOps, operationUpdated), SUCCESS);
 
-    EXPECT_FALSE(operationUpdated);
-    EXPECT_TRUE(newOps.empty());
+    // The inner materialized matmul chain (matmulOutput -> CONTRACT -> SLICE -> matmulSliceOutput)
+    // is eliminated by ProcessContractSliceContract: the outer contract reads the matmul output
+    // directly. The outer multi-contract-single-slice chain itself must stay untouched.
+    EXPECT_TRUE(operationUpdated);
     EXPECT_EQ(matmulOuterContract.GetOpcode(), Opcode::OP_CONTRACT);
+    EXPECT_EQ(matmulOuterContract.GetIOperands().front(), matmulOutput);
     EXPECT_EQ(otherOuterContract.GetOpcode(), Opcode::OP_CONTRACT);
+    EXPECT_EQ(contractOutput->GetProducers().size(), kNumTwo);
     EXPECT_FALSE(finalSlice.IsDeleted());
-    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumThree);
-    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumTwo);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumTwo);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumOne);
     EXPECT_EQ(CountOpcode(function, Opcode::OP_ASSEMBLE), kNumZero);
 }
 
@@ -4281,3 +4285,187 @@ TEST_F(TestRemoveRedundantOpPass, ReduceAccViewWithMaxZeroClampAndOtherConsumerS
 }
 } // namespace tile_fwk
 } // namespace npu
+
+namespace {
+
+// Build a contract₁ -> slice -> contract₂ sandwich on the output side of a cube op:
+//   cubeOut  --CONTRACT(to {0,0})-->    middle[1,128]
+//   cubeOut2 --CONTRACT(to {0,64})-->   middle            (optional, double producer)
+//   middle   --SLICE(fromOffset, sliceShape)--> tile
+//   tile     --CONTRACT(to {0,0})-->    out
+// An extra non-matching slice can be attached to middle to keep it alive.
+// Only references to surviving ops and tensors are kept: eliminated operations are asserted
+// through CountOpcode so no dangling pointer is ever touched after EraseOperations.
+struct CscSandwich {
+    Operation* consumerContract = nullptr;
+    LogicalTensorPtr matmulOut;
+    LogicalTensorPtr middle;
+    LogicalTensorPtr tile;
+};
+
+CscSandwich BuildCscSandwich(Function& function, Opcode cubeOpcode, const std::vector<int64_t>& sliceFromOffset,
+                             const std::vector<int64_t>& sliceShape, bool addSecondProducer, bool addKeptSlice,
+                             const std::vector<int64_t>& secondProducerOffset = {kNumZero, 64})
+{
+    constexpr int64_t kCscTileCols = kNumExpSix;
+    constexpr int64_t kCscMiddleCols = kNumExpSeven;
+    CscSandwich g;
+    g.matmulOut = IRBuilder().CreateTensorVar(DT_FP32, {1, kCscTileCols}, CreateTestConstIntVector({1, kCscTileCols}));
+    auto inA = IRBuilder().CreateTensorVar(DT_FP32, {1, kCscTileCols}, CreateTestConstIntVector({1, kCscTileCols}));
+    auto inB = IRBuilder().CreateTensorVar(DT_FP32, {kCscTileCols, kCscTileCols},
+                                           CreateTestConstIntVector({kCscTileCols, kCscTileCols}));
+    IRBuilder().CreateTensorOpStmt(function, cubeOpcode, {inA, inB}, {g.matmulOut});
+
+    g.middle = IRBuilder().CreateTensorVar(DT_FP32, {1, kCscMiddleCols}, CreateTestConstIntVector({1, kCscMiddleCols}));
+    auto& producerContract = IRBuilder().CreateTensorOpStmt(function, Opcode::OP_CONTRACT, {g.matmulOut}, {g.middle});
+    producerContract.SetOpAttribute(std::make_shared<AssembleOpAttribute>(std::vector<int64_t>{kNumZero, kNumZero}));
+
+    if (addSecondProducer) {
+        auto matmulOut2 = IRBuilder().CreateTensorVar(DT_FP32, {1, kCscTileCols},
+                                                      CreateTestConstIntVector({1, kCscTileCols}));
+        auto inA2 = IRBuilder().CreateTensorVar(DT_FP32, {1, kCscTileCols},
+                                                CreateTestConstIntVector({1, kCscTileCols}));
+        auto inB2 = IRBuilder().CreateTensorVar(DT_FP32, {kCscTileCols, kCscTileCols},
+                                                CreateTestConstIntVector({kCscTileCols, kCscTileCols}));
+        IRBuilder().CreateTensorOpStmt(function, cubeOpcode, {inA2, inB2}, {matmulOut2});
+        auto& producerContract2 = IRBuilder().CreateTensorOpStmt(function, Opcode::OP_CONTRACT, {matmulOut2},
+                                                                 {g.middle});
+        producerContract2.SetOpAttribute(std::make_shared<AssembleOpAttribute>(secondProducerOffset));
+    }
+
+    g.tile = IRBuilder().CreateTensorVar(DT_FP32, sliceShape, CreateTestConstIntVector(sliceShape));
+    auto& slice = IRBuilder().CreateTensorOpStmt(function, Opcode::OP_SLICE, {g.middle}, {g.tile});
+    auto dynFromOffset = SymbolicScalar::FromConcrete(sliceFromOffset);
+    auto tileValidShape = GetViewValidShape(g.middle->GetDynValidShape(), sliceFromOffset, dynFromOffset, sliceShape);
+    slice.SetOpAttribute(std::make_shared<ViewOpAttribute>(sliceFromOffset, dynFromOffset, tileValidShape));
+
+    auto out = IRBuilder().CreateTensorVar(DT_FP32, {1, kCscMiddleCols}, CreateTestConstIntVector({1, kCscMiddleCols}));
+    g.consumerContract = &IRBuilder().CreateTensorOpStmt(function, Opcode::OP_CONTRACT, {g.tile}, {out});
+    g.consumerContract->SetOpAttribute(std::make_shared<AssembleOpAttribute>(std::vector<int64_t>{kNumZero, kNumZero}));
+
+    if (addKeptSlice) {
+        auto smallTile = IRBuilder().CreateTensorVar(DT_FP32, {1, 16}, CreateTestConstIntVector({1, 16}));
+        auto& keptSlice = IRBuilder().CreateTensorOpStmt(function, Opcode::OP_SLICE, {g.middle}, {smallTile});
+        auto keptOffset = std::vector<int64_t>{kNumZero, 16};
+        auto keptDynOffset = SymbolicScalar::FromConcrete(keptOffset);
+        auto keptValid = GetViewValidShape(g.middle->GetDynValidShape(), keptOffset, keptDynOffset, {1, 16});
+        keptSlice.SetOpAttribute(std::make_shared<ViewOpAttribute>(keptOffset, keptDynOffset, keptValid));
+    }
+    return g;
+}
+
+} // namespace
+
+// Matmul-backed sandwich with a fully-overlapping slice region: the slice and both producer
+// contracts are eliminated and the downstream contract consumes the matmul output directly.
+TEST_F(TestRemoveRedundantOpPass, ContractSliceContractSandwichEliminated)
+{
+    auto function = std::make_shared<Function>(Program::GetInstance(), "TestCscEliminate", "TestCscEliminate", nullptr);
+    ASSERT_NE(function, nullptr);
+    function->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto g = BuildCscSandwich(*function, Opcode::OP_A_MUL_B, {kNumZero, kNumZero}, {1, kNumExpSix}, true, false);
+    ASSERT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumThree);
+    ASSERT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumOne);
+
+    std::vector<Operation*> newOps;
+    bool operationUpdated = false;
+    ASSERT_EQ(RemoveRedundantOpUtils::ProcessContractSlice(*function, newOps, operationUpdated), SUCCESS);
+    EXPECT_TRUE(operationUpdated);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumOne);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumZero);
+    ASSERT_EQ(g.consumerContract->GetIOperands().size(), 1UL);
+    EXPECT_EQ(g.consumerContract->GetIOperands().front(), g.matmulOut);
+    // The orphaned middle producers are removed here; the second matmul's output loses its only
+    // consumer and stays until the downstream DCE (RemoveRedundantOp pass) reclaims it.
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_A_MUL_B), kNumTwo);
+}
+
+// Two producers writing the exact same region as the slice is an overlapping-write conflict:
+// the ambiguous guard must reject the elimination so the data flow is never silently rewritten.
+TEST_F(TestRemoveRedundantOpPass, ContractSliceContractOverlappingProducersKept)
+{
+    auto function = std::make_shared<Function>(Program::GetInstance(), "TestCscAmbiguous", "TestCscAmbiguous", nullptr);
+    ASSERT_NE(function, nullptr);
+    function->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto g = BuildCscSandwich(*function, Opcode::OP_A_MUL_B, {kNumZero, kNumZero}, {1, kNumExpSix}, true, false,
+                              {kNumZero, kNumZero});
+
+    std::vector<Operation*> newOps;
+    bool operationUpdated = false;
+    ASSERT_EQ(RemoveRedundantOpUtils::ProcessContractSlice(*function, newOps, operationUpdated), SUCCESS);
+    EXPECT_FALSE(operationUpdated);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumThree);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumOne);
+    ASSERT_EQ(g.consumerContract->GetIOperands().size(), 1UL);
+    EXPECT_EQ(g.consumerContract->GetIOperands().front(), g.tile);
+}
+
+// Non-matmul cube producer: the narrowed guard keeps the sandwich untouched.
+TEST_F(TestRemoveRedundantOpPass, ContractSliceContractNonMatmulBackedKept)
+{
+    auto function = std::make_shared<Function>(Program::GetInstance(), "TestCscNonMatmul", "TestCscNonMatmul", nullptr);
+    ASSERT_NE(function, nullptr);
+    function->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto g = BuildCscSandwich(*function, Opcode::OP_ADD, {kNumZero, kNumZero}, {1, kNumExpSix}, true, false);
+
+    std::vector<Operation*> newOps;
+    bool operationUpdated = false;
+    ASSERT_EQ(RemoveRedundantOpUtils::ProcessContractSlice(*function, newOps, operationUpdated), SUCCESS);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumThree);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumOne);
+    ASSERT_EQ(g.consumerContract->GetIOperands().size(), 1UL);
+    EXPECT_EQ(g.consumerContract->GetIOperands().front(), g.tile);
+}
+
+// A slice region spanning two producer regions is not a full-block match: nothing is eliminated.
+TEST_F(TestRemoveRedundantOpPass, ContractSliceContractOffsetMismatchKept)
+{
+    auto function = std::make_shared<Function>(Program::GetInstance(), "TestCscOffset", "TestCscOffset", nullptr);
+    ASSERT_NE(function, nullptr);
+    function->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto g = BuildCscSandwich(*function, Opcode::OP_A_MUL_B, {kNumZero, 32}, {1, kNumExpSix}, true, false);
+
+    std::vector<Operation*> newOps;
+    bool operationUpdated = false;
+    ASSERT_EQ(RemoveRedundantOpUtils::ProcessContractSlice(*function, newOps, operationUpdated), SUCCESS);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumThree);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumOne);
+    EXPECT_EQ(g.consumerContract->GetIOperands().front(), g.tile);
+}
+
+// A partial region of a producer block (smaller shape) is not a full-block match.
+TEST_F(TestRemoveRedundantOpPass, ContractSliceContractPartialShapeKept)
+{
+    auto function = std::make_shared<Function>(Program::GetInstance(), "TestCscPartial", "TestCscPartial", nullptr);
+    ASSERT_NE(function, nullptr);
+    function->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto g = BuildCscSandwich(*function, Opcode::OP_A_MUL_B, {kNumZero, kNumZero}, {1, 32}, false, false);
+
+    std::vector<Operation*> newOps;
+    bool operationUpdated = false;
+    ASSERT_EQ(RemoveRedundantOpUtils::ProcessContractSlice(*function, newOps, operationUpdated), SUCCESS);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumTwo);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumOne);
+    EXPECT_EQ(g.consumerContract->GetIOperands().front(), g.tile);
+}
+
+// When the middle tensor still has a live consumer, the matched slice is eliminated but the
+// producer contracts must survive (they feed the remaining consumer).
+TEST_F(TestRemoveRedundantOpPass, ContractSliceContractMiddleStillUsedKeepsProducers)
+{
+    auto function = std::make_shared<Function>(Program::GetInstance(), "TestCscMiddleUsed", "TestCscMiddleUsed",
+                                               nullptr);
+    ASSERT_NE(function, nullptr);
+    function->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto g = BuildCscSandwich(*function, Opcode::OP_A_MUL_B, {kNumZero, kNumZero}, {1, kNumExpSix}, true, true);
+    ASSERT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumThree);
+    ASSERT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumTwo);
+
+    std::vector<Operation*> newOps;
+    bool operationUpdated = false;
+    ASSERT_EQ(RemoveRedundantOpUtils::ProcessContractSlice(*function, newOps, operationUpdated), SUCCESS);
+    EXPECT_TRUE(operationUpdated);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_CONTRACT), kNumThree);
+    EXPECT_EQ(CountOpcode(function, Opcode::OP_SLICE), kNumOne);
+    EXPECT_EQ(g.consumerContract->GetIOperands().front(), g.matmulOut);
+}
