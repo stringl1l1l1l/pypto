@@ -805,7 +805,12 @@ def _ir_axpy(out: Expr, src: Expr, scalar: Expr, *, span: Span | None = None) ->
                 f"axpy: dtype mismatch between out ({dt}) and src ({src_dt}). "
                 f"Supported: same type, or src=FP16 + out=FP32."
             )
-    return _ir_core.create_op_call(block_ir_op("axpy"), [out, src, scalar], {}, span or _span())
+    actual_span = span or _span()
+    scalar_expr = _normalize_expr(scalar, actual_span)
+    from pypto_pro.language.parser.diagnostics import check_const_expr_fits_dtype
+
+    check_const_expr_fits_dtype(scalar_expr, dt, span=actual_span, api="pl.axpy")
+    return _ir_core.create_op_call(block_ir_op("axpy"), [out, src, scalar_expr], {}, actual_span)
 
 
 def _ir_add_relu(out: Expr, lhs: Expr, rhs: Expr, *, span: Span | None = None) -> Expr:
