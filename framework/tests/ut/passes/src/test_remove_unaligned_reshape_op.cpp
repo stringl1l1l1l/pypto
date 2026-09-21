@@ -1786,6 +1786,51 @@ TEST_F(FoldConsumerViewOffsetTest, FoldWithMultiViewColumnUnion)
     EXPECT_EQ(attr3->GetFromOffset(), (std::vector<int64_t>{0, 48}));
 }
 
+// Split views may carry the same dynamic row base plus different static row/column tile offsets.
+TEST_F(FoldConsumerViewOffsetTest, FoldWithDynamicBaseAndTwoDimensionalTileOffsets)
+{
+    auto rowBase = CreateTestScalarVar("loop_idx_b_idx_mul_actual_b");
+    auto validRows = CreateTestScalarVar("actual_b");
+    auto output = MakeUbTensor({FOLD_RAW_ROWS, FOLD_RAW_COLS},
+                               CreateTestConstIntVector({FOLD_RAW_ROWS, FOLD_RAW_COLS}));
+    auto& copyInOp = CreateReshapeCopyIn(output);
+
+    auto topLeftOut = MakeUbTensor({16, 32}, {validRows.Min(SymbolicScalar(16)), SymbolicScalar(32)});
+    auto topRightOut = MakeUbTensor({16, 32}, {validRows.Min(SymbolicScalar(16)), SymbolicScalar(32)});
+    auto bottomLeftOut = MakeUbTensor(
+        {2, 32}, {(validRows - 16).Max(SymbolicScalar(0)).Min(SymbolicScalar(2)), SymbolicScalar(32)});
+    auto bottomRightOut = MakeUbTensor(
+        {2, 32}, {(validRows - 16).Max(SymbolicScalar(0)).Min(SymbolicScalar(2)), SymbolicScalar(32)});
+
+    auto& topLeft = CreateViewConsumer(output, topLeftOut, rowBase, 0);
+    auto& topRight = CreateViewConsumer(output, topRightOut, rowBase, 32);
+    auto& bottomLeft = CreateViewConsumer(output, bottomLeftOut, rowBase + 16, 0);
+    auto& bottomRight = CreateViewConsumer(output, bottomRightOut, rowBase + 16, 32);
+    std::dynamic_pointer_cast<ViewOpAttribute>(bottomLeft.GetOpAttribute())
+        ->SetFromOffset({16, 0}, {rowBase + 16, SymbolicScalar(0)});
+    std::dynamic_pointer_cast<ViewOpAttribute>(bottomRight.GetOpAttribute())
+        ->SetFromOffset({16, 32}, {rowBase + 16, SymbolicScalar(32)});
+
+    pass->FoldConsumerViewOffsetIntoCopyIn(copyInOp);
+
+    auto shrunk = copyInOp.GetOOperands().front();
+    EXPECT_EQ(shrunk->GetShape(), (std::vector<int64_t>{18, 64}));
+    auto copyAttr = std::dynamic_pointer_cast<CopyOpAttribute>(copyInOp.GetOpAttribute());
+    ASSERT_NE(copyAttr, nullptr);
+    auto fromOffset = OpImmediate::ToSpecified(copyAttr->GetFromOffset());
+    ASSERT_EQ(fromOffset.size(), 2);
+    EXPECT_EQ(fromOffset[0].Dump(), rowBase.Dump());
+    EXPECT_EQ(fromOffset[1].Concrete(), 0);
+    EXPECT_EQ(std::dynamic_pointer_cast<ViewOpAttribute>(topLeft.GetOpAttribute())->GetFromOffset(),
+              (std::vector<int64_t>{0, 0}));
+    EXPECT_EQ(std::dynamic_pointer_cast<ViewOpAttribute>(topRight.GetOpAttribute())->GetFromOffset(),
+              (std::vector<int64_t>{0, 32}));
+    EXPECT_EQ(std::dynamic_pointer_cast<ViewOpAttribute>(bottomLeft.GetOpAttribute())->GetFromOffset(),
+              (std::vector<int64_t>{16, 0}));
+    EXPECT_EQ(std::dynamic_pointer_cast<ViewOpAttribute>(bottomRight.GetOpAttribute())->GetFromOffset(),
+              (std::vector<int64_t>{16, 32}));
+}
+
 // 无消费者早退
 TEST_F(FoldConsumerViewOffsetTest, FoldSkippedWithNoConsumer)
 {

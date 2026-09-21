@@ -240,61 +240,76 @@ void RemoveUnalignedReshape::FoldConsumerViewOffsetIntoCopyIn(Operation& copyInO
         }
         viewOffsets.push_back(std::move(offsets));
     }
-    // 非末维偏移需各view一致且存在动态分量；末维为列切分维度，各view允许不同但必须全为常量
+    // SplitView folds a static tile offset into the authoritative dynamic expression. Recover the shared dynamic
+    // base by subtracting that static part, then use the static parts to build the bounding box.
     bool hasDynamicOffset = false;
-    for (size_t i = 0; i + 1 < dim; i++) {
+    std::vector<SymbolicScalar> commonBases;
+    commonBases.reserve(dim);
+    for (size_t i = 0; i < dim; i++) {
+        auto base = (viewOffsets[0][i] - viewConsumers[0].second->GetFromOffset()[i]).Simplify();
         for (size_t v = 1; v < viewOffsets.size(); v++) {
-            if (viewOffsets[v][i].Dump() != viewOffsets[0][i].Dump()) {
+            auto candidate = (viewOffsets[v][i] - viewConsumers[v].second->GetFromOffset()[i]).Simplify();
+            if (candidate.Dump() != base.Dump()) {
                 return;
             }
         }
-        if (!viewOffsets[0][i].IsImmediate()) {
-            hasDynamicOffset = true;
-        }
-    }
-    for (size_t v = 0; v < viewOffsets.size(); v++) {
-        if (!viewOffsets[v][dim - 1].IsImmediate()) {
+        // Dynamic innermost offsets still cannot be represented by the local VIEW after shrinking.
+        if (i + 1 == dim && (!base.IsImmediate() || base.Concrete() != 0)) {
             return;
         }
+        if (i + 1 < dim && !base.IsImmediate()) {
+            hasDynamicOffset = true;
+        }
+        commonBases.push_back(std::move(base));
     }
     if (!hasDynamicOffset) {
         return;
     }
-    // 各view形状除末维外须一致，末维列偏移并集构成搬运box
-    const auto& refShape = viewConsumers.front().first->GetOOperands().front()->GetShape();
-    if (refShape.size() != dim) {
+
+    std::vector<int64_t> boxStart = viewConsumers.front().second->GetFromOffset();
+    std::vector<int64_t> boxEnd(dim, 0);
+    const auto& firstShape = viewConsumers.front().first->GetOOperands().front()->GetShape();
+    if (firstShape.size() != dim) {
         return;
     }
-    int64_t colStart = viewOffsets[0][dim - 1].Concrete();
-    int64_t colEnd = colStart + refShape[dim - 1];
+    for (size_t i = 0; i < dim; i++) {
+        boxEnd[i] = boxStart[i] + firstShape[i];
+    }
     for (size_t v = 0; v < viewConsumers.size(); v++) {
         const auto& shape = viewConsumers[v].first->GetOOperands().front()->GetShape();
         if (shape.size() != dim) {
             return;
         }
-        for (size_t i = 0; i + 1 < dim; i++) {
-            if (shape[i] != refShape[i]) {
+        const auto& staticOffset = viewConsumers[v].second->GetFromOffset();
+        for (size_t i = 0; i < dim; i++) {
+            boxStart[i] = std::min(boxStart[i], staticOffset[i]);
+            boxEnd[i] = std::max(boxEnd[i], staticOffset[i] + shape[i]);
+            if (boxStart[i] < 0 || boxEnd[i] > output->GetShape()[i]) {
                 return;
             }
         }
-        int64_t col = viewOffsets[v][dim - 1].Concrete();
-        colStart = std::min(colStart, col);
-        colEnd = std::max(colEnd, col + shape[dim - 1]);
-    }
-    if (colEnd > output->GetShape()[dim - 1]) {
-        return;
     }
 
-    std::vector<int64_t> boxShape = refShape;
-    boxShape[dim - 1] = colEnd - colStart;
-    std::vector<SymbolicScalar> boxOffset = viewOffsets[0];
-    boxOffset[dim - 1] = SymbolicScalar(colStart);
-    const auto& refValid = viewConsumers.front().first->GetOOperands().front()->GetDynValidShape();
-    std::vector<SymbolicScalar> boxValid;
-    // 末维按原始搬运 box 的完整宽度设置；每个消费侧 VIEW 保留自身动态 valid shape，
-    // 因此 shrunk tensor 的末维 valid 只作为搬运范围，不会扩大消费侧实际有效范围。
+    std::vector<int64_t> boxShape(dim, 0);
+    std::vector<SymbolicScalar> boxOffset;
+    boxOffset.reserve(dim);
     for (size_t i = 0; i < dim; i++) {
-        boxValid.push_back((i == dim - 1 || i >= refValid.size()) ? SymbolicScalar(boxShape[i]) : refValid[i]);
+        boxShape[i] = boxEnd[i] - boxStart[i];
+        boxOffset.push_back((commonBases[i] + boxStart[i]).Simplify());
+    }
+
+    std::vector<SymbolicScalar> boxValid(dim, SymbolicScalar(0));
+    for (size_t v = 0; v < viewConsumers.size(); v++) {
+        const auto& tensor = viewConsumers[v].first->GetOOperands().front();
+        const auto& shape = tensor->GetShape();
+        const auto& validShape = tensor->GetDynValidShape();
+        const auto& staticOffset = viewConsumers[v].second->GetFromOffset();
+        for (size_t i = 0; i < dim; i++) {
+            SymbolicScalar valid = i < validShape.size() ? validShape[i] : SymbolicScalar(shape[i]);
+            auto relativeOffset = staticOffset[i] - boxStart[i];
+            auto covered = ((valid + relativeOffset) * (valid != 0)).Simplify();
+            boxValid[i] = boxValid[i].Max(covered).Min(SymbolicScalar(boxShape[i])).Simplify();
+        }
     }
 
     auto shrunkRaw = std::make_shared<RawTensor>(output->Datatype(), boxShape, output->Format());
@@ -315,7 +330,9 @@ void RemoveUnalignedReshape::FoldConsumerViewOffsetIntoCopyIn(Operation& copyInO
     for (size_t v = 0; v < viewConsumers.size(); v++) {
         auto& [consumer, viewAttr] = viewConsumers[v];
         std::vector<int64_t> newFromOffset(dim, 0);
-        newFromOffset[dim - 1] = viewOffsets[v][dim - 1].Concrete() - colStart;
+        for (size_t i = 0; i < dim; i++) {
+            newFromOffset[i] = viewAttr->GetFromOffset()[i] - boxStart[i];
+        }
         consumer->ReplaceInput(shrunk, output);
         viewAttr->SetFromOffset(newFromOffset);
     }
