@@ -59,6 +59,31 @@ def test_slice_neg_index():
         assert res.shape == [2, 1]
 
 
+def test_slice_out_of_bounds_is_clamped():
+    """Test that concrete slice bounds follow Python's clamping rules."""
+    x = pypto.tensor([4, 8], pypto.DT_FP32)
+
+    with pypto.function("SLICE_OUT_OF_BOUNDS", [x]):
+        pypto.set_vec_tile_shapes(4, 8)
+        res = x[-100:100, -100:7]
+        assert res.shape == [4, 7]
+
+
+def test_slice_neg_index_symbolic_shape():
+    """Test negative slice normalization with a symbolic dimension."""
+    symbolic_size = pypto.SymbolicScalar("n")
+    normalized = pypto.Tensor._negative_index_to_positive((slice(-3, -1),), [symbolic_size])
+
+    expected_start = (symbolic_size - 3).simplify()
+    expected_stop = (symbolic_size - 1).simplify()
+    assert pypto.SymbolicScalar.check(
+        [normalized[0].start == expected_start]
+    ) == pypto.SatStatus.SAT
+    assert pypto.SymbolicScalar.check(
+        [normalized[0].stop == expected_stop]
+    ) == pypto.SatStatus.SAT
+
+
 def test_slice_int_index():
     """Test mix use of slice and int"""
     x_shape = [4, 8, 8, 8, 8]

@@ -569,10 +569,18 @@ class Tensor:
                 normalized.append(k)
                 continue
             start, stop, step = k.start, k.stop, k.step
-            if isinstance(start, int) and start < 0:
-                start = size + start
-            if isinstance(stop, int) and stop < 0:
-                stop = size + stop
+            if (
+                isinstance(size, int)
+                and size >= 0
+                and (step is None or (isinstance(step, int) and step == 1))
+                and all(value is None or isinstance(value, int) for value in (start, stop))
+            ):
+                start, stop, _ = slice(start, stop, step).indices(size)
+            else:
+                if isinstance(start, int) and start < 0:
+                    start = size + start
+                if isinstance(stop, int) and stop < 0:
+                    stop = size + stop
             normalized.append(slice(start, stop, step))
         return tuple(normalized)
 
