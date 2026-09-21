@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -41,13 +41,13 @@ support\_dynamic\_aligned选项效果后续会通过Pass推导机制进行优化
 
 enable\_pmu\_trace使用说明：
 <!-- npu="950" id4 -->
-- Ascend 950PR/Ascend 950DT：仅支持单算子采集（不支持整网场景），且最多只能采集 6 个核的数据。更多使用说明参见[性能调优指南](../../../guide/programming_guide/tensor/debug/performance.md#pmu-trace)。
+- Ascend 950PR&950DT系列产品：仅支持单算子采集（不支持整网场景），且最多只能采集 6 个核的数据。更多使用说明参见[性能调优指南](../../../guide/programming_guide/tensor/debug/performance.md#pmu-trace)。
 <!-- end id4 -->
 <!-- npu="A3" id5 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持。
+- Atlas A3系列产品：不支持。
 <!-- end id5 -->
 <!-- npu="910b" id6 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持
+- Atlas A2系列产品：不支持
 <!-- end id6 -->
 
 ## 调用示例

@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -44,25 +44,25 @@ pow(input: Tensor, other: Union[Tensor, int, float], precision_type: PrecisionTy
 
 1. precision_type使用说明：
    <!-- npu="950" id4 -->
-   - Ascend 950PR/Ascend 950DT：支持
+   - Ascend 950PR&950DT系列产品：支持
    <!-- end id4 -->
    <!-- npu="A3" id5 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持，默认使用指令模式 `INTRINSIC`
+   - Atlas A3系列产品：不支持，默认使用指令模式 `INTRINSIC`
    <!-- end id5 -->
    <!-- npu="910b" id6 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持，默认使用指令模式 `INTRINSIC`
+   - Atlas A2系列产品：不支持，默认使用指令模式 `INTRINSIC`
    <!-- end id6 -->
 2. 两个输入均为Tensor且输入类型为int8/uint8/int16时，两个输入参数数据类型需相同。
 3. Tensor类型输入不支持`TileOpFormat.TILEOP_NZ`格式。
 4. 临时空间使用说明：若TileShape为\[a,b,c,d\]，当输出数据类型为DT_INT32、DT_INT8、DT_UINT8、DT_INT16时需要临时空间大小为a\*b\*c\*d\*sizeof\(DT_FP32\)，其余情况需要的临时空间大小为
    <!-- npu="950" id7 -->
-   - Ascend 950PR/Ascend 950DT：a\*b\*c\*d\*sizeof\(DT_FP32\)
+   - Ascend 950PR&950DT系列产品：a\*b\*c\*d\*sizeof\(DT_FP32\)
    <!-- end id7 -->
    <!-- npu="A3" id8 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：a\*b\*c\*\(2\*d+3\*d/8\)\*sizeof\(DT_FP32\)
+   - Atlas A3系列产品：a\*b\*c\*\(2\*d+3\*d/8\)\*sizeof\(DT_FP32\)
    <!-- end id8 -->
    <!-- npu="910b" id9 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：a\*b\*c\*\(2\*d+3\*d/8\)\*sizeof\(DT_FP32\)
+   - Atlas A2系列产品：a\*b\*c\*\(2\*d+3\*d/8\)\*sizeof\(DT_FP32\)
    <!-- end id9 -->
 
 ## 数据类型提升说明

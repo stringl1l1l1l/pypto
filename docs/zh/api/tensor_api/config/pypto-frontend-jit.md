@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -79,13 +79,13 @@ def kernel_function(...):
 5. 非张量参数支持keyword传参、位置参数、使用默认值
 6. 最大可用aicpu数量说明：
    <!-- npu="950" id4 -->
-   - Ascend 950PR/Ascend 950DT，最大可用aicpu数量为7（具体最大数量取决于具体的型号）。
+   - Ascend 950PR&950DT系列产品，最大可用aicpu数量为7（具体最大数量取决于具体的型号）。
    <!-- end id4 -->
    <!-- npu="A3" id5 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：最大可用aicpu数量为5。
+   - Atlas A3系列产品：最大可用aicpu数量为5。
    <!-- end id5 -->
    <!-- npu="910b" id6 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：最大可用aicpu数量为5。
+   - Atlas A2系列产品：最大可用aicpu数量为5。
    <!-- end id6 -->
 
 **pypto.Tensor[...]说明**：

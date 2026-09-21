@@ -183,13 +183,13 @@ PMU Trace用于核内流水分析，是算子深度性能调优的重要工具�
 
 - 产品支持情况：
   <!-- npu="950" id1 -->
-  - Ascend 950PR/Ascend 950DT：支持
+  - Ascend 950PR&950DT系列产品：支持
   <!-- end id1 -->
   <!-- npu="A3" id2 -->
-  - Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持
+  - Atlas A3系列产品：不支持
   <!-- end id2 -->
   <!-- npu="910b" id3 -->
-  - Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持
+  - Atlas A2系列产品：不支持
   <!-- end id3 -->
 - 当前仅支持单算子采集，不支持整网场景。
 - 当前最多只能采集6个核的数据。
@@ -360,7 +360,7 @@ pypto.set_cube_tile_shapes([128, 128], [128, 512], [128, 128])
 
 - 首先，需要满足特定Operation对TileShape的规格约束。如scatter update要求尾轴TileShape和Shape一致，即不对尾轴进行切分。各个Operation的具体限制可以参考相关接口文档。
 
-- 其次，要保证Operation的输入与输出Tensor可以在UB中分配内存，因此TileShape不能过大。同时由于子图和搬运的数据块较小会导致性能劣化，因此TileShape又不能过小。以Atlas A3 训练系列产品为例，UB的缓存容量为192KB。因此合适的初始TileShape是既满足Operation的要求，又使得数据块大小在16到64KB之间，尾轴32B对齐。
+- 其次，要保证Operation的输入与输出Tensor可以在UB中分配内存，因此TileShape不能过大。同时由于子图和搬运的数据块较小会导致性能劣化，因此TileShape又不能过小。以Atlas A3系列产品为例，UB的缓存容量为192KB。因此合适的初始TileShape是既满足Operation的要求，又使得数据块大小在16到64KB之间，尾轴32B对齐。
 
 - 此外，归约类计算(Reduce运算，如：sum、max、min等)尽可能不要在归约轴上进行切分。例如，输入Shape为(56, 1024)的RMSNorm，它的最后一维TileShape应当设为1024。下图的上半部分是对reduce轴切分的RMSNorm的泳道图例子，多个子图的输出需要在同一个子图进行reduce操作，导致产生GM搬运和调度开销。下半部分是不对reduce轴切分的例子，此时上下游子图合并，没有GM搬运和调度开销。
 

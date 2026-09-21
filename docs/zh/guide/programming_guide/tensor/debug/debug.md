@@ -137,7 +137,7 @@ graph LR
 ## CPU仿真调试
 <!-- npu="A3,910b" id1 -->
 
-### Atlas A3 训练系列产品/Atlas A3 推理系列产品/Atlas A2 训练系列产品/Atlas A2 推理系列产品
+### Atlas A3系列产品/Atlas A2系列产品
 
 在不具备昇腾设备时，也支持在CPU仿真环境中进行测试体验：
 
@@ -186,14 +186,14 @@ graph LR
 
 <!-- npu="950" id2 -->
 
-### Ascend 950PR/Ascend 950DT
+### Ascend 950PR&950DT系列产品
 
 在不具备昇腾设备时，也支持在CPU仿真环境中进行测试体验：
 
 - 性能仿真：支持用户查看算子的核内流水数据。
 - 精度仿真：支持用户在CPU环境获取算子运算结果（精度仿真依赖CANN软件包）。
 
-Ascend 950PR/Ascend 950DT 支持以下两种仿真模式，均通过`cannsim record`命令启动，开发者可根据调试目的选择：
+Ascend 950PR&950DT系列产品 支持以下两种仿真模式，均通过`cannsim record`命令启动，开发者可根据调试目的选择：
 
 - **CostModel**：任务级仿真，粒度较粗、速度快但性能仿真准确度较低；输出泳道图（merged\_swimlane.json），通过PyPTO Toolkit查看核间任务的调度与并行情况，适用于快速评估算子的任务调度与核间并行度。
 - **CAModel**：指令级仿真，粒度较细、性能仿真准确度高但速度慢；输出流水报告（trace\_core\*.json），通过chrome://tracing查看核内指令的执行细节，适用于分析核内流水、进行精细性能调优。

@@ -42,7 +42,7 @@ pypto.set_cube_tile_shapes([mL0, mL1], [kL0, kL1], [nL0, nL1], enable_split_k=Fa
 
 由于NPU的CUBE计算是以分型数据块为最小计算粒度，因此，要求切分大小也要满足分型格式的要求（也就是外轴16元素对齐，内轴32字节对齐）。同时，切分大小还要满足Buffer空间约束，具体计算约束详见pypto.set_cube_tile_shapes。
 
-以Atlas A3 训练系列产品/Atlas A3 推理系列产品和Atlas A2 训练系列产品/Atlas A2 推理系列产品为例，对于A、B矩阵均为FP16类型的场景，满足Buffer空间约束的推荐Tile配置为：
+以Atlas A3系列产品和Atlas A2系列产品为例，对于A、B矩阵均为FP16类型的场景，满足Buffer空间约束的推荐Tile配置为：
 
 ```python
 pypto.set_cube_tile_shapes([128, 128], [64, 256], [256, 256], enable_split_k=False)
@@ -191,7 +191,7 @@ $$
 $$
 l2\_hit\_ratio = \frac{L2\_LOAD\_SIZE}{MTE2\_TOTAL\_LOAD\_SIZE}=1-\frac{\frac{1}{N} \cdot aByte+\frac{1}{M} \cdot bByte}{\frac{1}{nL1} \cdot aByte+\frac{1}{mL1} \cdot bByte}
 $$
-对于Atlas A3 训练系列产品/Atlas A3 推理系列产品和Atlas A2 训练系列产品/Atlas A2 推理系列产品，L2带宽是HBM带宽的3倍以上，因此需要优先提高L2命中率。
+对于Atlas A3系列产品和Atlas A2系列产品，L2带宽是HBM带宽的3倍以上，因此需要优先提高L2命中率。
 
 进一步考虑A、B矩阵数据类型均为FP16的场景，并考虑单轮次的L2命中率，则有：
 $$
@@ -199,7 +199,7 @@ l2\_hit\_ratio = 1-\frac{\frac{1}{nDim \cdot nL1} +\frac{1}{mDim \cdot mL1} }{\f
 $$
 上式中，$mDim, nDim$分别为单轮次计算时M、N轴的分核数。则对于指定切分配置，显然当$nDim \cdot nL1 = mDim \cdot mL1$ 时，单轮次的L2命中率最大。
 
-综合考虑算数强度与L2命中率，以Atlas A3 训练系列产品/Atlas A3 推理系列产品和Atlas A2 训练系列产品/Atlas A2 推理系列产品为例，为了尽可能提高算数强度，我们一般取128-256切分配置，以mL1=128，nL1=256为例，则单轮次M、N轴的分核数满足$nDim \cdot 256 = mDim \cdot 128$时L2命中率最高，对于24核平台，可以取mDim=6，nDim=4或mDim=8，nDim=3。
+综合考虑算数强度与L2命中率，以Atlas A3系列产品和Atlas A2系列产品为例，为了尽可能提高算数强度，我们一般取128-256切分配置，以mL1=128，nL1=256为例，则单轮次M、N轴的分核数满足$nDim \cdot 256 = mDim \cdot 128$时L2命中率最高，对于24核平台，可以取mDim=6，nDim=4或mDim=8，nDim=3。
 
 举例，对于M = N = K = 6144，FP16类型场景，仅采用128-256切分配置，整体耗时约为2.1ms，等效算力约220 TFLOPS，测试代码如下：
 

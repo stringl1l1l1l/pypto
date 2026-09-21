@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -105,13 +105,13 @@ conv(input_conv, weight, out_dtype, strides, paddings, dilations, *, groups=1, t
 ### 数据类型约束
 
 <!-- npu="950" id9 -->
-- Ascend 950PR/Ascend 950DT：支持的数据类型为DT_FP16、DT_BF16、DT_FP32。input_conv、weight、bias和out的数据类型需要相同。
+- Ascend 950PR&950DT系列产品：支持的数据类型为DT_FP16、DT_BF16、DT_FP32。input_conv、weight、bias和out的数据类型需要相同。
 <!-- end id9 -->
 <!-- npu="A3" id10 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持的数据类型为DT_FP16、DT_BF16、DT_FP32。对于DT_FP16和DT_FP32类型，input_conv、weight、bias和out的数据类型需要相同；对于DT_BF16类型，input_conv、weight和out为DT_BF16类型，bias需为DT_FP32类型。
+- Atlas A3系列产品：支持的数据类型为DT_FP16、DT_BF16、DT_FP32。对于DT_FP16和DT_FP32类型，input_conv、weight、bias和out的数据类型需要相同；对于DT_BF16类型，input_conv、weight和out为DT_BF16类型，bias需为DT_FP32类型。
 <!-- end id10 -->
 <!-- npu="910b" id11 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持的数据类型为DT_FP16、DT_BF16、DT_FP32。对于DT_FP16和DT_FP32类型，input_conv、weight、bias和out的数据类型需要相同；对于DT_BF16类型，input_conv、weight和out为DT_BF16类型，bias需为DT_FP32类型。
+- Atlas A2系列产品：支持的数据类型为DT_FP16、DT_BF16、DT_FP32。对于DT_FP16和DT_FP32类型，input_conv、weight、bias和out的数据类型需要相同；对于DT_BF16类型，input_conv、weight和out为DT_BF16类型，bias需为DT_FP32类型。
 <!-- end id11 -->
 
 ## 调用示例

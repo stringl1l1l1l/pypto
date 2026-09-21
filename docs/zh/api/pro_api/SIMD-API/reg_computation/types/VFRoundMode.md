@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持
+- Atlas A3系列产品：不支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持
+- Atlas A2系列产品：不支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -35,13 +35,13 @@ class VFRoundMode(enum.Enum):
 
 不同型号支持的舍入模式有所差异：
 <!-- npu="950" id6 -->
-- Ascend 950PR/Ascend 950DT：所有舍入模式均支持。
+- Ascend 950PR&950DT系列产品：所有舍入模式均支持。
 <!-- end id6 -->
 <!-- npu="A3" id4 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持CAST_HYBRID。
+- Atlas A3系列产品：不支持CAST_HYBRID。
 <!-- end id4 -->
 <!-- npu="910b" id5 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持CAST_HYBRID。
+- Atlas A2系列产品：不支持CAST_HYBRID。
 <!-- end id5 -->
 
 ## 调用示例

@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -36,13 +36,13 @@ neg(input: Tensor) -> Tensor
 
 1. Tensor数据类型说明：
    <!-- npu="950" id4 -->
-   - Ascend 950PR/Ascend 950DT：DT_FP32，DT_FP16，DT_BF16，DT_INT32，DT_INT16，DT_INT64。
+   - Ascend 950PR&950DT系列产品：DT_FP32，DT_FP16，DT_BF16，DT_INT32，DT_INT16，DT_INT64。
    <!-- end id4 -->
    <!-- npu="A3" id5 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：DT_FP32，DT_FP16，DT_BF16，DT_INT32，DT_INT16。
+   - Atlas A3系列产品：DT_FP32，DT_FP16，DT_BF16，DT_INT32，DT_INT16。
    <!-- end id5 -->
    <!-- npu="910b" id6 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：DT_FP32，DT_FP16，DT_BF16，DT_INT32，DT_INT16。
+   - Atlas A2系列产品：DT_FP32，DT_FP16，DT_BF16，DT_INT32，DT_INT16。
    <!-- end id6 -->
 2. Tensor类型输入不支持`TileOpFormat.TILEOP_NZ`格式。
 

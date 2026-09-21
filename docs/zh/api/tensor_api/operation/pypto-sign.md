@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -56,13 +56,13 @@ sign(input: Tensor) -> Tensor
    浮点计算路径中的两块等大临时空间分别用于工作数据和比较掩码，额外的32字节用于标量临时块。`DT_BF16`输入在进入Sign TileOp前会通过AutoCast转换为`DT_FP32`，因此按`DT_FP32`路径申请临时空间；计算完成后，结果再转换回`DT_BF16`。
 3. Tensor数据类型说明：
    <!-- npu="950" id4 -->
-   - Ascend 950PR/Ascend 950DT：DT_FP16，DT_BF16，DT_FP32，DT_INT8，DT_INT16，DT_INT32，DT_INT64。
+   - Ascend 950PR&950DT系列产品：DT_FP16，DT_BF16，DT_FP32，DT_INT8，DT_INT16，DT_INT32，DT_INT64。
    <!-- end id4 -->
    <!-- npu="A3" id5 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：DT_FP16，DT_BF16，DT_FP32，DT_INT8，DT_INT16，DT_INT32。
+   - Atlas A3系列产品：DT_FP16，DT_BF16，DT_FP32，DT_INT8，DT_INT16，DT_INT32。
    <!-- end id5 -->
    <!-- npu="910b" id6 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：DT_FP16，DT_BF16，DT_FP32，DT_INT8，DT_INT16，DT_INT32。
+   - Atlas A2系列产品：DT_FP16，DT_BF16，DT_FP32，DT_INT8，DT_INT16，DT_INT32。
    <!-- end id6 -->
 4. Tensor类型输入不支持`TileOpFormat.TILEOP_NZ`格式。
 

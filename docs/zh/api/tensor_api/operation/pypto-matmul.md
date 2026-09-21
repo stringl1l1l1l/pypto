@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -93,10 +93,10 @@ matmul(input, mat2, out_dtype, *, a_trans = False, b_trans = False, c_matrix_nz 
 ## 约束说明
 
 <!-- npu="910b" id4 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持DT_HF8，DT_FP8E5M2，DT_FP8E4M3，不支持extend_params中的trans_mode参数；当输入矩阵的数据类型为DT_BF16时，bias_tensor数据类型不支持DT_BF16。
+- Atlas A2系列产品：不支持DT_HF8，DT_FP8E5M2，DT_FP8E4M3，不支持extend_params中的trans_mode参数；当输入矩阵的数据类型为DT_BF16时，bias_tensor数据类型不支持DT_BF16。
 <!-- end id4 -->
 <!-- npu="A3" id5 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持DT_HF8，DT_FP8E5M2，DT_FP8E4M3，不支持extend_params中的trans_mode参数。当输入矩阵的数据类型为DT_BF16时，bias_tensor数据类型不支持DT_BF16。
+- Atlas A3系列产品：不支持DT_HF8，DT_FP8E5M2，DT_FP8E4M3，不支持extend_params中的trans_mode参数。当输入矩阵的数据类型为DT_BF16时，bias_tensor数据类型不支持DT_BF16。
 <!-- end id5 -->
 - 调用matmul接口前需要通过pypto.set\_cube\_tile\_shapes设置M、K、N轴上的切分大小
 - 当矩阵维度为3维或者4维时，需要调用pypto.set\_vec\_tile\_shapes接口设置vector的TileShape切分，如未设置，接口内部会设置2维的vec\_tile\_shape，其值为128，128。
@@ -173,7 +173,7 @@ pypto.matmul(a, b, pypto.DT_INT8, extend_params=extend_params)
 
 <!-- npu="950" id6 -->
 ```python
-# TF32计算模式（Ascend 950PR/Ascend 950DT）
+# TF32计算模式（Ascend 950PR&950DT系列产品）
 pypto.set_cube_tile_shapes([128, 128], [128, 128], [128, 128])
 a = pypto.tensor((16, 32), pypto.DT_FP32, "tensor_a")
 b = pypto.tensor((32, 64), pypto.DT_FP32, "tensor_b")

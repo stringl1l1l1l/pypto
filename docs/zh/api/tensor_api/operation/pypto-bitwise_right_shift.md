@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -42,13 +42,13 @@ bitwise_right_shift(input: Union[Tensor, int], other: Union[Tensor, int]) -> Ten
 1. input和other类型应该相同。
 2. Tensor数据类型说明：
    <!-- npu="950" id4 -->
-   - Ascend 950PR/Ascend 950DT：DT_INT16，DT_UINT16，DT_INT32，DT_UINT32，DT_INT8，DT_UINT8，DT_INT64，DT_UINT64
+   - Ascend 950PR&950DT系列产品：DT_INT16，DT_UINT16，DT_INT32，DT_UINT32，DT_INT8，DT_UINT8，DT_INT64，DT_UINT64
    <!-- end id4 -->
    <!-- npu="A3" id5 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：DT_INT16，DT_UINT16
+   - Atlas A3系列产品：DT_INT16，DT_UINT16
    <!-- end id5 -->
    <!-- npu="910b" id6 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：DT_INT16，DT_UINT16
+   - Atlas A2系列产品：DT_INT16，DT_UINT16
    <!-- end id6 -->
 3. Tensor类型输入不支持`TileOpFormat.TILEOP_NZ`格式。
 

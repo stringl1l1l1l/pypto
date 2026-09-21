@@ -307,13 +307,13 @@ AICORE_LOGD(param->ctx, "INT8 input loaded");
 
 3. **AiCorePrintL1Tensor使用说明**：
    <!-- npu="950" id1 -->
-   - Ascend 950PR/Ascend 950DT：不支持
+   - Ascend 950PR&950DT系列产品：不支持
    <!-- end id1 -->
    <!-- npu="A3" id2 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+   - Atlas A3系列产品：支持
    <!-- end id2 -->
    <!-- npu="910b" id3 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+   - Atlas A2系列产品：支持
    <!-- end id3 -->
 
 4. **AIC (Cube核)中不能使用AiCorePrintUbTensor**：AIC (Cube核)的标量处理器(SP)没有到UB地址空间的物理通路，无法从UB标量读取数据。编译期已通过`static_assert`拦截，在AIC kernel中调用`AiCorePrintUbTensor`会触发编译报错:

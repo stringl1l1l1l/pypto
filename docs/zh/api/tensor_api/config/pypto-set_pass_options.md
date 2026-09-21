@@ -3,13 +3,13 @@
 ## 产品支持情况
 
 <!-- npu="950" id1 -->
-- Ascend 950PR/Ascend 950DT：支持
+- Ascend 950PR&950DT系列产品：支持
 <!-- end id1 -->
 <!-- npu="A3" id2 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持
+- Atlas A3系列产品：支持
 <!-- end id2 -->
 <!-- npu="910b" id3 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持
+- Atlas A2系列产品：支持
 <!-- end id3 -->
 
 ## 功能说明
@@ -60,63 +60,63 @@ set_pass_options(*,
 - 不同scope_id的子图之间不可合并，`allow_cross_scope_merge`仅控制带scope的子图与无scope（scope_id=-1）的子图合并。
 - auto_mix_partition使用说明：
    <!-- npu="950" id4 -->
-   - Ascend 950PR/Ascend 950DT：支持。
+   - Ascend 950PR&950DT系列产品：支持。
    <!-- end id4 -->
    <!-- npu="A3" id5 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持，不进行自动cv mix合图。
+   - Atlas A3系列产品：不支持，不进行自动cv mix合图。
    <!-- end id5 -->
    <!-- npu="910b" id6 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持，不进行自动cv mix合图。
+   - Atlas A2系列产品：不支持，不进行自动cv mix合图。
    <!-- end id6 -->
 - sg_set_scope使用说明：
    <!-- npu="950" id7 -->
-   - Ascend 950PR/Ascend 950DT：支持纯Vector、纯Cube以及CV混合场景的scope配置。
+   - Ascend 950PR&950DT系列产品：支持纯Vector、纯Cube以及CV混合场景的scope配置。
    <!-- end id7 -->
    <!-- npu="A3" id8 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：支持纯Vector或纯Cube的scope配置，不支持CV混合场景的scope配置。
+   - Atlas A3系列产品：支持纯Vector或纯Cube的scope配置，不支持CV混合场景的scope配置。
    <!-- end id8 -->
    <!-- npu="910b" id9 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：支持纯Vector或纯Cube的scope配置，不支持CV混合场景的scope配置。
+   - Atlas A2系列产品：支持纯Vector或纯Cube的scope配置，不支持CV混合场景的scope配置。
    <!-- end id9 -->
 - sg_set_ooo_scope使用说明：
    <!-- npu="950" id10 -->
-   - Ascend 950PR/Ascend 950DT：支持。
+   - Ascend 950PR&950DT系列产品：支持。
    <!-- end id10 -->
    <!-- npu="A3" id11 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持，因为不支持cv mix合图。
+   - Atlas A3系列产品：不支持，因为不支持cv mix合图。
    <!-- end id11 -->
    <!-- npu="910b" id12 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持，因为不支持cv mix合图。
+   - Atlas A2系列产品：不支持，因为不支持cv mix合图。
    <!-- end id12 -->
 - sg_set_atomic_scope使用说明：
    <!-- npu="950" id13 -->
-   - Ascend 950PR/Ascend 950DT：支持。
+   - Ascend 950PR&950DT系列产品：支持。
    <!-- end id13 -->
    <!-- npu="A3" id14 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持，因为不支持VF融合。
+   - Atlas A3系列产品：不支持，因为不支持VF融合。
    <!-- end id14 -->
    <!-- npu="910b" id15 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持，因为不支持VF融合。
+   - Atlas A2系列产品：不支持，因为不支持VF融合。
    <!-- end id15 -->
 - ooo_sched_mode使用说明：
    <!-- npu="950" id16 -->
-   - Ascend 950PR/Ascend 950DT：支持。
+   - Ascend 950PR&950DT系列产品：支持。
    <!-- end id16 -->
    <!-- npu="A3" id17 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持，因为不支持cv mix合图。
+   - Atlas A3系列产品：不支持，因为不支持cv mix合图。
    <!-- end id17 -->
    <!-- npu="910b" id18 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持，因为不支持cv mix合图。
+   - Atlas A2系列产品：不支持，因为不支持cv mix合图。
    <!-- end id18 -->
 - sg_set_tunevf_mode使用说明：
    <!-- npu="950" id19 -->
-   - Ascend 950PR/Ascend 950DT：支持。
+   - Ascend 950PR&950DT系列产品：支持。
    <!-- end id19 -->
    <!-- npu="A3" id20 -->
-   - Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持，因为不支持cv mix合图。
+   - Atlas A3系列产品：不支持，因为不支持cv mix合图。
    <!-- end id20 -->
    <!-- npu="910b" id21 -->
-   - Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持，因为不支持cv mix合图。
+   - Atlas A2系列产品：不支持，因为不支持cv mix合图。
    <!-- end id21 -->
 
 ## 调用示例
@@ -251,10 +251,10 @@ pypto.set_pass_options(sg_set_scope=-1)
 #### 典型场景
 
 <!-- npu="A3" id22 -->
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品：不支持场景二
+- Atlas A3系列产品：不支持场景二
 <!-- end id22 -->
 <!-- npu="910b" id23 -->
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品：不支持场景二
+- Atlas A2系列产品：不支持场景二
 <!-- end id23 -->
 
 ##### 场景一：整张计算图不切分
