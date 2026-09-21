@@ -396,15 +396,22 @@ TileShape TileShapeResolver::GetInputTileShape(const Operation& op, int index) c
             const auto& cubeTile = opTileShape.GetCubeTile();
             auto transA = op.HasAttr(Matrix::A_MUL_B_TRANS_A) && op.GetBoolAttribute(Matrix::A_MUL_B_TRANS_A);
             auto transB = op.HasAttr(Matrix::A_MUL_B_TRANS_B) && op.GetBoolAttribute(Matrix::A_MUL_B_TRANS_B);
+            // L1 copy-in is the first cut of the matmul inputs (closest hop to a producer VIEW).
+            // ConstructTileGraph loops M/N at L0 (m[0]/n[0]) and slices A/B from the original
+            // tensor at {m[0], k[1]} / {k[2], n[0]} (k[1]=tileKAL1, k[2]=tileKBL1). L0 then
+            // further slices K off that L1 buffer. k[2]==0 falls back to k[1], matching SetCubeTile.
+            constexpr int kBL1Idx = 2;
+            const int64_t tileKAL1 = cubeTile.k[1];
+            const int64_t tileKBL1 = (cubeTile.k[kBL1Idx] > 0) ? cubeTile.k[kBL1Idx] : tileKAL1;
             if (index == 0) {
-                std::vector<int64_t> tileA = {cubeTile.m[0], cubeTile.k[0]};
+                std::vector<int64_t> tileA = {cubeTile.m[0], tileKAL1};
                 if (transA) {
                     std::reverse(tileA.begin(), tileA.end());
                 }
                 return MakeTileShapeFromVec(tileA);
             }
             if (index == 1) {
-                std::vector<int64_t> tileB = {cubeTile.k[0], cubeTile.n[0]};
+                std::vector<int64_t> tileB = {tileKBL1, cubeTile.n[0]};
                 if (transB) {
                     std::reverse(tileB.begin(), tileB.end());
                 }

@@ -190,6 +190,51 @@ TEST_F(TestExpandFunction, ViewDerivesVecTileFromCubeMatmulConsumer)
     EXPECT_EQ(CountInputSliceOpsWithSecondDimOffset(*func, incastB, kCubeN), 1);
 }
 
+TEST_F(TestExpandFunction, ViewDerivesVecTileFromCubeMatmulL1CopyIn)
+{
+    auto func = std::make_shared<Function>(Program::GetInstance(), "ViewCubeL1Tile", "ViewCubeL1Tile", nullptr);
+    Program::GetInstance().InsertFuncToFunctionMap("ViewCubeL1Tile", func);
+    func->SetGraphType(GraphType::TENSOR_GRAPH);
+
+    constexpr int64_t kM = 64;
+    constexpr int64_t kK = 128;
+    constexpr int64_t kN = 64;
+    constexpr int64_t kCubeM = 64;
+    constexpr int64_t kCubeKL0 = 32;
+    constexpr int64_t kCubeKL1 = 64;
+    constexpr int64_t kCubeN = 64;
+
+    const std::vector<int64_t> shapeA = {kM, kK};
+    const std::vector<int64_t> shapeB = {kK, kN};
+    const std::vector<int64_t> shapeC = {kM, kN};
+    const std::vector<int64_t> offset0 = {0, 0};
+    const std::vector<int64_t> l1SliceShapeA = {kCubeM, kCubeKL1};
+    const std::vector<int64_t> l0SliceShapeA = {kCubeM, kCubeKL0};
+
+    auto incastA = IRBuilder().CreateTensorVar(DT_FP32, shapeA, SymbolicScalar::FromConcrete(shapeA));
+    auto incastB = IRBuilder().CreateTensorVar(DT_FP32, shapeB, SymbolicScalar::FromConcrete(shapeB));
+    auto viewOutA = IRBuilder().CreateTensorVar(DT_FP32, shapeA, SymbolicScalar::FromConcrete(shapeA));
+    auto viewOutB = IRBuilder().CreateTensorVar(DT_FP32, shapeB, SymbolicScalar::FromConcrete(shapeB));
+    auto matmulOut = IRBuilder().CreateTensorVar(DT_FP32, shapeC, SymbolicScalar::FromConcrete(shapeC));
+
+    auto& viewA = IRBuilder().CreateTensorOpStmt(*func, Opcode::OP_VIEW, {incastA}, {viewOutA});
+    SetViewOpAttribute(viewA, offset0, shapeA);
+    auto& viewB = IRBuilder().CreateTensorOpStmt(*func, Opcode::OP_VIEW, {incastB}, {viewOutB});
+    SetViewOpAttribute(viewB, offset0, shapeB);
+
+    TileShape::Current().SetCubeTile({kCubeM, kCubeM}, {kCubeKL0, kCubeKL1, kCubeKL1}, {kCubeN, kCubeN});
+    TileShape::Current().GetVecTile().tile.clear();
+    auto& matmul = IRBuilder().CreateTensorOpStmt(*func, Opcode::OP_A_MUL_B, {viewOutA, viewOutB}, {matmulOut});
+    matmul.GetTileShapeForSetting().SetCubeTile({kCubeM, kCubeM}, {kCubeKL0, kCubeKL1, kCubeKL1}, {kCubeN, kCubeN});
+    matmul.GetTileShapeForSetting().GetVecTile().tile.clear();
+
+    ExpandFunction expandFunction;
+    ASSERT_EQ(expandFunction.RunOnFunction(*func), SUCCESS);
+
+    EXPECT_EQ(CountSliceOpsOnInputWithShape(*func, incastA, l1SliceShapeA), 2);
+    EXPECT_EQ(CountSliceOpsOnInputWithShape(*func, incastA, l0SliceShapeA), 0);
+}
+
 TEST_F(TestExpandFunction, AssembleDerivesVecTileFromCubeMatmulProducer)
 {
     auto func = std::make_shared<Function>(Program::GetInstance(), "AssembleCubeTile", "AssembleCubeTile", nullptr);

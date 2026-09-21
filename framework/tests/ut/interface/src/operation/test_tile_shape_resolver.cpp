@@ -37,9 +37,13 @@
 #include "tilefwk/tilefwk.h"
 #include "interface/inner/tilefwk.h"
 #include "interface/function/function.h"
+#include "interface/operation/opcode.h"
 #include "interface/operation/operation.h"
+#include "interface/operation/operation_impl.h"
 #include "interface/operation/tile_shape_resolver.h"
 #include "interface/program/program.h"
+#include "interface/tensor/irbuilder.h"
+#include "interface/tensor/logical_tensor.h"
 #include "passes/tensor_graph_pass/expand_function.h"
 #include "interface/configs/config_manager.h"
 
@@ -416,6 +420,68 @@ TEST_F(TileShapeResolverTest, ScatterElement_Axis0)
     Tensor out;
     FUNCTION("ScatterElementCase") { out = Scatter(self, indices, src, 0, ScatterMode::NONE); }
     ExpectResolverMatchesExpansion(Program::GetInstance().GetCurrentFunction(), {out});
+}
+
+namespace {
+
+Operation& MakeMatmulOp(Function& function, const std::vector<int64_t>& shapeA, const std::vector<int64_t>& shapeB,
+                        const std::vector<int64_t>& shapeC, bool transA, bool transB)
+{
+    auto inA = IRBuilder().CreateTensorVar(DT_FP32, shapeA, SymbolicScalar::FromConcrete(shapeA));
+    auto inB = IRBuilder().CreateTensorVar(DT_FP32, shapeB, SymbolicScalar::FromConcrete(shapeB));
+    auto outC = IRBuilder().CreateTensorVar(DT_FP32, shapeC, SymbolicScalar::FromConcrete(shapeC));
+    auto& matmul = IRBuilder().CreateTensorOpStmt(function, Opcode::OP_A_MUL_B, {inA, inB}, {outC});
+    if (transA) {
+        matmul.SetAttribute(npu::tile_fwk::Matrix::A_MUL_B_TRANS_A, true);
+    }
+    if (transB) {
+        matmul.SetAttribute(npu::tile_fwk::Matrix::A_MUL_B_TRANS_B, true);
+    }
+    return matmul;
+}
+
+} // namespace
+
+// ---- OP_A_MUL_B: input tile is the L1 copy-in (closest hop to a producer VIEW),
+//      not the L0 tile that later slices K off L1. A = {m[0], k[1]}, B = {k[2], n[0]}. ----
+TEST_F(TileShapeResolverTest, Matmul_InputUsesL1CopyInTile)
+{
+    constexpr int64_t kM0 = 32;
+    constexpr int64_t kK0 = 32;
+    constexpr int64_t kK1 = 64;
+    constexpr int64_t kK2 = 96;
+    constexpr int64_t kN0 = 64;
+
+    auto func = std::make_shared<Function>(Program::GetInstance(), "MatmulL1CopyIn", "MatmulL1CopyIn", nullptr);
+    func->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto& matmul = MakeMatmulOp(*func, {64, 192}, {192, 128}, {64, 128}, false, false);
+    matmul.GetTileShapeForSetting().SetCubeTile({kM0, kM0}, {kK0, kK1, kK2}, {kN0, kN0});
+
+    EXPECT_EQ(TileShapeResolver::Instance().GetInputTileShape(matmul, 0).GetVecTile().tile,
+              (std::vector<int64_t>{kM0, kK1}));
+    EXPECT_EQ(TileShapeResolver::Instance().GetInputTileShape(matmul, 1).GetVecTile().tile,
+              (std::vector<int64_t>{kK2, kN0}));
+    EXPECT_EQ(TileShapeResolver::Instance().GetOutputTileShape(matmul, 0).GetVecTile().tile,
+              (std::vector<int64_t>{kM0, kN0}));
+}
+
+TEST_F(TileShapeResolverTest, Matmul_InputUsesL1CopyInTileTransA)
+{
+    constexpr int64_t kM0 = 32;
+    constexpr int64_t kK0 = 32;
+    constexpr int64_t kK1 = 64;
+    constexpr int64_t kN0 = 64;
+
+    auto func = std::make_shared<Function>(Program::GetInstance(), "MatmulL1CopyInTransA", "MatmulL1CopyInTransA",
+                                           nullptr);
+    func->SetGraphType(GraphType::TENSOR_GRAPH);
+    auto& matmul = MakeMatmulOp(*func, {192, 64}, {192, 128}, {64, 128}, true, false);
+    matmul.GetTileShapeForSetting().SetCubeTile({kM0, kM0}, {kK0, kK1, kK1}, {kN0, kN0});
+
+    EXPECT_EQ(TileShapeResolver::Instance().GetInputTileShape(matmul, 0).GetVecTile().tile,
+              (std::vector<int64_t>{kK1, kM0}));
+    EXPECT_EQ(TileShapeResolver::Instance().GetInputTileShape(matmul, 1).GetVecTile().tile,
+              (std::vector<int64_t>{kK1, kN0}));
 }
 
 // ---- OP_INDEX_ADD_UB: [self, src, indices]; FP32 + INT32 -> single op. ----

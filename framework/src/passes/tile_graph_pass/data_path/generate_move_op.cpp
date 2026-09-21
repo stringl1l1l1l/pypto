@@ -548,6 +548,18 @@ void GenerateMoveOp::ProcessUB2L1(Function& function, Operation& op) const
     if (op.GetAttr<int64_t>(OpAttributeKey::isGemv, isGemv) && isGemv != 0) {
         return;
     }
+    // UB2L1 pattern 插入的 CONVERT 未继承下游 GEMV 标记：从 L1 侧 consumer（L1_TO_L0A view）继承，
+    // 保证 GEMV 场景生成 ND 布局的 TCopyUB2L1ND2ND，避免 L1 NZ 布局与 TExtractL1ToL0ND2ND 冲突。
+    for (auto* consumer : op.oOperand.front()->GetConsumers()) {
+        if (consumer == nullptr) {
+            continue;
+        }
+        int64_t consumerIsGemv = 0;
+        if (consumer->GetAttr<int64_t>(OpAttributeKey::isGemv, consumerIsGemv) && consumerIsGemv != 0) {
+            op.SetAttribute(OpAttributeKey::isGemv, static_cast<int64_t>(1));
+            return;
+        }
+    }
     auto inputTensor = op.iOperand.front();
     // 插入UB2L1节点（NZ2NZ)，并设置UBcopyL1的NZ属性
     op.SetAttribute(OP_ATTR_PREFIX + "is_nz", 1);
