@@ -247,7 +247,7 @@ def _run_case(m, n, k):
     out = torch.zeros(m, n, device=device, dtype=torch.float16)
 
     total_cnt = m_tiles * ((n + TILE_N - 1) // TILE_N)
-    num_cores = min(32, total_cnt)
+    num_cores = min(28, total_cnt)  # 950 默认流预算 28 cube 核
     matmul_perf_asw_4k_dn_move_offset_dynamic_kernel[None, num_cores](a, b, out)
     torch.npu.synchronize()
 

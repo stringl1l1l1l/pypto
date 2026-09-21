@@ -109,7 +109,7 @@ def test_make_tuple_chain_tile_group_next():
     _require_a5(ST_DEVICE)
     a = torch.randn(64, 128, device=ST_DEVICE, dtype=torch.float16)
     expected = a.float().exp().half()
-    make_tuple_chain_tile_group_next_kernel(a)
+    make_tuple_chain_tile_group_next_kernel[None, 1](a)
     torch.npu.synchronize()
     assert torch.allclose(a, expected, rtol=1e-3, atol=1e-3), f"max diff: {(a - expected).abs().max().item()}"
 
@@ -138,7 +138,7 @@ def test_make_tuple_chain_tile_group_current():
     _require_a5(ST_DEVICE)
     a = torch.randn(64, 128, device=ST_DEVICE, dtype=torch.float16)
     expected = a.float().exp().half()
-    make_tuple_chain_tile_group_current_kernel(a)
+    make_tuple_chain_tile_group_current_kernel[None, 1](a)
     torch.npu.synchronize()
     assert torch.allclose(a, expected, rtol=1e-3, atol=1e-3), f"max diff: {(a - expected).abs().max().item()}"
 
@@ -241,7 +241,7 @@ def test_make_tuple_chain_tile_group_previous():
     _require_a5(ST_DEVICE)
     a = torch.randn(64, 128, device=ST_DEVICE, dtype=torch.float16)
     expected = a.float().exp().half()
-    make_tuple_chain_tile_group_previous_kernel(a)
+    make_tuple_chain_tile_group_previous_kernel[None, 1](a)
     torch.npu.synchronize()
     assert torch.allclose(a, expected, rtol=1e-3, atol=1e-3), f"max diff: {(a - expected).abs().max().item()}"
 
@@ -270,7 +270,7 @@ def test_make_tuple_chain_double_buffer_loop():
     _require_a5(ST_DEVICE)
     a = torch.randn(128, 128, device=ST_DEVICE, dtype=torch.float16)
     expected = a.float().exp().half()
-    make_tuple_chain_double_buffer_loop_kernel(a)
+    make_tuple_chain_double_buffer_loop_kernel[None, 1](a)
     torch.npu.synchronize()
     assert torch.allclose(a, expected, rtol=1e-3, atol=1e-3), f"max diff: {(a - expected).abs().max().item()}"
 
@@ -299,7 +299,7 @@ def test_make_tuple_chain_ring_buffer_loop():
     _require_a5(ST_DEVICE)
     a = torch.randn(256, 128, device=ST_DEVICE, dtype=torch.float16)
     expected = a.float().exp().half()
-    make_tuple_chain_ring_buffer_loop_kernel(a)
+    make_tuple_chain_ring_buffer_loop_kernel[None, 1](a)
     torch.npu.synchronize()
     assert torch.allclose(a, expected, rtol=1e-3, atol=1e-3), f"max diff: {(a - expected).abs().max().item()}"
 

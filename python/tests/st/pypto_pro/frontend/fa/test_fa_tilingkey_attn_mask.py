@@ -739,7 +739,7 @@ def test_fa_tilingkey_attn_mask():
 
     # Mirror the reference kernel's proven pipeline depth (sq_tiles=32); the QK_PRELOAD
     # pipeline only drains correctly with enough q tiles.
-    b, sq, n, skv, d, num_cores = 2, 4096, 2, 4096, TD, 32
+    b, sq, n, skv, d, num_cores = 2, 4096, 2, 4096, TD, 28  # 950 默认流预算 28 cube 核
     q_t = torch.rand((b, sq, n, d), device=device, dtype=torch.float16)
     k_t = torch.rand((b, skv, n, d), device=device, dtype=torch.float16)
     v_t = torch.rand((b, skv, n, d), device=device, dtype=torch.float16)

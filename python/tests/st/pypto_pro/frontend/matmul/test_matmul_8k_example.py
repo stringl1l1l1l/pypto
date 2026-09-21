@@ -108,7 +108,7 @@ def run_perf_test(num_iters: int = 20, warmup: int = 3):
     a = torch.randn(m_size, k_size, device=device, dtype=torch.float16)
     b = torch.randn(k_size, n_size, device=device, dtype=torch.float16)
     out = torch.zeros(m_size, n_size, device=device, dtype=torch.float16)
-    core_num = 32
+    core_num = 28  # 950 默认流预算 28 cube 核；请求超出预算会直接报错
     tiling = OpTiling(valid_size=128)
     matmul_example[None, core_num](a, b, out, tiling)
     torch.npu.synchronize()

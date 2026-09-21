@@ -141,7 +141,8 @@ def test_float_divmod_defines_static_tile_shape():
     torch.npu.set_device(ST_DEVICE)
     src = torch.arange(8, dtype=torch.float32, device=ST_DEVICE).reshape(1, 8)
     out = torch.empty_like(src)
-    scalar_float_static_shape_kernel(src, out)
+    # 单 tile 语义验证：直调现为满核，显式请求 1 块保持单核语义。
+    scalar_float_static_shape_kernel[None, 1](src, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, src, rtol=0, atol=0)
 

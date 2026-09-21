@@ -300,7 +300,11 @@ out = torch.zeros(64, 64, device=dev, dtype=torch.float32)
 out2 = torch.zeros(64, 64, device=dev, dtype=torch.float16)
 tiling = SimpleTiling(offset=2, opkind=[1, 0, 0, 0])
 
-fused_oob_kernel[None, 32, {"Mode": 2}](a, b, out, out2, tiling)
+# 32 曾被静默钳制到设备预算；显式请求现在必须落在预算内，取当前流的混合块上限。
+lim = torch.npu.get_stream_limit(torch.npu.current_stream())
+blocks = min(lim["cube_core_num"], lim["vector_core_num"] // 2)
+
+fused_oob_kernel[None, blocks, {"Mode": 2}](a, b, out, out2, tiling)
 try:
     torch.npu.synchronize()
     print("ERROR: No AICORE error raised")

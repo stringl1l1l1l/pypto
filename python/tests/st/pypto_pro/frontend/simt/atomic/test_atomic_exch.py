@@ -185,7 +185,7 @@ def test_atomic_exch_returns_old_value_and_preserves_other_elements():
     expected_old[0, 0] = 10
     state_device = state.to(ST_DEVICE)
     old_values = torch.full((1, ELEMENTS), 123, dtype=torch.int32).to(ST_DEVICE)
-    simt_atomic_exch_return_value_gm(state_device, old_values)
+    simt_atomic_exch_return_value_gm[None, 1](state_device, old_values)
     torch.npu.synchronize()
     torch.testing.assert_close(state_device.cpu(), expected_state, rtol=0, atol=0)
     torch.testing.assert_close(old_values.cpu(), expected_old, rtol=0, atol=0)
@@ -196,7 +196,7 @@ def test_atomic_exch_contention_forms_one_exchange_chain():
     _require_a5()
     state = torch.tensor([[-1]], dtype=torch.int32, device=ST_DEVICE)
     old_values = torch.empty((1, 32), dtype=torch.int32, device=ST_DEVICE)
-    simt_atomic_exch_contention_gm(state, old_values)
+    simt_atomic_exch_contention_gm[None, 1](state, old_values)
     torch.npu.synchronize()
     chain = torch.cat((old_values.cpu().reshape(-1), state.cpu().reshape(-1)))
     expected = torch.tensor([-1] + list(range(32)), dtype=torch.int32)

@@ -82,7 +82,7 @@ def getval_while_condition_am_kernel(
 def _run_and_measure(a: torch.Tensor):
     """Launch kernel; return (max_abs_diff_vs_golden, details dict)."""
     a_cpu = a.detach().to("cpu", torch.float32)
-    getval_setval_am_kernel(a)
+    getval_setval_am_kernel[None, 1](a)
     torch.npu.synchronize()
     out = a.detach().to("cpu", torch.float32)
 

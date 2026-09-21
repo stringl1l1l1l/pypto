@@ -1668,7 +1668,7 @@ def test_store_atomic_add():
     a = _inputs(device, [TILE, TILE])
     b = torch.eye(TILE, device=device, dtype=torch.float16)
     out = torch.zeros([TILE, TILE], device=device, dtype=torch.float32)
-    call_kernel_store_atomic_add(a, b, out)
+    call_kernel_store_atomic_add[None, 1](a, b, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, a.float() * 2, rtol=1e-2, atol=1e-2)
 

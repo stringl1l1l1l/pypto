@@ -12,7 +12,8 @@
 
 Only the CCE launch expression becomes a recorder. The emitted host control flow,
 resource helper, compiler topology and int64_t return ABI are compiled as written,
-so these tests detect launches after query failure or an incomplete mixed group.
+so these tests detect launches after query failure, an incomplete mixed group,
+an over-budget request, and the auto sentinel's full-budget resolution.
 """
 
 import ctypes
@@ -135,19 +136,29 @@ static void RecordLaunch(uint32_t dim, void*, int64_t* = nullptr)
 @pytest.mark.parametrize(
     "mode,cube,vector,requested,expected,queries",
     [
-        ("cube", 5, 0, 20, 5, (1, 0)),
-        ("vector", 0, 7, 20, 7, (0, 1)),
-        ("mixed", 4, 20, 20, 4, (1, 1)),
-        ("mixed", 20, 9, 20, 4, (1, 1)),
-        ("mixed", 20, 2, 20, 1, (1, 1)),
+        ("cube", 5, 0, 1, 1, (1, 0)),
+        ("cube", 5, 0, 5, 5, (1, 0)),
+        ("cube", 5, 0, 0, 5, (1, 0)),
+        ("vector", 0, 7, 7, 7, (0, 1)),
+        ("vector", 0, 72, 72, 72, (0, 1)),
+        ("vector", 0, 7, 0, 7, (0, 1)),
         ("mixed", 20, 40, 3, 3, (1, 1)),
-        ("mixed_1_1", 8, 5, 12, 5, (1, 1)),
-        ("sync", 8, 5, 12, 2, (1, 1)),
-        ("vector", 0, 72, 0xFFFFFFFF, 72, (0, 1)),
+        ("mixed", 8, 8, 4, 4, (1, 1)),
+        ("mixed", 4, 20, 0, 4, (1, 1)),
+        ("mixed", 20, 9, 0, 4, (1, 1)),
+        ("mixed", 20, 2, 0, 1, (1, 1)),
+        ("mixed_1_1", 8, 5, 5, 5, (1, 1)),
+        ("mixed_1_1", 8, 5, 0, 5, (1, 1)),
+        ("sync", 8, 5, 2, 2, (1, 1)),
+        ("sync", 8, 5, 0, 2, (1, 1)),
     ],
 )
 def test_native_launch_counts(native_launchers, mode, cube, vector, requested, expected, queries):
-    """Check the recorded launch as well as the return value; an unclamped launch must never pass."""
+    """Check the recorded launch as well as the return value; an over-budget launch must never pass.
+
+    A requested 0 is the auto sentinel: the launch takes the stream's full budget,
+    bounded by the tighter engine for mixed blocks.
+    """
     lib = native_launchers
     lib.reset(cube, vector, 0, 0)
     assert getattr(lib, f"call_kernel_{mode}")(requested, 0x1234) == expected
@@ -157,6 +168,28 @@ def test_native_launch_counts(native_launchers, mode, cube, vector, requested, e
     for i, count in enumerate(queries):
         assert lib.query_stream(i) == (0x1234 if count else None)
     assert lib.sync_setup_count() == (1 if mode == "sync" else 0)
+
+
+@pytest.mark.parametrize(
+    "mode,cube,vector,requested,expected",
+    [
+        ("cube", 5, 0, 20, -0x500000005),
+        ("vector", 0, 7, 20, -0x500000007),
+        ("vector", 0, 72, 0xFFFFFFFF, -0x500000048),
+        ("mixed", 4, 20, 20, -0x500000004),
+        ("mixed", 20, 9, 20, -0x500000004),
+        ("mixed", 20, 2, 12, -0x500000001),
+        ("mixed_1_1", 8, 5, 12, -0x500000005),
+        ("sync", 8, 5, 12, -0x500000002),
+    ],
+)
+def test_native_requests_above_budget_reject_launch(native_launchers, mode, cube, vector, requested, expected):
+    """An explicit request the stream cannot host must fail before any device launch or sync setup."""
+    lib = native_launchers
+    lib.reset(cube, vector, 0, 0)
+    assert getattr(lib, f"call_kernel_{mode}")(requested, 0x1234) == expected
+    assert lib.launch_count() == 0
+    assert lib.sync_setup_count() == 0
 
 
 @pytest.mark.parametrize(
@@ -191,7 +224,7 @@ def test_unused_engine_query_errors_do_not_block_launch(
     """Querying both engines would incorrectly fail a valid single-engine kernel on the unused engine."""
     lib = native_launchers
     lib.reset(cube, vector, cube_error, vector_error)
-    assert getattr(lib, f"call_kernel_{mode}")(12, 0x1234) == 4
+    assert getattr(lib, f"call_kernel_{mode}")(4, 0x1234) == 4
     assert lib.launch_count() == 1
 
 
@@ -200,7 +233,7 @@ def test_native_query_observes_budget_and_stream_changes(native_launchers):
     lib = native_launchers
     for vector, stream, expected in [(6, 0x1234, 3), (2, 0x5678, 1), (1, 0x5678, None), (8, 0x1234, 4)]:
         lib.reset(8, vector, 0, 0)
-        result = lib.call_kernel_mixed(12, stream)
+        result = lib.call_kernel_mixed(0, stream)
         if expected is None:
             assert result == -0x200000001
             assert lib.launch_count() == 0
@@ -209,3 +242,14 @@ def test_native_query_observes_budget_and_stream_changes(native_launchers):
             assert lib.launch_count() == 1
         assert lib.query_count(0) == lib.query_count(1) == 1
         assert lib.query_stream(0) == lib.query_stream(1) == stream
+
+
+def test_native_rejection_does_not_poison_later_launches(native_launchers):
+    """A request rejected by one budget must not cache anything that alters the next launch."""
+    lib = native_launchers
+    lib.reset(8, 6, 0, 0)
+    assert lib.call_kernel_mixed(12, 0x1234) == -0x500000003
+    assert lib.launch_count() == 0
+    lib.reset(20, 40, 0, 0)
+    assert lib.call_kernel_mixed(12, 0x1234) == 12
+    assert lib.launched_blocks() == 12

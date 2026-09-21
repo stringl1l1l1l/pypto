@@ -1802,7 +1802,8 @@ def test_t03_atomic(in_dtype, mkn, _device):
 
     FP32 output only: atomic accumulation needs the GM dtype to match the accumulator.
     """
-    _run(make_matmul_atomic, in_dtype, "fp32", _device, mkn=mkn)
+    # K 的原子累加按单核语义验证：直调现为满核，显式请求 1 块。
+    _run(make_matmul_atomic, in_dtype, "fp32", _device, mkn=mkn, block_dim=1)
 
 
 @pytest.mark.soc("950")

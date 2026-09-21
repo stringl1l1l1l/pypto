@@ -83,7 +83,9 @@ def test_add():
 
     m_size = 8192
     n_size = 4096
-    num_cores = m_size // 128
+    # 请求不得超过流预算；按 M tile 数与 vector 核预算取小。
+    vector_budget = torch.npu.get_stream_limit(torch.npu.current_stream())["vector_core_num"]
+    num_cores = min(m_size // 128, vector_budget)
 
     torch.manual_seed(0)
     dtype = torch.float16

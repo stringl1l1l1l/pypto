@@ -572,7 +572,8 @@ def test_with_cube_then_vector():
     b = torch.randn(32, 64, device=device, dtype=torch.float16)
     x = torch.randn(64, 64, device=device, dtype=torch.float32)
     out = torch.zeros(64, 64, device=device, dtype=torch.float32)
-    with_cube_then_vector_kernel(a, b, x, out)
+    # 单 tile 读写回 GM：多核会对同一输出互相读到中间结果，显式单块。
+    with_cube_then_vector_kernel[None, 1](a, b, x, out)
     torch.npu.synchronize()
     z_ref = torch.matmul(a.float(), b.float()) + x.float()
     torch.testing.assert_close(out, z_ref, atol=1e-2, rtol=1e-2)
@@ -689,7 +690,8 @@ def test_with_cube_then_vf():
     b = torch.randn(32, 64, device=device, dtype=torch.float16)
     d = torch.randn(1, 64, device=device, dtype=torch.float32)
     out = torch.zeros(64, 64, device=device, dtype=torch.float32)
-    with_cube_then_vf_kernel(a, b, d, out)
+    # 单 tile 读改写 GM：多核会对同一输出互相读到中间结果，显式单块。
+    with_cube_then_vf_kernel[None, 1](a, b, d, out)
     torch.npu.synchronize()
     mm = torch.matmul(a.float(), b.float())
     z_ref = mm + d

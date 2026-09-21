@@ -12,19 +12,27 @@
 
 #include <acl/acl_rt.h>
 #include <cstdint>
+#include <cstdio>
 
 namespace pypto {
 
 // The ctypes boundary cannot propagate C++ exceptions. A positive int64_t is the
 // actual block count; a negative result encodes -(kind << 32 | detail), reported
-// unchanged in Python's launch error. The detail holds either the insufficient
-// budget or all 32 bits of the ACL query's error code.
+// unchanged in Python's launch error. The detail holds either the budget (cores
+// for the Limit kinds, blocks for Request) or the ACL query's error code.
 enum class LaunchError : uint32_t {
     CubeLimit = 1,
     VectorLimit = 2,
     CubeQuery = 3,
     VectorQuery = 4,
+    Request = 5,
 };
+
+// A blockDim of 0 is the host-side "auto" sentinel: the caller did not pick a
+// block count and the stream's full budget is used. The Python launch boundary
+// validates user input as positive and saturates oversized requests before the
+// ABI, so a wrapped or user-supplied 0 cannot reach this protocol.
+constexpr uint32_t kAutoBlockDim = 0;
 
 inline int64_t EncodeLaunchError(LaunchError kind, uint32_t detail)
 {
@@ -62,13 +70,26 @@ inline int64_t ResolveLaunchBlockDim(uint32_t blockDim, aclrtStream stream)
     // Query this launch's stream every time, including capture and cached calls.
     // ACL resolves stream > device > hardware. Caching a budget would retain a
     // previous scope's limit; the template arguments cache only the binary's ABI.
-    const int64_t cubeDim = LimitLaunchBlocks<ACL_RT_DEV_RES_CUBE_CORE, CubeCores>(blockDim, stream);
+    // The auto sentinel probes with the largest request, so the clamps return the
+    // stream's full budget; it self-guards the rejection comparison because a
+    // budget is never below the sentinel's 0. Negative results are LaunchError
+    // codes and pass through the final return unchanged, like the original code.
+    const uint32_t request = blockDim == kAutoBlockDim ? 0xFFFFFFFFu : blockDim;
+    const int64_t cubeDim = LimitLaunchBlocks<ACL_RT_DEV_RES_CUBE_CORE, CubeCores>(request, stream);
     if (cubeDim < 0) {
         return cubeDim;
     }
     // Both engines of a mixed block must fit together, otherwise cross-core waits
     // can lose a participant. Never round a budget up to force a single block.
-    return LimitLaunchBlocks<ACL_RT_DEV_RES_VECTOR_CORE, VectorCores>(static_cast<uint32_t>(cubeDim), stream);
+    const int64_t resolved = LimitLaunchBlocks<ACL_RT_DEV_RES_VECTOR_CORE, VectorCores>(static_cast<uint32_t>(cubeDim),
+                                                                                        stream);
+    if (resolved >= 0 && resolved < blockDim) {
+        // The raw code crosses the ABI; this line is the only human-readable hint.
+        std::fprintf(stderr, "PyPTO launch rejected: block_dim %u exceeds the stream budget of %u block(s)\n", blockDim,
+                     static_cast<uint32_t>(resolved));
+        return EncodeLaunchError(LaunchError::Request, static_cast<uint32_t>(resolved));
+    }
+    return resolved;
 }
 
 } // namespace pypto

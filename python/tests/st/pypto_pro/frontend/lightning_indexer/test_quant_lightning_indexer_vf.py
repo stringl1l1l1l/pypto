@@ -1109,7 +1109,7 @@ def test_quant_lightning_indexer_vf():
     logging.info("\n=== Test QuantLightningIndexer VF ===")
 
     test_cases = [
-        (1, 64, 1, 8192, 8192, HEAD_DIM, 2048, 32, 0, "fp8"),
+        (1, 64, 1, 8192, 8192, HEAD_DIM, 2048, 28, 0, "fp8"),  # 950 默认流预算 28 cube 核
     ]
 
     for b, n1, n2, sq, sk, d, topk, num_cores, sparse_mode, input_dtype in test_cases:

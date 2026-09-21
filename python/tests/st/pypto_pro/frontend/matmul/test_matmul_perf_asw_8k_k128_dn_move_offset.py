@@ -37,7 +37,7 @@ TILE_N = 256
 KL0 = 64
 KL1 = 128
 STEP_KA = KL1 // KL0  # 2
-NUM_CORES = 32
+NUM_CORES = 28  # 950 默认流预算 28 cube 核；请求超出预算会直接报错
 
 M_TILES = M_SIZE // TILE_M  # 32
 N_TILES = N_SIZE // TILE_N  # 32

@@ -919,7 +919,7 @@ def test_fa_perf(torch_dtype, pl_dtype, rtol, atol):
     device = f"npu:{device_id}"
     torch.manual_seed(42)
     attn_mask = make_causal_mask_dn_fixed_u8(device)
-    b, sq, n, skv, d, num_cores = 8, 4096, 8, 4096, TD, 32
+    b, sq, n, skv, d, num_cores = 8, 4096, 8, 4096, TD, 28  # 950 默认流预算 28 cube 核
     logging.info(
         "\nFA-Perf BSND DN dynrank tilingkey dtype=%s (b=%s,sq=%s,n=%s,skv=%s,d=%s) cores=%s QK_PRELOAD=%s",
         torch_dtype,

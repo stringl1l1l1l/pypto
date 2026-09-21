@@ -10,7 +10,7 @@
 
 import pypto_pro.language as pl
 import pytest
-from test_core_limits import DEVICE_ID, REQUESTED
+from test_core_limits import DEVICE_ID
 import torch
 
 CV_TILE_M = 64
@@ -111,15 +111,17 @@ def test_limited_matmul(limits, capture):
     out = torch.zeros((CV_M, CV_TILE_N), dtype=torch.float32, device=a.device)
     s = torch.npu.Stream()
     torch.npu.synchronize()
-    with torch.npu.npugraph_ex.scope.limit_core_num(*limits, stream=s):
-        limited_matmul[s, REQUESTED](a, b, out)
+    # A direct call carries the auto sentinel: the launch takes the scope's full
+    # block budget, the same counts the previous clamped request produced.
+    with torch.npu.npugraph_ex.scope.limit_core_num(*limits, stream=s), torch.npu.stream(s):
+        limited_matmul(a, b, out)
         s.synchronize()
         if capture:
             out.zero_()
             torch.npu.synchronize()
             graph = torch.npu.NPUGraph()
             with torch.npu.graph(graph, stream=s):
-                limited_matmul[s, REQUESTED](a, b, out)
+                limited_matmul(a, b, out)
     if capture:
         graph.replay()
     torch.npu.synchronize()

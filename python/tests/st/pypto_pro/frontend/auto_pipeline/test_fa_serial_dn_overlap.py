@@ -557,7 +557,7 @@ def test_fa_perf():
     torch.npu.set_device(device)
     torch.manual_seed(42)
     for sq, skv, d, num_cores in [
-        (8192, 256, TD, 32),
+        (8192, 256, TD, 28),  # 950 默认流预算 28 cube 核
     ]:
         logging.info("\nFA-Perf DN (%s,%s,%s) cores=%s", sq, skv, d, num_cores)
         q_t = torch.rand((sq, d), device=device, dtype=torch.float16)

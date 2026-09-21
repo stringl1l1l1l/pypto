@@ -733,7 +733,7 @@ def test_fa_perf():
     torch.manual_seed(42)
     attn_mask = make_causal_mask_dn_fixed_u8(device)
     for b, sq, n, skv, d, num_cores in [
-        (8, 4096, 8, 4096, TD, 32),
+        (8, 4096, 8, 4096, TD, 28),  # 950 默认流预算 28 cube 核
     ]:
         logging.info(
             "\nFA-Perf BSND DN causal (b=%s,sq=%s,n=%s,skv=%s,d=%s) cores=%s  QK_PRELOAD=%s",

@@ -876,9 +876,9 @@ def test_fa_perf():
         (64, 64, TD, 1),
         (34, 62, TD, 1),
         (162, 190, TD, 1),
-        (8192, 8192, TD, 32),
-        (8128, 8128, TD, 32),
-        (8111, 7777, TD, 32),
+        (8192, 8192, TD, 28),  # 950 默认流预算 28 cube 核
+        (8128, 8128, TD, 28),
+        (8111, 7777, TD, 28),
     ]:
         logging.info("\nFA-Perf DN tile-group (%s,%s,%s) cores=%s  QK_PRELOAD=%s", sq, skv, d, num_cores, QK_PRELOAD)
         q_t = torch.rand((sq, d), device=device, dtype=torch.float16)

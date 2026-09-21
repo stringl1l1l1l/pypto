@@ -216,7 +216,8 @@ def test_fused_mul_add():
     b = torch.randn(64, 64, device=device, dtype=torch.float32)
     c = torch.randn(64, 64, device=device, dtype=torch.float32)
     c_ref = c * a + b
-    fused_mul_add_kernel(a, b, c)
+    # 单核验证：kernel 对 c 做原位读改写，直调现在解析为满核（多核回写同一区域会竞态），这里显式请求 1 块。
+    fused_mul_add_kernel[None, 1](a, b, c)
     torch.npu.synchronize()
     torch.testing.assert_close(c, c_ref, rtol=1e-2, atol=1e-2)
     logging.info("fused_mul_add result equal!")

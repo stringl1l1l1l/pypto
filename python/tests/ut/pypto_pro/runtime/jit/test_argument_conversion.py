@@ -647,11 +647,12 @@ def test_large_request_saturates_before_native_abi_conversion(monkeypatch, reque
         (2, 1),
         (3, 507000),
         (4, 0xFFFFFFFF),
+        (5, 4),
         (9, 1),
     ],
 )
 def test_launch_propagates_native_errors(monkeypatch, kind, detail):
-    """All native errors retain their full code without querying or interpreting the compiler's core topology."""
+    """All native errors raise without querying or interpreting the compiler's core topology."""
     lib = _FakeLib()
     lib.call_kernel.result = -((kind << 32) | detail)
     monkeypatch.setattr(_jit, "ctypes", _CtypesProxy(lib))
@@ -663,6 +664,20 @@ def test_launch_propagates_native_errors(monkeypatch, kind, detail):
     assert lib.call_kernel.restype is ctypes.c_int64
     _torch_mock.npu.get_stream_limit.assert_not_called()
     config_lookup.assert_not_called()
+
+
+def test_direct_call_launches_with_auto_sentinel(monkeypatch):
+    """A direct call must hand the native launcher 0, which resolves to the stream's full budget."""
+    lib = _FakeLib()
+    monkeypatch.setattr(_jit, "ctypes", _CtypesProxy(lib))
+    compiled = CompiledKernel(lib_path="<fake>", param_specs=[])
+    monkeypatch.setattr(_jit, "_launch", MagicMock())
+    kernel = _jit._TileJitKernel(lambda: None, arch="a5")
+    monkeypatch.setattr(kernel, "_validate_launch_arch", lambda: None)
+    monkeypatch.setattr(kernel, "_ensure_compiled", lambda *_args, **_kwargs: compiled)
+    kernel()
+    _jit._launch.assert_called_once()
+    assert _jit._launch.call_args.args[2] == 0
 
 
 def test_capture_log_uses_native_block_count(monkeypatch, caplog):

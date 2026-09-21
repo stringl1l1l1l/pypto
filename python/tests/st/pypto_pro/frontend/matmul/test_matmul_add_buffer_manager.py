@@ -168,7 +168,7 @@ def test_tiled_matmul_add_db_npu():
     out = torch.zeros(M_SIZE, N_SIZE, device=device, dtype=torch.float32)
     workspace = torch.zeros(M_SIZE, N_SIZE, device=device, dtype=torch.float32)
 
-    tiled_matmul_add_db(a, b, x, out, workspace)
+    tiled_matmul_add_db[None, 1](a, b, x, out, workspace)
     torch.npu.synchronize()
 
     out_ref = torch.matmul(a.float(), b.float()) + x

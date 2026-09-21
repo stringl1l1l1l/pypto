@@ -184,7 +184,7 @@ def test_matmul_add_matmul_add():
     out = torch.zeros(shape, device=device, dtype=dtype)
     workspace = torch.zeros(shape, device=device, dtype=dtype)  # bmm1
 
-    matmul_add_matmul_add_cce(q, k, v, x1, x2, out, workspace)
+    matmul_add_matmul_add_cce[None, 1](q, k, v, x1, x2, out, workspace)
     torch.npu.synchronize()
 
     c1 = torch.matmul(q, k)

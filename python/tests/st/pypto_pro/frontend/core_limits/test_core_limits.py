@@ -2,8 +2,8 @@
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 # CANN Open Software License Agreement Version 2.0 (the "License").
 # Please refer to the License for details. You may not use this file except in compliance with the License.
-# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
 """Observe device block counts and complete work coverage under all torch_npu limit scopes.
@@ -12,6 +12,9 @@ Every worker writes a separate 128-byte cache line, avoiding scalar-store false 
 The work array has more tasks than launched workers, so blindly dropping workers from
 fixed host tiling cannot pass these accuracy checks. Count arrays also distinguish a
 correct numerical result produced with too many cores from a compliant launch.
+
+An explicit block_dim must fit the stream's budget; a request above it is rejected.
+A direct call carries the auto sentinel and resolves to the stream's full budget.
 """
 
 import os
@@ -26,7 +29,6 @@ import torch_npu  # noqa: F401 - installs torch.npu
 
 SIZE = 4096
 TASKS = 101
-REQUESTED = 12
 DEVICE_ID = int(os.environ.get("TILE_FWK_DEVICE_ID", 0))
 pytestmark = pytest.mark.soc("950")
 
@@ -111,32 +113,53 @@ def _check(outputs, kind, blocks):
         torch.testing.assert_close(actual, reference, rtol=0, atol=0)
     print(f"kind={kind} blocks={blocks}: count/work max_abs_error=0, exact_match=100%")
 
-
 @pytest.mark.parametrize("kind", range(3), ids=["cube", "vector", "mixed"])
 @pytest.mark.parametrize("limits", [(4, 10), (8, 5)])
-@pytest.mark.parametrize("use_current", [False, True], ids=["explicit_stream", "current_stream"])
-def test_stream_limits(stream, kind, limits, use_current):
+def test_stream_limits(stream, kind, limits):
     """Asymmetric limits catch using cube counts for vectors or ignoring mixed vector demand."""
     outputs = _outputs()
     torch.npu.synchronize()
     torch.npu.set_stream_limit(stream, cube_num=limits[0], vector_num=limits[1])
     blocks = (limits[0], limits[1], min(limits[0], limits[1] // 2))[kind]
     with torch.npu.stream(stream):
-        KERNELS[kind][None if use_current else stream, REQUESTED](*outputs)
+        KERNELS[kind](*outputs)
     stream.synchronize()
     _check(outputs, kind, blocks)
 
 
 @pytest.mark.parametrize("kind", range(3), ids=["cube", "vector", "mixed"])
-def test_nested_scope_and_cached_launcher(stream, kind):
-    """The same bracket launcher must honor nesting, exception restoration and subsequent resets."""
-    launcher = KERNELS[kind][stream, REQUESTED]
+@pytest.mark.parametrize("use_current", [False, True], ids=["explicit_stream", "current_stream"])
+def test_bracket_request_within_limits_launches_exactly(stream, kind, use_current):
+    """An explicit request that fits the budget launches exactly that many blocks on the named stream."""
+    outputs = _outputs()
+    torch.npu.synchronize()
+    torch.npu.set_stream_limit(stream, cube_num=4, vector_num=10)
+    with torch.npu.stream(stream):
+        KERNELS[kind][None if use_current else stream, 4](*outputs)
+    stream.synchronize()
+    _check(outputs, kind, 4)
+
+
+@pytest.mark.parametrize("kind", range(3), ids=["cube", "vector", "mixed"])
+def test_request_above_stream_limit_is_rejected(stream, kind):
+    """A request the stream cannot host fails the launch."""
+    outputs = _outputs()
+    torch.npu.synchronize()
+    torch.npu.set_stream_limit(stream, 4, 6)
+    with pytest.raises(RuntimeError, match="Kernel launch failed with error code"):
+        KERNELS[kind][stream, 12](*outputs)
+
+
+@pytest.mark.parametrize("kind", range(3), ids=["cube", "vector", "mixed"])
+def test_nested_scope_and_cached_kernel(stream, kind):
+    """Direct launches must honor nesting, exception restoration and subsequent resets."""
     torch.npu.set_stream_limit(stream, 8, 10)
 
     def run(blocks):
         outputs = _outputs()
         torch.npu.synchronize()
-        launcher(*outputs)
+        with torch.npu.stream(stream):
+            KERNELS[kind](*outputs)
         stream.synchronize()
         _check(outputs, kind, blocks)
 
@@ -153,7 +176,7 @@ def test_nested_scope_and_cached_launcher(stream, kind):
     inherited = torch.npu.get_stream_limit(stream)
     blocks = (inherited["cube_core_num"], inherited["vector_core_num"],
               min(inherited["cube_core_num"], inherited["vector_core_num"] // 2))[kind]
-    run(min(REQUESTED, blocks))
+    run(blocks)
 
 
 def test_explicit_scope_does_not_limit_other_stream(stream):
@@ -164,7 +187,7 @@ def test_explicit_scope_does_not_limit_other_stream(stream):
     torch.npu.synchronize()
     try:
         with torch.npu.stream(other), torch.npu.npugraph_ex.scope.limit_core_num(2, 2, stream=stream):
-            vector_probe[REQUESTED](*outputs)
+            vector_probe(*outputs)
         other.synchronize()
         _check(outputs, 1, 8)
     finally:
@@ -178,7 +201,8 @@ def test_capture_scopes_and_replay(stream, kind):
     outputs = [_outputs(), _outputs()]
     torch.npu.synchronize()
     # Compile and bind before capture; warmup results must not mask missing graph writes.
-    KERNELS[kind][stream, REQUESTED](*outputs[0])
+    with torch.npu.stream(stream):
+        KERNELS[kind](*outputs[0])
     stream.synchronize()
     for group in outputs:
         for tensor in group:
@@ -187,9 +211,9 @@ def test_capture_scopes_and_replay(stream, kind):
     graph = torch.npu.NPUGraph()
     with torch.npu.graph(graph, stream=stream):
         with torch.npu.npugraph_ex.scope.limit_core_num(4, 6):
-            KERNELS[kind][REQUESTED](*outputs[0])
+            KERNELS[kind](*outputs[0])
         with torch.npu.npugraph_ex.scope.limit_core_num(2, 2, stream=stream):
-            KERNELS[kind][stream, REQUESTED](*outputs[1])
+            KERNELS[kind](*outputs[1])
     for _ in range(2):
         graph.replay()
         torch.npu.synchronize()
@@ -198,7 +222,7 @@ def test_capture_scopes_and_replay(stream, kind):
         for group in outputs:
             for tensor in group:
                 tensor.zero_()
-        torch.npu.synchronize()
+            torch.npu.synchronize()
 
 
 @pytest.mark.skip_jit_discovery(reason="Device-limit probe compiles and runs in its own process")
@@ -219,19 +243,22 @@ def _device_probe():
     for kind in range(3):
         outputs = _outputs()
         torch.npu.synchronize()
-        KERNELS[kind][stream, REQUESTED](*outputs)
+        with torch.npu.stream(stream):
+            KERNELS[kind](*outputs)
         stream.synchronize()
         _check(outputs, kind, (4, 6, 3)[kind])
     torch.npu.set_stream_limit(stream, cube_num=8, vector_num=10)
     outputs = _outputs()
     torch.npu.synchronize()
-    mixed_probe[stream, REQUESTED](*outputs)
+    with torch.npu.stream(stream):
+        mixed_probe(*outputs)
     stream.synchronize()
     _check(outputs, 2, 5)
     torch.npu.reset_stream_limit(stream)
     outputs = _outputs()
     torch.npu.synchronize()
-    mixed_probe[stream, REQUESTED](*outputs)
+    with torch.npu.stream(stream):
+        mixed_probe(*outputs)
     stream.synchronize()
     _check(outputs, 2, 3)
 

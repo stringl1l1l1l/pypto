@@ -32,7 +32,7 @@ DEVICE = f"npu:{DEVICE_ID}"
 
 def _run_expect_error(kernel_func, *args):
     with pytest.raises((RuntimeError, Exception)):
-        kernel_func[None, 32](*args)
+        kernel_func(*args)
         torch.npu.synchronize()
 
 
@@ -695,7 +695,7 @@ def test_err_matmul_bias_middle_block():
     b = torch.randn(K_SPLIT, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_bias_middle_block[None, 32](a, b, bias, out)
+    kernel_bias_middle_block(a, b, bias, out)
     torch.npu.synchronize()
     golden = torch.matmul(a.float(), b.float()).half() + bias
     max_diff = (out.float() - golden.float()).abs().max().item()
@@ -711,7 +711,7 @@ def test_err_matmul_bias_last_block():
     b = torch.randn(K_SPLIT, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_bias_last_block[None, 32](a, b, bias, out)
+    kernel_bias_last_block(a, b, bias, out)
     torch.npu.synchronize()
     golden = torch.matmul(a.float(), b.float()).half() + bias
     max_diff = (out.float() - golden.float()).abs().max().item()

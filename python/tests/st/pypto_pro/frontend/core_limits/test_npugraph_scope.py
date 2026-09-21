@@ -9,7 +9,7 @@
 """Exercise real npugraph_ex scope lowering around an opaque PyPTO custom operator."""
 
 import pytest
-from test_core_limits import DEVICE_ID, KERNELS, REQUESTED, SIZE, _check
+from test_core_limits import DEVICE_ID, KERNELS, SIZE, _check
 import torch
 
 
@@ -29,7 +29,8 @@ def _isolated_graph_cache():
 @torch.library.custom_op("pypto_core_limits::probe", mutates_args=())
 def _probe(x: torch.Tensor, kind: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     outputs = tuple(torch.zeros(SIZE, dtype=torch.int32, device=x.device) for _ in range(3))
-    KERNELS[kind][REQUESTED](*outputs)
+    # Direct call: the auto sentinel resolves to the scope's full budget at capture.
+    KERNELS[kind](*outputs)
     return outputs
 
 

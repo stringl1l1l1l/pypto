@@ -78,7 +78,7 @@ def test_thread_context():
     _require_a5()
 
     out = torch.empty((2, THREADS), dtype=torch.int32).to(torch.uint32).to(ST_DEVICE)
-    simt_thread_context(out)
+    simt_thread_context[None, 1](out)
     torch.npu.synchronize()
 
     tid = torch.arange(THREADS, dtype=torch.int64)

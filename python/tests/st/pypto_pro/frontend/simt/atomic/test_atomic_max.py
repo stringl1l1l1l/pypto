@@ -197,7 +197,7 @@ def test_atomic_max_returns_old_value_and_preserves_other_elements():
     expected_old[0, 0] = 10
     state_device = state.to(ST_DEVICE)
     old_values = torch.full((1, ELEMENTS), 123, dtype=torch.int32).to(ST_DEVICE)
-    simt_atomic_max_return_value_gm(state_device, old_values)
+    simt_atomic_max_return_value_gm[None, 1](state_device, old_values)
     torch.npu.synchronize()
     torch.testing.assert_close(state_device.cpu(), expected_state, rtol=0, atol=0)
     torch.testing.assert_close(old_values.cpu(), expected_old, rtol=0, atol=0)

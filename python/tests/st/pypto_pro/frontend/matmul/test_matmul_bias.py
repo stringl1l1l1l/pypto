@@ -203,7 +203,7 @@ def test_matmul_bias_fp16():
     b = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_bias_fp16[None, 32](a, b, bias, out)
+    kernel_bias_fp16(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -218,7 +218,7 @@ def test_matmul_bias_bf16():
     b = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.bfloat16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.bfloat16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.bfloat16)
-    kernel_bias_bf16[None, 32](a, b, bias, out)
+    kernel_bias_bf16(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).to(torch.bfloat16) + bias, rtol=5e-2, atol=5e-2)
 
@@ -232,7 +232,7 @@ def test_matmul_bias_dynamic_m():
     b = torch.randn(128, 128, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, 128, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(256, 128, device=DEVICE, dtype=torch.float16)
-    kernel_bias_dynamic_m[None, 32](a, b, bias, out)
+    kernel_bias_dynamic_m(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -299,7 +299,7 @@ def _run_expect_keyword_error(kernel):
         b = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
         bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
         out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-        kernel[None, 32](a, b, bias, out)
+        kernel(a, b, bias, out)
         torch.npu.synchronize()
 
 
@@ -368,11 +368,11 @@ def _run_single(kernel, has_bias):
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
     if has_bias:
         bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
-        kernel[None, 32](a, b, bias, out)
+        kernel(a, b, bias, out)
         torch.npu.synchronize()
         torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
     else:
-        kernel[None, 32](a, b, out)
+        kernel(a, b, out)
         torch.npu.synchronize()
         torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half(), rtol=1e-2, atol=1e-2)
 
@@ -487,7 +487,7 @@ def test_matmul_bias_n_2tiles():
     b = torch.randn(TILE, 256, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, 256, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, 256, device=DEVICE, dtype=torch.float16)
-    kernel_n_2tiles[None, 32](a, b, bias, out)
+    kernel_n_2tiles(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -501,7 +501,7 @@ def test_matmul_bias_mn_4tiles():
     b = torch.randn(TILE, 256, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, 256, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(256, 256, device=DEVICE, dtype=torch.float16)
-    kernel_mn_4tiles[None, 32](a, b, bias, out)
+    kernel_mn_4tiles(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -550,7 +550,7 @@ def test_matmul_bias_m_4tiles():
     b = torch.randn(128, 128, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, 128, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(512, 128, device=DEVICE, dtype=torch.float16)
-    kernel_m_4tiles[None, 32](a, b, bias, out)
+    kernel_m_4tiles(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -771,7 +771,7 @@ def test_matmul_bias_k_split():
     b = torch.randn(K_SPLIT_3, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_k_split_bias[None, 32](a, b, bias, out)
+    kernel_k_split_bias(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -785,7 +785,7 @@ def test_matmul_bias_k2_split():
     b = torch.randn(K_SPLIT_2, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_k2_split_bias[None, 32](a, b, bias, out)
+    kernel_k2_split_bias(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -799,7 +799,7 @@ def test_matmul_bias_k4_split():
     b = torch.randn(K_SPLIT_4, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_k4_split_bias[None, 32](a, b, bias, out)
+    kernel_k4_split_bias(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -813,7 +813,7 @@ def test_matmul_bias_mnk_split():
     b = torch.randn(K_SPLIT_3, N_MNK, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, N_MNK, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(M_MNK, N_MNK, device=DEVICE, dtype=torch.float16)
-    kernel_mnk_split_bias[None, 32](a, b, bias, out)
+    kernel_mnk_split_bias(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -827,7 +827,7 @@ def test_matmul_bias_mnk_k2_split():
     b = torch.randn(K_SPLIT_2, N_MNK, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, N_MNK, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(M_MNK, N_MNK, device=DEVICE, dtype=torch.float16)
-    kernel_mnk_k2_split_bias[None, 32](a, b, bias, out)
+    kernel_mnk_k2_split_bias(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -841,7 +841,7 @@ def test_matmul_bias_phase_final():
     b = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_bias_phase_final[None, 32](a, b, bias, out)
+    kernel_bias_phase_final(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -930,7 +930,7 @@ def test_regress_matmul_no_bias():
     a = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
     b = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_regress_no_bias[None, 32](a, b, out)
+    kernel_regress_no_bias(a, b, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half(), rtol=1e-2, atol=1e-2)
 
@@ -943,7 +943,7 @@ def test_regress_matmul_no_bias_phase():
     a = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
     b = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_regress_no_bias_phase[None, 32](a, b, out)
+    kernel_regress_no_bias_phase(a, b, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half(), rtol=1e-2, atol=1e-2)
 
@@ -956,7 +956,7 @@ def test_regress_matmul_acc():
     a = torch.randn(TILE, K_SPLIT_2, device=DEVICE, dtype=torch.float16)
     b = torch.randn(K_SPLIT_2, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_regress_matmul_acc[None, 32](a, b, out)
+    kernel_regress_matmul_acc(a, b, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half(), rtol=1e-2, atol=1e-2)
 
@@ -1072,7 +1072,7 @@ def test_matmul_bias_m_tail():
     b = torch.randn(TILE, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(K_TAIL, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_bias_m_tail[None, 32](a, b, bias, out)
+    kernel_bias_m_tail(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -1121,7 +1121,7 @@ def test_matmul_bias_n_tail():
     b = torch.randn(TILE, K_TAIL, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, K_TAIL, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, K_TAIL, device=DEVICE, dtype=torch.float16)
-    kernel_bias_n_tail[None, 32](a, b, bias, out)
+    kernel_bias_n_tail(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -1179,7 +1179,7 @@ def test_matmul_bias_k_tail():
     b = torch.randn(K_TAIL, TILE, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, TILE, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(TILE, TILE, device=DEVICE, dtype=torch.float16)
-    kernel_bias_k_tail[None, 32](a, b, bias, out)
+    kernel_bias_k_tail(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)
 
@@ -1247,6 +1247,6 @@ def test_matmul_bias_mnk_tail():
     b = torch.randn(K_TAIL, K_TAIL, device=DEVICE, dtype=torch.float16)
     bias = torch.randn(1, K_TAIL, device=DEVICE, dtype=torch.float16)
     out = torch.zeros(K_TAIL, K_TAIL, device=DEVICE, dtype=torch.float16)
-    kernel_bias_mnk_tail[None, 32](a, b, bias, out)
+    kernel_bias_mnk_tail(a, b, bias, out)
     torch.npu.synchronize()
     torch.testing.assert_close(out, torch.matmul(a.float(), b.float()).half() + bias, rtol=1e-2, atol=1e-2)

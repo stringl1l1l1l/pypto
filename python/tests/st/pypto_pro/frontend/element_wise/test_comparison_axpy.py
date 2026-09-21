@@ -119,7 +119,7 @@ def test_axpy():
     x = torch.randn(64, 64, device=device, dtype=torch.float32)
     y = torch.randn(64, 64, device=device, dtype=torch.float32)
     y_orig = y.clone()
-    axpy_kernel(x, y)
+    axpy_kernel[None, 1](x, y)
     torch.npu.synchronize()
     y_ref = ALPHA * x + y_orig
     torch.testing.assert_close(y, y_ref, rtol=1e-2, atol=1e-2)

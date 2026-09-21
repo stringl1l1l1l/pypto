@@ -35,7 +35,7 @@ def _require_a5():
 def _run_kernel(kernel, states):
     _require_a5()
     device_states = [state.to(ST_DEVICE) for state in states]
-    kernel(*device_states)
+    kernel[None, 1](*device_states)
     torch.npu.synchronize()
     return [state.cpu() for state in device_states]
 
@@ -155,7 +155,7 @@ def test_atomic_xor_returns_old_value_and_preserves_other_elements():
     expected_old[0, 0] = 0xAA
     state_device = state.to(ST_DEVICE)
     old_values = torch.full((1, ELEMENTS), 123, dtype=torch.int32).to(ST_DEVICE)
-    simt_atomic_xor_return_value_gm(state_device, old_values)
+    simt_atomic_xor_return_value_gm[None, 1](state_device, old_values)
     torch.npu.synchronize()
     torch.testing.assert_close(state_device.cpu(), expected_state, rtol=0, atol=0)
     torch.testing.assert_close(old_values.cpu(), expected_old, rtol=0, atol=0)

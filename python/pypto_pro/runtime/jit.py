@@ -155,7 +155,7 @@ class CompiledKernel:
     lib_path: str
     param_specs: list[ParamSpec]
     # True when the generated kernel uses only vector (AIV) cores (no cube code),
-    # so block_dim should be clamped against the vector core count.
+    # so its native block budget comes from the vector core count alone.
     is_aiv_only: bool = False
     # Identity and artifacts of the generated kernel, forwarded to the exception-dump
     # bookkeeping on every launch.
@@ -865,8 +865,8 @@ def _build_launch_entry(compiled: "CompiledKernel"):
         if stream is None:
             stream = torch.npu.current_stream()
         # Python integers can exceed the uint32_t launch ABI. Saturate the request
-        # before ctypes conversion so a large upper bound cannot wrap to zero; the
-        # native query will further reduce it to this stream's actual resources.
+        # before ctypes conversion so a large request cannot wrap to zero (0 is the
+        # native auto sentinel) and is rejected by the native limit check instead.
         if block_dim > 0xFFFFFFFF:
             block_dim = 0xFFFFFFFF
         _set_dump_info(compiled, args, block_dim)
@@ -1798,6 +1798,36 @@ def _validate_block_dim(block_dim):
         )
 
 
+# block_dim handed to the native launcher when the caller did not pick a core
+# count (direct kernel call); the native side resolves it to the stream's full
+# block budget (kAutoBlockDim in pypto_launch.h). Bracket-launch input is
+# validated positive by _validate_block_dim and saturated before the ABI, so a
+# user-supplied 0 cannot reach this protocol.
+_AUTO_BLOCK_DIM = 0
+
+
+def _auto_block_upper_bound(compiled: "CompiledKernel") -> int:
+    """Device-level upper bound on the auto-resolved block count, used to size
+    host resources (the sanitizer log buffer) before the native launch resolves
+    the sentinel; it can over-estimate, never under-estimate."""
+    from pypto_pro.runtime.platform import get_platform_info
+
+    info = get_platform_info()
+    target = compiled.target
+    if target is not None and info.core_num > 0:
+        blocks = []
+        if target.aic_per_block:
+            blocks.append(info.cube_core_num // target.aic_per_block)
+        if target.aiv_per_block:
+            blocks.append(info.vector_core_num // target.aiv_per_block)
+        if blocks and min(blocks) > 0:
+            return min(blocks)
+    raise RuntimeError(
+        "Cannot size per-block host resources for an auto block_dim launch: "
+        "platform core counts are unavailable for this kernel"
+    )
+
+
 def _build_sanitizer_entry(compiled: "CompiledKernel", build_dir: str):
     """Wrap the launch entry of an instrumented kernel with the sanitizer glue.
 
@@ -1815,18 +1845,21 @@ def _build_sanitizer_entry(compiled: "CompiledKernel", build_dir: str):
     base_entry = _build_launch_entry(compiled)
 
     def entry(args: tuple, block_dim: int, stream):
-        # One region per AIV sub-block, mirroring the device-side buffer layout.
-        regions = KSANITIZER_SUB_BLOCKS * block_dim
+        # The sentinel cannot size the buffer (the actual count is resolved
+        # natively at launch); size by the device-level upper bound instead,
+        # while the launch itself still carries the sentinel.
+        sized_dim = _auto_block_upper_bound(compiled) if block_dim == _AUTO_BLOCK_DIM else block_dim
+        regions = KSANITIZER_SUB_BLOCKS * sized_dim
         words_per_region = KSANITIZER_LOG_BUDGET_BYTES // (4 * regions)
-        capacity_u32 = words_per_region - 1  # one u32 per region is the write counter
         nbytes = words_per_region * 4 * regions
         log_buffer = torch.empty(nbytes, dtype=torch.uint8, device="npu")
         # Only the per-region ctr word must start at zero; the record area is
         # write-before-read on the device, so zeroing it would be wasted cost.
         log_buffer.view(torch.int32)[::words_per_region] = 0
+        capacity_u32 = words_per_region - 1
         full_args = (*args, log_buffer, capacity_u32)
         base_entry(full_args, block_dim, stream)
-        _replay_sanitizer(log_buffer, capacity_u32, block_dim, build_dir, compiled.kernel_name, compiled.source_file)
+        _replay_sanitizer(log_buffer, capacity_u32, sized_dim, build_dir, compiled.kernel_name, compiled.source_file)
 
     return entry
 
@@ -2004,7 +2037,7 @@ class _TileJitKernel:
     Supports:
         kernel[stream, block_dim](x, y, z)  — explicit stream and block_dim
         kernel[block_dim](x, y, z)          — default stream, explicit block_dim
-        kernel(x, y, z)                     — default stream, block_dim=1
+        kernel(x, y, z)                     — default stream, full core budget (auto)
     """
 
     def __init__(
@@ -2063,11 +2096,13 @@ class _TileJitKernel:
 
         Returns a callable launcher that executes the compiled kernel.
 
-        ``block_dim`` is an upper bound on worker blocks. Each launch applies the
-        actual stream's torch_npu resource limits, including device defaults and
-        npugraph_ex scopes. Kernels must partition all work using ``get_block_num()``
-        (and ``get_subblock_num()`` for mixed vector workers), not a fixed host core
-        count. A captured graph retains its launch dimensions until recaptured.
+        ``block_dim`` is the exact worker block count and must fit the current
+        stream's torch_npu resource limits, including device defaults and
+        npugraph_ex scopes; a request above the limit fails the launch instead
+        of being silently reduced. Kernels must partition all work using
+        ``get_block_num()`` (and ``get_subblock_num()`` for mixed vector
+        workers), not a fixed host core count. A captured graph retains its
+        launch dimensions until recaptured.
 
         For tilingkey kernels the third bracket element is the concrete key dict::
 
@@ -2127,7 +2162,7 @@ class _TileJitKernel:
         return launcher
 
     def __call__(self, *args, **kwargs_):
-        """Direct call with default stream and block_dim=1."""
+        """Direct call: default stream, block_dim resolved to the stream's full budget."""
         if self._tilingkey_schema is not None or self._datatype_schema is not None:
             raise NotSupported(
                 f"Kernel '{self.__name__}' has compile-time specialization and cannot be called directly; "
@@ -2137,7 +2172,7 @@ class _TileJitKernel:
         if kwargs_ or len(args) != self._positional_arity:
             args = self._normalize_launch_args(args, kwargs_)
         compiled = self._ensure_compiled(args, spec=_NO_SPEC)
-        _launch(compiled, args, 1, None)
+        _launch(compiled, args, _AUTO_BLOCK_DIM, None)
 
     def _validate_launch_arch(self) -> None:
         from pypto_pro.runtime.platform import get_platform_info
@@ -2333,7 +2368,7 @@ class _TileJitKernel:
         if cg is None:
             raise RuntimeFailure(f"Failed to generate code for kernel '{self.__name__}'")
 
-        # Resolve once for compiler flags, native resource clamping and debug
+        # Resolve once for compiler flags, the native block-budget check and debug
         # recompilation. Every consumer must use this binary's same core geometry.
         target = get_jit_compile_config().resolve_kernel_target(
             arch, has_cube=cg.has_cube, has_vector=cg.has_vector,

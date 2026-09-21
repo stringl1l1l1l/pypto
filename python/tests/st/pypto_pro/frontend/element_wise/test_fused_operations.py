@@ -127,7 +127,7 @@ def test_mul_add_dst():
     z = torch.randn(M, N, device=ST_DEVICE, dtype=torch.float16)
     z_orig = z.clone()
     z_ref = z_orig + x * y
-    mul_add_dst_kernel(x, y, z)
+    mul_add_dst_kernel[None, 1](x, y, z)
     torch.npu.synchronize()
     torch.testing.assert_close(z, z_ref, atol=1e-2, rtol=1e-2)
     logging.info("test_mul_add_dst passed!")
@@ -142,7 +142,7 @@ def test_fused_mul_add_relu():
     z = torch.randn(M, N, device=ST_DEVICE, dtype=torch.float16)
     z_orig = z.clone()
     z_ref = torch.relu(z_orig * x + y)
-    fused_mul_add_relu_kernel(x, y, z)
+    fused_mul_add_relu_kernel[None, 1](x, y, z)
     torch.npu.synchronize()
     torch.testing.assert_close(z, z_ref, atol=1e-2, rtol=1e-2)
     logging.info("test_fused_mul_add_relu passed!")

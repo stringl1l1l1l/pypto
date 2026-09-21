@@ -266,7 +266,7 @@ def test_atomic_add():
     scale_bits = struct.unpack("!I", struct.pack("!f", scale_value))[0]
 
     # First store (initial values)
-    scale_atomic_add_kernel(q, k, quant_out, scale_bits)
+    scale_atomic_add_kernel[None, 1](q, k, quant_out, scale_bits)
     torch.npu.synchronize()
 
     raw_ref = torch.matmul(q, k)
@@ -275,7 +275,7 @@ def test_atomic_add():
     torch.testing.assert_close(quant_out.to(torch.int32), expected_first.to(torch.int32), rtol=0, atol=1)
 
     # Second store (atomic add)
-    scale_atomic_add_kernel(q, k, quant_out, scale_bits)
+    scale_atomic_add_kernel[None, 1](q, k, quant_out, scale_bits)
     torch.npu.synchronize()
 
     # Expected: first + second (with saturation)
