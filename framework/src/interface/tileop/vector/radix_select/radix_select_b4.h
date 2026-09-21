@@ -86,7 +86,7 @@ TILEOP void RadixSelectCalcB4(VAL value, IDX index, TMP tmp, SRC src)
     auto high2IntTile = DefineTile<int32_t, srcTileH>(srcShape[DIM_4TH], UINT32_ELEMENTS_PER_BLOCK, high2Addr);
     auto high3IntTile = DefineTile<int32_t, srcTileH>(srcShape[DIM_4TH], UINT32_ELEMENTS_PER_BLOCK, high3Addr);
     constexpr size_t HIGH_BYTE_COUNT = sizeof(uint32_t) - 1;
-    auto hignMaxIntTile = DefineTile<int32_t, srcTileH * HIGH_BYTE_COUNT>(srcShape[DIM_4TH] * HIGH_BYTE_COUNT,
+    auto hignMaxIntTile = DefineTile<int32_t, srcTileH * HIGH_BYTE_COUNT>(srcTileH * HIGH_BYTE_COUNT,
                                                                           UINT32_ELEMENTS_PER_BLOCK, high1Addr);
     auto histogramUInt32Tile = DefineTile<uint32_t, srcTileH, HISTOGRAM_BUCKETS>(srcShape[DIM_4TH], HISTOGRAM_BUCKETS,
                                                                                  histogramAddr);
