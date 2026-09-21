@@ -735,14 +735,16 @@ INLINE void DrcoFireEncodedSucc(DrcoEntryState* state, __gm__ npu::tile_fwk::Drc
 }
 
 INLINE void DrcoResolveDepend(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
-                              uint32_t taskId)
+                              uint32_t* taskIdList, uint32_t taskCount = 1)
 {
     uint32_t succTaskIdListCoreList[npu::tile_fwk::DRCO_QUEUE_MAX][BATCH_PUSH_BUF_SIZE];
     uint32_t succTaskIdListSizeCoreList[npu::tile_fwk::DRCO_QUEUE_MAX] = {0};
 
     uint32_t hubStack[HUB_STACK_SIZE];
     int32_t hubStackTop = -1;
-    hubStack[++hubStackTop] = taskId;
+    for (uint32_t i = 0; i < taskCount; i++) {
+        hubStack[++hubStackTop] = taskIdList[i];
+    }
     while (hubStackTop >= 0) {
         uint32_t curTaskId = hubStack[hubStackTop--];
         uint32_t funcIdx = npu::tile_fwk::FuncID(curTaskId);
@@ -1278,7 +1280,7 @@ INLINE void ExecDrcoPerCoreTasks(DrcoEntryState* state, __gm__ npu::tile_fwk::Pe
         uint32_t taskId = DrcoGmLoadArray(perCoreQueue->taskList, perCoreQueueHead);
         PerfDevTaskFirstLeafTask(state);
         ExecLeafFunction(state, taskId);
-        DrcoResolveDepend(state, rootFuncList, taskId);
+        DrcoResolveDepend(state, rootFuncList, &taskId);
         perCoreQueueHead++;
     }
 }
@@ -1298,7 +1300,7 @@ INLINE bool IsHubTask(DrcoEntryState* state, uint32_t taskId)
 // fetch 自旋，消除整批执行完才广播的尾部空隙
 INLINE bool ExecDrcoReadyQueueTaskOnce(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                                        [[maybe_unused]] __gm__ npu::tile_fwk::PerCorePendingQueue* perCoreQueue,
-                                       uint32_t taskId, uint32_t outCoreType)
+                                       uint32_t taskId, uint32_t outCoreType, uint32_t& executedTaskId)
 {
 #if defined(__MIX__) && defined(__AIC__)
     if (outCoreType == npu::tile_fwk::DRCO_QUEUE_MIX) {
@@ -1317,12 +1319,12 @@ INLINE bool ExecDrcoReadyQueueTaskOnce(DrcoEntryState* state, __gm__ npu::tile_f
         return false;
     }
     if (IsHubTask(state, taskId)) {
-        DrcoResolveDepend(state, rootFuncList, taskId);
+        DrcoResolveDepend(state, rootFuncList, &taskId);
         return false;
     }
     DrcoNotifyTaskExecutedAdd(state, rootFuncList, 1);
     ExecLeafFunction(state, taskId);
-    DrcoResolveDepend(state, rootFuncList, taskId);
+    executedTaskId = taskId;
     return true;
 }
 
@@ -1335,8 +1337,16 @@ INLINE void ExecDrcoReadyQueueTasks(DrcoEntryState* state, __gm__ npu::tile_fwk:
     uint32_t taskCount = DrcoDynFuncDataListFetchTask(state, rootFuncList, outCoreType, taskIdList);
     while (taskCount != static_cast<uint32_t>(AICORE_TASK_ALL_FINISH)) {
         PerfDevTaskFirstLeafTask(state);
+        uint32_t executedTaskIdList[LOCAL_GROUP_SIZE];
+        uint32_t resolveCount = 0;
         for (uint32_t i = 0; i < taskCount; i++) {
-            (void)ExecDrcoReadyQueueTaskOnce(state, rootFuncList, perCoreQueue, taskIdList[i], outCoreType);
+            if (ExecDrcoReadyQueueTaskOnce(state, rootFuncList, perCoreQueue, taskIdList[i], outCoreType,
+                                           executedTaskIdList[resolveCount])) {
+                resolveCount++;
+            }
+        }
+        if (resolveCount > 0) {
+            DrcoResolveDepend(state, rootFuncList, executedTaskIdList, resolveCount);
         }
         taskCount = DrcoDynFuncDataListFetchTask(state, rootFuncList, outCoreType, taskIdList);
     }
