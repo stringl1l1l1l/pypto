@@ -33,8 +33,9 @@
 | 2.4 | 空指针解引用 | Blocker | `reinterpret_cast<T*>(nullptr)` 后直接访问 |
 | 2.5 | use-after-free / 悬垂指针 | Blocker | 返回局部变量地址、lambda 捕获引用后异步使用 |
 | 2.6 | 堆分配在热路径 | Major | AICPU 热路径 `new`/STL（见 §6 / `perf-rules.md` §2.1） |
+| 2.7 | `RelocNullable` 仅限绝对地址域；被 reloc 的值可能是 offset=0 时禁止调用 | Blocker | device 侧运行时（`RuntimeAddrRelocWorkspace` 等）对 live pool slot / freelist 中的 **offset 值**调用 `RelocNullable`：offset=0 是合法地址（workspace 起点），却被 `if (addr != 0)` 当作空指针跳过，槽位保持 0 被 `WsSlotAllocator::Allocate` 原样分配出去（OUTCAST_ADDRESS_NULL / 边界 pool 耗尽，见 !6476） |
 
-验证方法：grep `__attribute__((weak))` 确认所有 weak 符号调用点；检查 `AlignedCopy` 类函数的对齐实现。
+验证方法：grep `__attribute__((weak))` 确认所有 weak 符号调用点；检查 `AlignedCopy` 类函数的对齐实现；对每处 device 侧运行时 `RelocNullable` 调用确认值域——绝对地址（0 确实代表未分配，如 host 分支的 `runtimeWorkspace_`）可用 `RelocNullable`，offset / 相对地址（0 是合法的 workspace 起点，如 `RuntimeAddrRestore` 拷入 freelist 的 backup offset）必须用 `Reloc` 无条件平移。
 
 ---
 

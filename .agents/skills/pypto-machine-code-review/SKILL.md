@@ -42,7 +42,7 @@ description: PyPTO machine 侧（framework/src/machine）代码检视与行级 r
 
 读 [references/review-checklist.md](references/review-checklist.md)（**必读**后再下评审结论），至少覆盖：
 - §1 算法正确性（CRC/哈希多项式、整数溢出）
-- §2 内存安全（weak 符号空指针、对齐、越界）
+- §2 内存安全（weak 符号空指针、对齐、越界、`RelocNullable` offset-0 判空语义）
 - §3 缓存/哈希碰撞（AOT cache、registry 去重键）
 - §4 范围纪律（无关改动混入、死代码删除）
 - §5 bundle 专项（format/header/TLV/CRC/对齐）
