@@ -734,6 +734,57 @@ INLINE void DrcoFireEncodedSucc(DrcoEntryState* state, __gm__ npu::tile_fwk::Drc
                           succTaskIdListSizeCoreList);
 }
 
+// 尝试把单个 stitch 节点 push 入矩阵：从本核行（全局 blockIdx 对应行）的 start 偏移
+// 起逐行 CAS 抢占空槽，成功返回 true 并推进 start（保证同链节点行分散、减少竞争）；
+// 失败返回 false，由调用方就地解依赖兜底。
+// slot 存节点相对 stitch pool 基址的 u32 偏移（0 = 空闲），基址见 DrcoRootFuncList::stitchNodeBase
+INLINE static bool DrcoStitchNodeMatrixTryPush(DrcoEntryState* state,
+                                               __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+                                               __gm__ DrcoGlobalStitchNodeMatrix* matrix,
+                                               __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node,
+                                               uint32_t& start)
+{
+    BlockDesc blockDesc = state->blockDesc;
+    // 行 = 全局 blockIdx（AIC [0,nrValidAic) + AIV [nrValidAic,3*nrValidAic)）：
+    // 全核共享池，节点落在任意空行即被该行主人 pop 展开（类型无关）
+    uint32_t rowCnt = state->ctx.aicCoreNum * DRCO_ALL_CORES_PER_AIC;
+    uint32_t coreTypeIdx = BlockDescBlockIdx(blockDesc);
+    uint32_t colIdx = coreTypeIdx % npu::tile_fwk::DrcoGlobalStitchNodeMatrix::COL_SIZE;
+    uint64_t stitchNodeBase = rootFuncList->stitchNodeBase;
+    for (uint32_t i = 0; i < rowCnt; i++) {
+        uint32_t rowIdx = (coreTypeIdx + start + i) % rowCnt;
+        __gm__ uint32_t* slot = &matrix->stitchNodeList[rowIdx].slot[colIdx];
+        uint32_t prev = DrcoAtomicCasToU32(slot, 0,
+                                           static_cast<uint32_t>(reinterpret_cast<uint64_t>(node) - stitchNodeBase));
+        if (prev == 0) {
+            start = start + i + 1;
+            return true;
+        }
+    }
+    return false;
+}
+
+// 就地解单个 stitch 节点依赖：走 DrcoResolveDependOnceCore 路由（无 hub 级联，batch push），
+// 任务数从 nodeSize 字段直读；消费核 pop 与生产核 push 失败兜底共用
+INLINE void DrcoStitchNodeTasksResolveCore(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+                                           __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node,
+                                           uint32_t succTaskIdListCoreList[][BATCH_PUSH_BUF_SIZE],
+                                           uint32_t succTaskIdListSizeCoreList[])
+{
+    for (uint32_t i = 0; i < node->nodeSize; i++) {
+        uint32_t succTaskId = node->nodeTaskList[i]; // already coreType-encoded at build time
+        uint32_t succFuncId = npu::tile_fwk::FuncID(succTaskId);
+        uint32_t succOpIdx = npu::tile_fwk::TaskID(succTaskId);
+        auto* succFuncData = &state->ctx.cachedDevTaskCurr->funcDataList[succFuncId];
+        __gm__ npu::tile_fwk::DrcoRootFuncData* succRootFuncData = &succFuncData->drcoRootFuncData;
+        int32_t old = DrcoAtomicResolveDependOnce<int32_t, 1, -1>(&succRootFuncData->predCount[succOpIdx]);
+        if (old == 1) {
+            DrcoResolveDependOnceCore(state, rootFuncList, succTaskId, succTaskIdListCoreList,
+                                      succTaskIdListSizeCoreList);
+        }
+    }
+}
+
 INLINE void DrcoResolveDepend(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                               uint32_t* taskIdList, uint32_t taskCount = 1)
 {
@@ -803,31 +854,12 @@ INLINE void DrcoResolveDepend(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoR
             __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* fallbackNode = nullptr;
             __gm__ DrcoGlobalStitchNodeMatrix* matrix = DrcoRootFuncListGetStitchNodeMatrix(rootFuncList);
 
-            BlockDesc blockDesc = state->blockDesc;
-            // 行 = 全局 blockIdx（AIC [0,nrValidAic) + AIV [nrValidAic,3*nrValidAic)）：
-            // 全核共享池，节点落在任意空行即被该行主人 pop 展开（类型无关）
-            uint32_t rowCnt = state->ctx.aicCoreNum * DRCO_ALL_CORES_PER_AIC;
-            uint32_t coreTypeIdx = BlockDescBlockIdx(blockDesc);
-            uint32_t colIdx = coreTypeIdx % npu::tile_fwk::DrcoGlobalStitchNodeMatrix::COL_SIZE;
             if (firstNode != nullptr) {
                 uint32_t start = 0;
-                uint64_t stitchNodeBase = rootFuncList->stitchNodeBase;
 
                 for (__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node = firstNode->nodeNext;
                      node != nullptr && fallbackNode == nullptr; node = node->nodeNext) {
-                    bool filled = false;
-                    for (uint32_t i = 0; i < rowCnt; i++) {
-                        uint32_t rowIdx = (coreTypeIdx + start + i) % rowCnt;
-                        __gm__ uint32_t* slot = &matrix->stitchNodeList[rowIdx].slot[colIdx];
-                        uint32_t prev = DrcoAtomicCasToU32(
-                            slot, 0, static_cast<uint32_t>(reinterpret_cast<uint64_t>(node) - stitchNodeBase));
-                        if (prev == 0) {
-                            start = start + i + 1;
-                            filled = true;
-                            break;
-                        }
-                    }
-                    if (filled) {
+                    if (DrcoStitchNodeMatrixTryPush(state, rootFuncList, matrix, node, start)) {
                         TraceEvent(state, curTaskId, EVENT_STITCH_NODE(node->nodeSize));
                     } else {
                         fallbackNode = node;
@@ -962,18 +994,7 @@ INLINE void DrcoStitchNodeMatrixPopResolve(DrcoEntryState* state, __gm__ npu::ti
         __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode*
             node = (__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode*)(rootFuncList->stitchNodeBase +
                                                                               nodeOffset);
-        for (uint32_t i = 0; i < node->nodeSize; i++) {
-            uint32_t succTaskId = node->nodeTaskList[i]; // already coreType-encoded at build time
-            uint32_t succFuncId = npu::tile_fwk::FuncID(succTaskId);
-            uint32_t succOpIdx = npu::tile_fwk::TaskID(succTaskId);
-            auto* succFuncData = &state->ctx.cachedDevTaskCurr->funcDataList[succFuncId];
-            __gm__ npu::tile_fwk::DrcoRootFuncData* succRootFuncData = &succFuncData->drcoRootFuncData;
-            int32_t old = DrcoAtomicResolveDependOnce<int32_t, 1, -1>(&succRootFuncData->predCount[succOpIdx]);
-            if (old == 1) {
-                DrcoResolveDependOnceCore(state, rootFuncList, succTaskId, succTaskIdListCoreList,
-                                          succTaskIdListSizeCoreList);
-            }
-        }
+        DrcoStitchNodeTasksResolveCore(state, rootFuncList, node, succTaskIdListCoreList, succTaskIdListSizeCoreList);
     }
     DrcoFlushBatchTasks(state, rootFuncList, succTaskIdListCoreList, succTaskIdListSizeCoreList);
 }
