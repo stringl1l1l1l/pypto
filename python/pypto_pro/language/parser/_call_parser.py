@@ -1482,6 +1482,14 @@ class CallParserMixin:
             return_val_name = f"{prefix}return_val"
             returned_name = f"{prefix}returned"
             local_names = self._inline_local_names(template.func_def, params)
+            # The helper may itself use `return_val` or `returned`. Renaming
+            # those locals must not capture the synthetic return value/flag.
+            used_names = {f"{prefix}{name}" for name in local_names}
+            used_names.update(node.id for node in ast.walk(template.func_def) if isinstance(node, ast.Name))
+            while return_val_name in used_names:
+                return_val_name += "_"
+            while returned_name in used_names:
+                returned_name += "_"
             reassigned_params = self._inline_reassigned_params(template.func_def, params)
             func_def = copy.deepcopy(template.func_def)
             renamer = _InlineLocalRenamer(local_names, prefix)

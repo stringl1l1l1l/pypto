@@ -327,6 +327,134 @@ TEST(CCECodegenTest, WritesBackLoopCarriedValueBeforeContinue)
     EXPECT_NE(generated.find("continue;"), std::string::npos);
 }
 
+TEST(CCECodegenTest, SnapshotsCyclicCarriedValuesBeforeForJump)
+{
+    auto scalar_type = std::make_shared<const ir::ScalarType>(ir::DataType::INT64);
+    for (bool is_break : {false, true}) {
+        SCOPED_TRACE(is_break ? "break" : "continue");
+        auto left = std::make_shared<const ir::IterArg>("left", scalar_type, MakeConstInt(1), ir::Span::Unknown());
+        auto right = std::make_shared<const ir::IterArg>("right", scalar_type, MakeConstInt(2), ir::Span::Unknown());
+        auto alias = MakeVar("old_left", scalar_type);
+        auto copy = std::make_shared<const ir::AssignStmt>(alias, left->iterVar_, ir::Span::Unknown());
+        std::vector<ir::ExprPtr> values{right->iterVar_, alias};
+        ir::StmtPtr jump;
+        if (is_break) {
+            jump = std::make_shared<const ir::BreakStmt>(values, ir::Span::Unknown());
+        } else {
+            jump = std::make_shared<const ir::ContinueStmt>(values, ir::Span::Unknown());
+        }
+        auto body = std::make_shared<const ir::SeqStmts>(std::vector<ir::StmtPtr>{copy, jump}, ir::Span::Unknown());
+        auto loop = std::make_shared<const ir::ForStmt>(
+            MakeVar("i", scalar_type), MakeConstInt(0), MakeConstInt(3), MakeConstInt(1),
+            std::vector<ir::IterArgPtr>{left, right}, body,
+            std::vector<ir::VarPtr>{MakeVar("left_out", scalar_type), MakeVar("right_out", scalar_type)},
+            ir::Span::Unknown());
+
+        CCECodegen codegen(ir::SectionKind::Vector);
+        auto generated = codegen.GenerateSingle(MakeProgram(loop), "a5");
+        auto save_left = generated.find("int64_t left__next = right;");
+        auto save_right = generated.find("int64_t right__next = left;");
+        auto write_left = generated.find("left = left__next;");
+        auto write_right = generated.find("right = right__next;");
+        ASSERT_NE(save_left, std::string::npos);
+        ASSERT_NE(save_right, std::string::npos);
+        ASSERT_NE(write_left, std::string::npos);
+        ASSERT_NE(write_right, std::string::npos);
+        EXPECT_LT(save_left, write_left);
+        EXPECT_LT(save_right, write_left);
+        EXPECT_LT(write_right, generated.find(is_break ? "break;" : "continue;"));
+    }
+}
+
+TEST(CCECodegenTest, SnapshotsWhileCarriedExpressionsBeforeWritingSlots)
+{
+    auto scalar_type = std::make_shared<const ir::ScalarType>(ir::DataType::INT64);
+    auto left = std::make_shared<const ir::IterArg>("left", scalar_type, MakeConstInt(1), ir::Span::Unknown());
+    auto right = std::make_shared<const ir::IterArg>("right", scalar_type, MakeConstInt(2), ir::Span::Unknown());
+    auto sum = std::make_shared<const ir::Add>(left->iterVar_, right->iterVar_, ir::DataType::INT64,
+                                               ir::Span::Unknown());
+    auto jump = std::make_shared<const ir::ContinueStmt>(std::vector<ir::ExprPtr>{right->iterVar_, sum},
+                                                         ir::Span::Unknown());
+    auto loop = std::make_shared<const ir::WhileStmt>(
+        std::make_shared<const ir::ConstBool>(true, ir::Span::Unknown()), std::vector<ir::IterArgPtr>{left, right},
+        jump, std::vector<ir::VarPtr>{MakeVar("left_out", scalar_type), MakeVar("right_out", scalar_type)},
+        ir::Span::Unknown());
+
+    CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(loop), "a5");
+    auto save = generated.find("int64_t right__next = (left + right);");
+    auto write = generated.find("left = left__next;");
+    ASSERT_NE(save, std::string::npos);
+    ASSERT_NE(write, std::string::npos);
+    EXPECT_LT(save, write);
+}
+
+TEST(CCECodegenTest, SnapshotsCarriedTupleStorageBeforeWritingSlots)
+{
+    auto left_value = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{MakeConstInt(1), MakeConstInt(2)},
+                                                            ir::Span::Unknown());
+    auto right_value = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{MakeConstInt(3), MakeConstInt(4)},
+                                                             ir::Span::Unknown());
+    auto type = left_value->GetType();
+    auto left_init = MakeVar("left_init", type);
+    auto right_init = MakeVar("right_init", type);
+    auto left = std::make_shared<const ir::IterArg>("left", type, left_init, ir::Span::Unknown());
+    auto right = std::make_shared<const ir::IterArg>("right", type, right_init, ir::Span::Unknown());
+    auto jump = std::make_shared<const ir::ContinueStmt>(std::vector<ir::ExprPtr>{right->iterVar_, left->iterVar_},
+                                                         ir::Span::Unknown());
+    auto loop = std::make_shared<const ir::WhileStmt>(
+        std::make_shared<const ir::ConstBool>(true, ir::Span::Unknown()), std::vector<ir::IterArgPtr>{left, right},
+        jump, std::vector<ir::VarPtr>{MakeVar("left_out", type), MakeVar("right_out", type)}, ir::Span::Unknown());
+    auto body = std::make_shared<const ir::SeqStmts>(
+        std::vector<ir::StmtPtr>{std::make_shared<const ir::AssignStmt>(left_init, left_value, ir::Span::Unknown()),
+                                 std::make_shared<const ir::AssignStmt>(right_init, right_value, ir::Span::Unknown()),
+                                 loop},
+        ir::Span::Unknown());
+
+    CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto save = generated.find("right__next[1] = left[1];");
+    auto write = generated.find("left[0] = left__next[0];");
+    ASSERT_NE(save, std::string::npos);
+    ASSERT_NE(write, std::string::npos);
+    EXPECT_LT(save, write);
+    EXPECT_NE(generated.find("right[1] = right__next[1];"), std::string::npos);
+}
+
+TEST(CCECodegenTest, SnapshotsSingleAggregateBeforePermutingItsLeaves)
+{
+    auto initial = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{MakeConstInt(1), MakeConstInt(2)},
+                                                         ir::Span::Unknown());
+    auto type = ir::As<ir::TupleType>(initial->GetType());
+    auto init = MakeVar("init", type);
+    auto state = std::make_shared<const ir::IterArg>("state", type, init, ir::Span::Unknown());
+    auto first = std::make_shared<const ir::GetItemExpr>(state->iterVar_, MakeConstInt(0), ir::Span::Unknown());
+    auto second = std::make_shared<const ir::GetItemExpr>(state->iterVar_, MakeConstInt(1), ir::Span::Unknown());
+    auto swapped = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{second, first}, ir::Span::Unknown());
+    auto next = MakeVar("next", type);
+    auto jump = std::make_shared<const ir::ContinueStmt>(std::vector<ir::ExprPtr>{next}, ir::Span::Unknown());
+    auto loop_body = std::make_shared<const ir::SeqStmts>(
+        std::vector<ir::StmtPtr>{std::make_shared<const ir::AssignStmt>(next, swapped, ir::Span::Unknown()), jump},
+        ir::Span::Unknown());
+    auto loop = std::make_shared<const ir::WhileStmt>(
+        std::make_shared<const ir::ConstBool>(true, ir::Span::Unknown()), std::vector<ir::IterArgPtr>{state}, loop_body,
+        std::vector<ir::VarPtr>{MakeVar("result", type)}, ir::Span::Unknown());
+    auto body = std::make_shared<const ir::SeqStmts>(
+        std::vector<ir::StmtPtr>{std::make_shared<const ir::AssignStmt>(init, initial, ir::Span::Unknown()), loop},
+        ir::Span::Unknown());
+    auto debug_info = std::make_shared<ir::IRDebugInfo>();
+    debug_info->RegisterTupleTypeInfo(type, {ir::TupleTypeKind::NAMED_TUPLE, std::nullopt, {"first", "second"}});
+
+    CCECodegen codegen(ir::SectionKind::Vector);
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {}, debug_info), "a5");
+    auto save = generated.find("int64_t state__next__item_1 = state__item_0;");
+    auto write = generated.find("state__item_0 = state__next__item_0;");
+    ASSERT_NE(save, std::string::npos);
+    ASSERT_NE(write, std::string::npos);
+    EXPECT_LT(save, write);
+    EXPECT_NE(generated.find("state__item_1 = state__next__item_1;"), std::string::npos);
+}
+
 TEST(CCECodegenTest, PreservesSingleIterationLoopForAddrReg)
 {
     auto scalar_type = std::make_shared<const ir::ScalarType>(ir::DataType::INT64);

@@ -64,8 +64,8 @@ def collect_written_vars(
 ) -> set[str]:
     """Collect names that a control-flow region can rebind.
 
-    Loop iterators are local, while assignments in nested regions remain writes
-    of the surrounding region.
+    A Python-visible for target is an assignment too: an enclosing branch or
+    loop must merge it when that binding already exists outside the inner loop.
     """
     writes: set[str] = set()
 
@@ -83,6 +83,8 @@ def collect_written_vars(
             for child in [*stmt.body, *stmt.orelse]:
                 visit(child)
         elif isinstance(stmt, (ast.For, ast.While)):
+            if isinstance(stmt, ast.For):
+                writes.update(_target_names(stmt.target))
             for child in stmt.body:
                 visit(child)
             for child in stmt.orelse:

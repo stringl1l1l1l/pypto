@@ -132,8 +132,11 @@ def test_cce_single_dynamic_tuple_return_reads_the_loop_result():
                 auto _expr_tmp_1_0 = (value_0 + 1);
                 int64_t __inline_0_return_val_2[] = {static_cast<int64_t>(_expr_tmp_0_0), static_cast<int64_t>(_expr_tmp_1_0)};
                 auto __inline_0_returned_1 = true;
-                __inline_0_return_val_3[0] = __inline_0_return_val_2[0];
-                __inline_0_return_val_3[1] = __inline_0_return_val_2[1];
+                int64_t __inline_0_return_val_3__next[2];
+                __inline_0_return_val_3__next[0] = __inline_0_return_val_2[0];
+                __inline_0_return_val_3__next[1] = __inline_0_return_val_2[1];
+                __inline_0_return_val_3[0] = __inline_0_return_val_3__next[0];
+                __inline_0_return_val_3[1] = __inline_0_return_val_3__next[1];
                 break;
             }
             auto first_0 = __inline_0_return_val_3[0];
@@ -409,7 +412,7 @@ def test_cce_struct_return_merges_as_a_single_object():
     writes = re.findall(r"__inline_0_return_val_4 = (\S+);", body)
     assert len(writes) == 2, f"expected one whole-object write per branch, got {writes}"
     for source in writes:
-        assert re.fullmatch(r"__inline_0_return_val_\d+;?", source), source
+        assert re.fullmatch(r"__inline_0_return_val_\d+(?:__next)?", source), source
     # Field reads go through the merged object, not through a copy of the branch value.
     assert "__inline_0_return_val_4.v" in body
     assert "__inline_0_return_val_4.w" in body

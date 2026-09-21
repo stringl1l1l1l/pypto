@@ -224,7 +224,8 @@ def test_nested_if_yield_is_not_consumed_by_the_outer_loop():
                     auto _expr_tmp_1_0 = (value_0 > 1);
                     if (_expr_tmp_1_0) {
                         auto __inline_0_returned_1 = true;
-                        __inline_0_carried_3 = __inline_0_carried_2;
+                        int64_t __inline_0_carried_3__next = __inline_0_carried_2;
+                        __inline_0_carried_3 = __inline_0_carried_3__next;
                         break;
                     } else {
                     }
@@ -233,7 +234,8 @@ def test_nested_if_yield_is_not_consumed_by_the_outer_loop():
                     __inline_0_returned_2 = false;
                 }
                 auto __inline_0_returned_3 = true;
-                __inline_0_carried_3 = __inline_0_carried_2;
+                int64_t __inline_0_carried_3__next = __inline_0_carried_2;
+                __inline_0_carried_3 = __inline_0_carried_3__next;
                 break;
             }
             for (int64_t i__iterator_0 = 0; i__iterator_0 < value_0; i__iterator_0 += 1) {

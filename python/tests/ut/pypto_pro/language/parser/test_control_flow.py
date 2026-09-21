@@ -145,6 +145,23 @@ def test_for_target_without_preexisting_binding_is_not_carried():
     assert ir.structural_equal(bind_target.value, for_stmt.loop_var, enable_auto_mapping=False)
 
 
+def test_nested_for_target_is_carried_by_enclosing_loop():
+    @pl.jit(auto_mutex=False)
+    def func(n: pl.DT_INT64):
+        i = 7
+        for _ in pl.range(n):
+            for i in pl.range(3):
+                pass
+        _test_result = i + 1
+
+    program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    outer = _find_for_stmt(program.get_function(func.__name__))
+    inner = next(stmt for stmt in outer.body.stmts if isinstance(stmt, ir.ForStmt))
+    assert len(outer.iter_args) == len(inner.iter_args) == 1
+    assert ir.structural_equal(inner.iter_args[0].initValue, outer.iter_args[0].iterVar, enable_auto_mapping=False)
+    assert ir.structural_equal(outer.body.stmts[-1].value[0], inner.return_vars[0], enable_auto_mapping=False)
+
+
 def test_static_if_only_emits_selected_branch():
     @pl.jit(auto_mutex=False)
     def func(_jit_entry: pl.DT_INT64):

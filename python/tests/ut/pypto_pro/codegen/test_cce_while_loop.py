@@ -16,10 +16,13 @@ temporary lowering details such as synthetic while guards or SSA slot names.
 """
 
 import logging
+import math
 import re
+import subprocess
 from textwrap import dedent
 
 import pypto_pro.language as pl
+import pytest
 
 
 def _compile_to_cce(kernel) -> str:
@@ -361,3 +364,107 @@ def test_cce_while_body_and_result_use_independent_slots():
         """
     )
     assert body == expected
+
+
+def _integer_sqrt(x):
+    if x < 2:
+        return x
+    res = x
+    nxt = (res + 1) // 2
+    while nxt < res:
+        res = nxt
+        nxt = (res + x // res) // 2
+    return res
+
+
+@pl.jit
+def _while_isqrt_carry_kernel(x: pl.DT_INT64, out: pl.Tensor[[1, 3], pl.DT_INT64]):
+    with pl.section_vector():
+        out[0, 0] = _integer_sqrt(x)
+
+
+@pl.jit
+def _while_swap_carry_kernel(x: pl.DT_INT64, out: pl.Tensor[[1, 3], pl.DT_INT64]):
+    with pl.section_vector():
+        left = x
+        right = x + 1
+        steps = 0
+        # A bounded guard makes broken parallel copies fail without hanging a test.
+        while right != x and steps < 4:
+            old_left = left
+            left = right
+            right = old_left
+            steps += 1
+            continue
+        out[0, 0] = left
+        out[0, 1] = right
+        out[0, 2] = steps
+
+
+@pl.jit
+def _for_swap_carry_kernel(x: pl.DT_INT64, out: pl.Tensor[[1, 3], pl.DT_INT64]):
+    with pl.section_vector():
+        left = x
+        right = x + 1
+        for i in pl.range(3):
+            old_left = left
+            left = right
+            right = old_left
+            if i == 2:
+                break
+            continue
+        out[0, 0] = left
+        out[0, 1] = right
+
+
+@pytest.fixture(scope="module")
+def scalar_loop_binary(tmp_path_factory):
+    """Execute the scalar CCE as C++ to check values independently of an NPU."""
+    build = tmp_path_factory.mktemp("scalar_loop_cce")
+    (build / "pypto_tprint.h").write_text("")
+    kernels = (_while_isqrt_carry_kernel, _while_swap_carry_kernel, _for_swap_carry_kernel)
+    source = build / "loops.cpp"
+    source.write_text(
+        "#include <cstdint>\n#include <cstdio>\n#include <cstdlib>\n"
+        "#define __aicore__\n#define __gm__\n#define __DAV_VEC__\n"
+        + "\n".join(_compile_to_cce(kernel) for kernel in kernels)
+        + dedent(
+            """
+            int main(int argc, char** argv) {
+                if (argc != 3) return 2;
+                int64_t x = std::strtoll(argv[2], nullptr, 10);
+                int64_t out[3] = {};
+                switch (std::atoi(argv[1])) {
+                    case 0: _while_isqrt_carry_kernel_impl(x, out); break;
+                    case 1: _while_swap_carry_kernel_impl(x, out); break;
+                    case 2: _for_swap_carry_kernel_impl(x, out); break;
+                    default: return 2;
+                }
+                for (auto value : out) std::printf("%lld ", static_cast<long long>(value));
+                return 0;
+            }
+            """
+        )
+    )
+    binary = build / "loops"
+    subprocess.run(
+        ["g++", "-std=c++17", "-O2", f"-I{build}", str(source), "-o", str(binary)],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
+    return binary
+
+
+@pytest.mark.parametrize("x", [0, 1, 2, 3, 4, 8, 9, 15, 16, 31, 32, 2147395600])
+def test_cce_while_isqrt_values(scalar_loop_binary, x):
+    result = subprocess.run(
+        [str(scalar_loop_binary), "0", str(x)], check=True, capture_output=True, text=True, timeout=5
+    )
+    assert [int(value) for value in result.stdout.split()] == [math.isqrt(x), 0, 0]
+
+
+@pytest.mark.parametrize("kind, expected", [(1, [8, 7, 1]), (2, [8, 7, 0])])
+def test_cce_loop_swap_values(scalar_loop_binary, kind, expected):
+    result = subprocess.run(
+        [str(scalar_loop_binary), str(kind), "7"], check=True, capture_output=True, text=True, timeout=5
+    )
+    assert [int(value) for value in result.stdout.split()] == expected

@@ -1589,8 +1589,31 @@ void CCECodegen::EmitCarriedAssignments(const std::vector<ir::VarPtr>& targets, 
     PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, targets.size() == sources.size())
         << "Loop-carried write-back expects " << targets.size() << " values but got " << sources.size();
 
+    // A jump transfers all SSA operands simultaneously. In C++ the carried slots
+    // are mutable, and a source may alias another slot (e.g. a, b = b, a). Save
+    // the outgoing values before overwriting any slot, including tuple storage.
+    // Use EmitVariable rather than AssignStmt: the latter aliases Var sources
+    // instead of copying them, which would leave the write-back hazard intact.
+    std::vector<ir::ExprPtr> savedSources = sources;
+    // One aggregate target can still contain several mutable leaf slots. In
+    // particular, nested tuple fields may alias those slots without a scalar
+    // AssignStmt to materialize their old values before a permutation.
+    if (targets.size() > 1 || (!targets.empty() && ir::As<ir::TupleType>(targets.front()->GetType()))) {
+        for (size_t i = 0; i < targets.size(); ++i) {
+            auto& source = savedSources[i];
+            if (!CheckEmitVariable(targets[i], source, false) || ir::As<ir::ConstInt>(source) ||
+                ir::As<ir::ConstFloat>(source) || ir::As<ir::ConstBool>(source)) {
+                continue;
+            }
+            auto saved = std::make_shared<const ir::Var>(context_.SanitizeName(targets[i]) + "__next",
+                                                         targets[i]->GetType(), source->span_);
+            context_.RegisterVar(saved, context_.SanitizeName(saved));
+            EmitVariable(saved, source, true);
+            source = saved;
+        }
+    }
     for (size_t i = 0; i < targets.size(); ++i) {
-        EmitVariable(targets[i], sources[i], false);
+        EmitVariable(targets[i], savedSources[i], false);
     }
 }
 
