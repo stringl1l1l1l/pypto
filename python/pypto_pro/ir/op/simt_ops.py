@@ -469,9 +469,11 @@ def _parse_simt_launch(parser: Any, call: ast.Call, local_name: str, callee_temp
     callee = parser._instantiate_simt_function(local_name, callee_template, launch_args, call.args, span)
     parser._validate_simt_function_arguments(callee, launch_args, call.args, span)
     try:
-        return launch(callee, threads=tuple(thread_dims), args=launch_args, span=span)
+        result = launch(callee, threads=tuple(thread_dims), args=launch_args, span=span)
     except RuntimeError as error:
         raise CommonExternal(message_of(error), span=span, parser_retry=True) from error
+    parser.requires_simt = True
+    return result
 
 def _numeric_literal_value(node: ast.expr) -> int | float | None:
     if isinstance(node, ast.Constant) and type(node.value) in (int, float):

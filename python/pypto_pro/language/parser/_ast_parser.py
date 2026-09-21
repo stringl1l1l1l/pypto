@@ -21,7 +21,7 @@ from typing import Any
 from pypto.pypto_impl import ir
 from pypto_pro.ir import IRBuilder
 
-from ..._errors import InvalidArgument, InvalidOperation, InvalidType, NotSupported, PyptoProError
+from ..._errors import CommonInner, InvalidArgument, InvalidOperation, InvalidType, NotSupported, PyptoProError
 from ..typing._tiling import get_tiling_fields, get_tiling_tuple_type, is_tiling_class
 from ..typing.shape import _ShapePolicy
 from ._assignment_parser import AssignmentParserMixin
@@ -125,6 +125,11 @@ class ASTParser(
             raise NotSupported(f"Unsupported parser target: {target}")
         self._target = target
         self.matched_target = False
+        # Launch facts collected while this target Program is parsed. Tile
+        # placement is compile-time constant, so keeping the Vec high-water
+        # mark here avoids rediscovering it by walking the completed IR.
+        self.max_vec_tile_end: int = 0
+        self.requires_simt: bool = False
         self.span_tracker = SpanTracker(source_file, source_lines, line_offset, col_offset)
         # Maps tile Expr objects -> (tuple[buf_id_ir, ...], mutex_ids) for tiles returned by
         # group.next()/current()/previous()/group[i]; consumed by auto_mutex and
@@ -254,6 +259,18 @@ class ASTParser(
     def target(self) -> ir.SectionKind:
         """Return the immutable Cube/Vector parse target."""
         return self._target
+
+    def _record_tile_high_water(self, tile: ir.Expr) -> None:
+        """Record the Vec high-water mark of an already-created Tile expression."""
+        memref = tile.type.memref
+        if memref is not None and memref.memory_space_ == ir.MemorySpace.Vec:
+            addr = memref.addr
+            size = memref.size_
+            if not isinstance(addr, ir.ConstInt):
+                raise CommonInner("Vec Tile address must be a compile-time constant for mixed-kernel UB analysis")
+            if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+                raise CommonInner(f"Vec Tile size must be a positive compile-time integer, got {size!r}")
+            self.max_vec_tile_end = max(self.max_vec_tile_end, int(addr.value) + size)
 
     @staticmethod
     def _attach_ptr_to_tensor_type(name: str, param_type: ir.Type, span: ir.Span) -> ir.Type:

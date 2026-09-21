@@ -61,6 +61,21 @@ def test_existing_targets_preserve_compiler_flags_and_geometry(
     assert f"ResolveLaunchBlockDim<{cores[0]}, {cores[1]}>" in caller
 
 
+def test_simt_launcher_bakes_inferred_dynamic_ub_into_generated_caller():
+    target = get_jit_compile_config().resolve_kernel_target("a5", has_cube=False, has_vector=True)
+    caller = jit._generate_caller_cpp(
+        [], "kernel.cpp", "probe", target=target, required_dynamic_ub_size=16 * 1024,
+    )
+    flags = jit._build_bisheng_flags(
+        "/toolkit", "a5", target, has_cross_sync=False, enable_print_debug=False,
+    )
+    assert "uint32_t dynamicUbSize" not in caller
+    assert 'call_kernel(uint32_t blockDim, void* stream)' in caller
+    assert "probe<<<blockDim, 16384, stream>>>" in caller
+    assert "get_required_dynamic_ub_size" not in caller
+    assert "-cce-dyn-kernel-stack-size=false" not in flags
+
+
 def test_architecture_specific_mixed_geometry_is_independent(future_config):
     """A future 1:1 target must not overwrite the 1:2 rule of an existing architecture."""
     a5 = future_config.resolve_kernel_target(" A5 ", has_cube=True, has_vector=True)
@@ -117,7 +132,7 @@ def test_shared_library_and_caller_use_the_same_resolved_target(monkeypatch, tmp
     cg = jit.CodegenResult(
         build_dir=str(tmp_path), content="", kernel_name="probe", kernel_params=[],
         caller_cross_core_sync=True, bisheng_cross_sync=True, needs_print_debug=True,
-        has_cube=True, has_vector=True,
+        has_cube=True, has_vector=True, required_dynamic_ub_size=16 * 1024,
     )
     library = jit._build_jit_so(cg, arch, clean_up=False, compile_timeout=30, target=target)
     assert Path(library).read_bytes() == b"compiled test library"
@@ -130,6 +145,8 @@ def test_shared_library_and_caller_use_the_same_resolved_target(monkeypatch, tmp
     assert "/toolkit/asc/include" in flags
     assert "/toolkit/asc" in flags
     assert f"ResolveLaunchBlockDim<{cores[0]}, {cores[1]}>" in caller
+    assert "-cce-dyn-kernel-stack-size=false" not in flags
+    assert "probe<<<blockDim, 16384, stream>>>" in caller
 
 
 def test_compilation_preserves_target_for_cached_launch_and_debug(monkeypatch, tmp_path):

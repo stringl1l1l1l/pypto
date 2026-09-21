@@ -833,7 +833,7 @@ def test_order_2d(use_order):
 def order_4d_kernel(
     q: pl.Tensor[[2, 4, 64, 64], pl.DT_FP32],
     k: pl.Tensor[[2, 4, 64, 64], pl.DT_FP32],
-    quant_out: pl.Tensor[[2, 4, 64, 64], pl.DT_INT8],
+    quant_out: pl.Tensor[[64, 4, 64, 1], pl.DT_INT8],
     scale: pl.DT_INT32,
 ):
     with pl.section_cube():
@@ -886,12 +886,18 @@ def test_order_4d():
 
     q = torch.randn(2, 4, 64, 64, dtype=torch.float32, device=device)
     k = torch.randn(2, 4, 64, 64, dtype=torch.float32, device=device)
-    quant_out = torch.zeros(2, 4, 64, 64, dtype=torch.int8, device=device)
+    # order=[0, 2] needs 64 elements on both mapped axes. A unit final
+    # dimension keeps each stored row contiguous in GM.
+    quant_out = torch.zeros(64, 4, 64, 1, dtype=torch.int8, device=device)
 
     order_4d_kernel(q, k, quant_out, scale=struct.unpack("!I", struct.pack("!f", 2.0))[0])
     torch.npu.synchronize()
 
-    assert quant_out.abs().sum() > 0
+    actual = quant_out.cpu().to(torch.int32)
+    reference = torch.matmul(q[0, 0].cpu(), k[0, 0].cpu())
+    expected = torch.clamp(torch.round(reference * 2.0), -128, 127).to(torch.int32)
+    torch.testing.assert_close(actual[:, 0, :, 0], expected, rtol=0, atol=4)
+    torch.testing.assert_close(actual[:, 1:, :, :], torch.zeros_like(actual[:, 1:, :, :]), rtol=0, atol=0)
     logging.info("test_order_4d passed.")
 
 

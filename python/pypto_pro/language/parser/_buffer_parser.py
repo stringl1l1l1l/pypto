@@ -262,6 +262,7 @@ class BufferParserMixin:
                 size=slot_size,
                 span=span,
             )
+            self._record_tile_high_water(t)
             tile_vars.append(self.builder.let(f"_tg_{var_name}_tiles_{i}", t, span=span))
         tiles_tuple = self.builder.let(f"_tg_{var_name}_tiles", ir.MakeTuple(tile_vars, span), span=span)
         mutex_columns = tuple(zip(*per_tile_mutex_ids)) if per_tile_mutex_ids else ((),)

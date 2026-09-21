@@ -1312,7 +1312,6 @@ class CallParserMixin:
                 func_type=func_type,
                 callsite_param_types={param.arg: actual.type for param, actual in zip(params, args)},
             )
-
             _validate_simt_parameters(parsed, role)
             if launchable:
                 result = ir.Function(

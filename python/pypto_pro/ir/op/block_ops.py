@@ -3478,7 +3478,9 @@ def _parse_make_tile(self, call: ast.Call) -> Expr:
         hint="addr is fixed while parsing; pass a literal, or a variable bound to "
         "literals/constants — not a runtime value such as a tensor shape or loop index",
     )
-    return make_tile_expr(**kwargs, span=span)
+    tile = make_tile_expr(**kwargs, span=span)
+    self._record_tile_high_water(tile)
+    return tile
 
 
 # ---------------------------------------------------------------------------

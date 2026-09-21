@@ -8,7 +8,7 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
 
-"""A5 end-to-end test for SIMT UB Tile access and runtime Valid Shape."""
+"""A5 end-to-end tests for SIMT UB Tile access, runtime Valid Shape, and dynamic UB inference."""
 
 import os
 
@@ -24,6 +24,10 @@ VALID_ROWS = 6
 VALID_COLS = 37
 THREADS = 256
 TILE_BYTES = TILE_ROWS * TILE_COLS * 4
+MIXED_ELEMENTS = 1024
+MIXED_THREADS = 1024
+MIXED_TILE_BYTES = MIXED_ELEMENTS * 4
+MIXED_TILE_HIGH_WATER = 24 * 1024
 
 
 def _require_a5():
@@ -49,6 +53,12 @@ def ub_tile_add(
     col = tid % cols
     if row < rows:
         dst[row, col] = src[row, col] + delta
+
+
+@pl.vector_function(mode="simt", max_threads=MIXED_THREADS)
+def copy_from_gm(src, out):
+    tid = pl.simt.linear_thread_idx()
+    out[0, tid] = src[0, tid]
 
 
 @pl.jit()
@@ -79,6 +89,34 @@ def simt_ub_tile_access(
         pl.store(out, dst, [0, 0])
 
 
+@pl.jit()
+def mixed_simd_high_water_not_passed_to_simt(
+    src: pl.Tensor[[1, MIXED_ELEMENTS], pl.DT_FP32],
+    simd_out: pl.Tensor[[1, MIXED_ELEMENTS], pl.DT_FP32],
+    simt_out: pl.Tensor[[1, MIXED_ELEMENTS], pl.DT_FP32],
+):
+    tile_type = pl.TileType(
+        shape=[1, MIXED_ELEMENTS],
+        dtype=pl.DT_FP32,
+        target_memory=pl.MemorySpace.Vec,
+    )
+    scratch_group = pl.make_tile_group(
+        type=tile_type,
+        addrs=MIXED_TILE_HIGH_WATER - MIXED_TILE_BYTES,
+        mutex_ids=[0],
+    )
+    scratch = scratch_group.current()
+    with pl.section_vector():
+        pl.load(scratch, src, [0, 0])
+        pl.system.sync_src(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
+        pl.system.sync_dst(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
+        pl.add(scratch, scratch, 0.0)
+        pl.system.sync_src(set_pipe=pl.PipeType.V, wait_pipe=pl.PipeType.MTE3, event_id=1)
+        pl.system.sync_dst(set_pipe=pl.PipeType.V, wait_pipe=pl.PipeType.MTE3, event_id=1)
+        pl.store(simd_out, scratch, [0, 0])
+        copy_from_gm[MIXED_THREADS](src, simt_out)
+
+
 @pytest.mark.soc("950")
 @pytest.mark.parametrize(("valid_rows", "valid_cols"), [(1, 1), (VALID_ROWS, VALID_COLS)])
 def test_ub_tile_access(valid_rows, valid_cols):
@@ -95,6 +133,22 @@ def test_ub_tile_access(valid_rows, valid_cols):
     expected = torch.full((VALID_ROWS, VALID_COLS), sentinel, dtype=torch.float32)
     expected[:valid_rows, :valid_cols] = x.cpu()[:valid_rows, :valid_cols] + delta
     torch.testing.assert_close(out.cpu(), expected, rtol=0, atol=0)
+
+
+@pytest.mark.soc("950")
+def test_mixed_kernel_infers_simd_tile_high_water_not_passed_to_simt():
+    _require_a5()
+
+    src = torch.arange(MIXED_ELEMENTS, dtype=torch.float32).reshape(1, MIXED_ELEMENTS)
+    src_device = src.to(ST_DEVICE)
+    simd_out = torch.full_like(src_device, -1.0)
+    simt_out = torch.full_like(src_device, -1.0)
+
+    mixed_simd_high_water_not_passed_to_simt(src_device, simd_out, simt_out)
+    torch.npu.synchronize()
+
+    torch.testing.assert_close(simd_out.cpu(), src, rtol=0, atol=0)
+    torch.testing.assert_close(simt_out.cpu(), src, rtol=0, atol=0)
 
 
 if __name__ == "__main__":

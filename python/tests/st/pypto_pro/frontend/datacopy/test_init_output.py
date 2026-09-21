@@ -417,7 +417,8 @@ def init_output_matmul_add_atomic(
     )
 
     with pl.section_vector():
-        pl.init_output(workspace, offset=row0 * N_IO, size=TILE_M * N_IO, value=0.0)
+        # Each AIV initializes half of the rows produced by its AIC.
+        pl.init_output(workspace, offset=core_id * (TILE_M // 2) * N_IO, size=(TILE_M // 2) * N_IO, value=0.0)
         pl.system.sync_all(core_type=pl.SyncCoreType.MIX)
 
     with pl.section_cube():
@@ -499,7 +500,8 @@ def init_output_matmul_input(
     acc = pl.make_tile_group(type=tt_acc, addrs=0x0000, mutex_ids=[4])
 
     with pl.section_vector():
-        pl.init_output(workspace, offset=row0 * K_IN, size=TILE_M * K_IN, value=1.0)
+        # Each AIV initializes half of the rows consumed by its AIC.
+        pl.init_output(workspace, offset=core_id * (TILE_M // 2) * K_IN, size=(TILE_M // 2) * K_IN, value=1.0)
         pl.system.sync_all(core_type=pl.SyncCoreType.MIX)
 
     with pl.section_cube():

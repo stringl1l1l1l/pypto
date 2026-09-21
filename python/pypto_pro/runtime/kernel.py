@@ -218,6 +218,8 @@ class KernelDef:
         # Populated by parse_target_program: param name -> "in"/"out" from
         # pl.Input/pl.Output annotation markers.
         self._last_param_directions: dict[str, str] = {}
+        self._max_vec_tile_end = 0
+        self._requires_simt = False
 
     @property
     def func_def(self) -> ast.FunctionDef:
@@ -235,6 +237,16 @@ class KernelDef:
     def last_param_directions(self) -> dict[str, str]:
         """Direction markers from the most recent parse_target_program call."""
         return dict(self._last_param_directions)
+
+    @property
+    def max_vec_tile_end(self) -> int:
+        """Vec Tile high-water mark collected by parse_target_program."""
+        return self._max_vec_tile_end
+
+    @property
+    def requires_simt(self) -> bool:
+        """Whether parse_target_program emitted a SIMT launch."""
+        return self._requires_simt
 
     def parse_target_program(
         self,
@@ -323,6 +335,8 @@ class KernelDef:
             # Direction markers (pl.Input/pl.Output) parsed off the annotations;
             # consumed by the JIT caller for profiling tensor type.
             self._last_param_directions = dict(parser.param_directions)
+            self._max_vec_tile_end = parser.max_vec_tile_end
+            self._requires_simt = parser.requires_simt
             return program, parser.matched_target
 
         except PyptoProError as e:
