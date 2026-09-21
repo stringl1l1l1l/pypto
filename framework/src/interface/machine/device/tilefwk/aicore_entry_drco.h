@@ -227,6 +227,7 @@ struct DrcoEntryState {
     uint8_t lastMixResourceType;
 
     uint32_t readyMatrixPushGroupIndex;
+    uint32_t readyMatrixPushColIdx;
     uint32_t readyMatrixPopRowIndex;
     bool isExectedLeafTask{false};
 
@@ -319,17 +320,21 @@ INLINE uint32_t DrcoLocalReadyMatrixGetRowIdx(uint32_t localIdx) { return localI
 // 每个 CAS 成功的任务记录 EVENT_PUSH_LOCAL(groupIdx) 事件（打点写入的 group）
 // 写入流程 4：多余的任务依次写到后续核的矩阵，具体行由 coreIdx % N 决定；只写有效列，无主列不写
 INLINE uint32_t DrcoLocalReadyMatrixPushBatch(DrcoEntryState* state, __gm__ DrcoLocalReadyMatrix* matrix,
-                                              uint32_t groupIdx, uint32_t rowIdx, uint32_t* readyTaskList, uint32_t n)
+                                              uint32_t groupIdx, uint32_t rowIdx, uint32_t* readyTaskList, uint32_t n,
+                                              bool* rowExhausted)
 {
-    uint32_t validCoreNum = DrcoGmLoad(&matrix->validCoreNum);
+    uint32_t validCoreNum = matrix->validCoreNum;
     uint32_t pushed = 0;
-    for (uint32_t col = 0; col < validCoreNum && pushed < n; col++) {
+    uint32_t col = state->readyMatrixPushColIdx % validCoreNum;
+    for (; col < validCoreNum && pushed < n; col++) {
         uint32_t prev = DrcoAtomicCasToU32(&matrix->taskList[rowIdx][col], 0, DRCO_ENCODE_TASK(readyTaskList[pushed]));
         if (prev == 0) {
             TraceEvent(state, readyTaskList[pushed], EVENT_PUSH_LOCAL(groupIdx));
             pushed++;
         }
     }
+    state->readyMatrixPushColIdx = col;
+    *rowExhausted = (col >= validCoreNum);
     return pushed;
 }
 
@@ -525,18 +530,20 @@ INLINE uint32_t DrcoDynFuncDataListPushMatrixBatch(DrcoEntryState* state,
                                                    uint32_t* succTaskIdList, uint32_t succTaskIdListSize)
 {
     uint32_t pushed = 0;
-    uint32_t i = 0;
     uint32_t groupIndex = state->readyMatrixPushGroupIndex;
-    for (i = 0; i < groupCount && pushed < succTaskIdListSize; i++) {
+    uint32_t nextGroupIndex = groupIndex;
+    for (uint32_t i = 0; i < groupCount && pushed < succTaskIdListSize; i++) {
         uint32_t groupIdx = (groupIndex + i) % groupCount;
         __gm__ DrcoLocalReadyMatrix* matrix = DrcoRootFuncListGetLocalReadyMatrix(rootFuncList, succCoreType, groupIdx);
         if (matrix == nullptr) {
             continue;
         }
+        bool rowExhausted = false;
         pushed += DrcoLocalReadyMatrixPushBatch(state, matrix, groupIdx, rowIdx, &succTaskIdList[pushed],
-                                                succTaskIdListSize - pushed);
+                                                succTaskIdListSize - pushed, &rowExhausted);
+        nextGroupIndex = rowExhausted ? (groupIdx + 1) % groupCount : groupIdx;
     }
-    state->readyMatrixPushGroupIndex = (groupIndex + i) % groupCount;
+    state->readyMatrixPushGroupIndex = nextGroupIndex;
     return pushed;
 }
 
@@ -1385,6 +1392,7 @@ INLINE void KernelEntryDrco(int64_t ffts_addr, int64_t inputs, int64_t outputs, 
 
         state.readyMatrixPopRowIndex = 0;
         state.readyMatrixPushGroupIndex = BlockDescTypedBlockIdx(state.blockDesc) / npu::tile_fwk::LOCAL_GROUP_SIZE;
+        state.readyMatrixPushColIdx = BlockDescTypedBlockIdx(state.blockDesc) % npu::tile_fwk::LOCAL_GROUP_SIZE;
 
         ExecDrcoPerCoreTasks(&state, perCoreQueue, rootFuncList);
         ExecDrcoReadyQueueTasks(&state, rootFuncList, perCoreQueue);
