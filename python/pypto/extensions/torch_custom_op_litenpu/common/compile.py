@@ -17,7 +17,7 @@ invokes by module-attribute name.
 
 ``torch`` and ``pypto`` are resolved through this module's attributes at call time, so the unit
 tests substitute lightweight fakes without an NPU toolchain (see
-``python/tests/ut/torch_custom_op/test_op_compile_selftest.py``).
+``python/tests/ut/torch_custom_op_litenpu/test_op_compile_selftest.py``).
 """
 import inspect
 import json

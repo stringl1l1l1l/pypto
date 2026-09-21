@@ -8,11 +8,11 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
-"""Unit tests for ``pypto.extensions.torch_custom_op.common.source_utils``."""
+"""Unit tests for ``pypto.extensions.torch_custom_op_litenpu.common.source_utils``."""
 
 import textwrap
 
-from pypto.extensions.torch_custom_op.common.source_utils import _unwrap_decorated_func_source
+from pypto.extensions.torch_custom_op_litenpu.common.source_utils import _unwrap_decorated_func_source
 
 
 def test_unwrap_decorated_func_source_strips_leading_decorator_block():

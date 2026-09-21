@@ -18,9 +18,9 @@ import types
 
 import pytest
 
-from pypto.extensions.torch_custom_op.common.compile import CompileEntry, _as_tuple_of
+from pypto.extensions.torch_custom_op_litenpu.common.compile import CompileEntry, _as_tuple_of
 
-_cop = importlib.import_module("pypto.extensions.torch_custom_op.common.compile")  # to patch its seams
+_cop = importlib.import_module("pypto.extensions.torch_custom_op_litenpu.common.compile")  # to patch its seams
 
 
 class _FakeTensor:

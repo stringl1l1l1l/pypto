@@ -19,7 +19,7 @@ import types
 
 import kernel_compile_samples as samples  # sibling fixture module (pytest puts this dir on sys.path)
 
-from pypto.extensions.torch_custom_op.common.authoring import _direct_declared_annotations
+from pypto.extensions.torch_custom_op_litenpu.common.authoring import _direct_declared_annotations
 
 
 def _op(kernel):

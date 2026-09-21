@@ -18,7 +18,7 @@ import pytest
 def test_from_jit_kernel_real_build_produces_kernel():
     pytest.importorskip("pypto")
     import pypto
-    from pypto.extensions.torch_custom_op.common.compile import CompileEntry
+    from pypto.extensions.torch_custom_op_litenpu.common.compile import CompileEntry
 
     # DIRECT: a bare @pypto.frontend.jit kernel with erased annotations and no soc_version, so soc
     # arrives solely through the entry's process-global set_codegen_options(soc_version=...).

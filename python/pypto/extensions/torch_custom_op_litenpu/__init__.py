@@ -6,7 +6,13 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
-"""pypto.extensions.torch_custom_op — pack a pypto kernel into a framework custom-op node.
+"""pypto.extensions.torch_custom_op_litenpu — pack a pypto kernel into a framework custom-op node.
+
+The ``_litenpu`` suffix names the deploy path, not a soc check inside the package: nothing here
+inspects ``soc_version`` — it is accepted and forwarded verbatim to ``pypto.set_codegen_options``.
+The constraint lives in pypto core, where ``frontend/parser/entry.py`` requires exactly one compiled
+kernel object, and LiteNPU is the soc family structurally guaranteed to produce one; a partitioned
+(cloud-soc) kernel emits several and cannot deploy through this path.
 
 This package holds ONLY what concerns the pypto kernel SOURCE: authoring constants (common.authoring),
 source-manipulation utils (common.source_utils), and the runtime compile contract (common.compile).

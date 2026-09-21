@@ -17,9 +17,9 @@ import warnings
 
 import pytest
 
-from pypto.extensions.torch_custom_op.common.compile import CompileEntry
+from pypto.extensions.torch_custom_op_litenpu.common.compile import CompileEntry
 
-_cop = importlib.import_module("pypto.extensions.torch_custom_op.common.compile")
+_cop = importlib.import_module("pypto.extensions.torch_custom_op_litenpu.common.compile")
 
 
 def _install_mocks(monkeypatch):
