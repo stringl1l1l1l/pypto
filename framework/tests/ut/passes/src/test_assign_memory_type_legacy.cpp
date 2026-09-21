@@ -2417,6 +2417,60 @@ TEST_F(LegacyAssignMemoryTypeTest, ReshapeOutputUsesUbWithMixedViewConsumers)
     EXPECT_EQ(viewOpAttr->GetTo(), MemoryType::MEM_L1);
 }
 
+TEST_F(LegacyAssignMemoryTypeTest, CastAssembleReshapeViewMatmulKeepsReshapeOutputUb)
+{
+    Platform::Instance().GetSoc().SetNPUArch(NPUArch::DAV_3510);
+    Platform::Instance().ReloadMemoryPaths("3510");
+    ComputationalGraphBuilder G;
+    Shape inputShape{NUM_16, NUM_32};
+    Shape matrixAShape{NUM_32, NUM_16};
+    Shape matrixBShape{NUM_16, NUM_16};
+
+    G.AddTensor(DataType::DT_FP32, inputShape, MemoryType::MEM_DEVICE_DDR, "cast_in");
+    G.AddTensor(DataType::DT_FP16, inputShape, MemoryType::MEM_UNKNOWN, "cast_out");
+    G.AddTensor(DataType::DT_FP16, inputShape, MemoryType::MEM_UNKNOWN, "assemble_out");
+    G.AddTensor(DataType::DT_FP16, matrixAShape, MemoryType::MEM_UNKNOWN, "reshape_out");
+    G.AddTensor(DataType::DT_FP16, matrixAShape, MemoryType::MEM_UNKNOWN, "view_l1_out");
+    G.AddTensor(DataType::DT_FP16, matrixAShape, MemoryType::MEM_UNKNOWN, "view_l0a_out");
+    G.AddTensor(DataType::DT_FP16, matrixBShape, MemoryType::MEM_DEVICE_DDR, "matrix_b");
+    G.AddTensor(DataType::DT_FP16, matrixBShape, MemoryType::MEM_UNKNOWN, "matrix_b_l1");
+    G.AddTensor(DataType::DT_FP16, matrixBShape, MemoryType::MEM_UNKNOWN, "matrix_b_l0b");
+    G.AddTensor(DataType::DT_FP16, matrixAShape, MemoryType::MEM_UNKNOWN, "matmul_out");
+    G.AddTensor(DataType::DT_FP16, matrixAShape, MemoryType::MEM_DEVICE_DDR, "output");
+
+    G.AddOp(Opcode::OP_CAST, {"cast_in"}, {"cast_out"}, "cast");
+    G.AddOp(Opcode::OP_ASSEMBLE, {"cast_out"}, {"assemble_out"}, "assemble");
+    G.GetOp("assemble")->SetOpAttribute(std::make_shared<AssembleOpAttribute>(Offset{0, 0}));
+    G.AddOp(Opcode::OP_RESHAPE, {"assemble_out"}, {"reshape_out"}, "reshape");
+    G.AddOp(Opcode::OP_VIEW, {"reshape_out"}, {"view_l1_out"}, "view_l1");
+    G.GetOp("view_l1")->SetOpAttribute(std::make_shared<ViewOpAttribute>(Offset{0, 0}, MemoryType::MEM_L1));
+    G.AddOp(Opcode::OP_VIEW, {"view_l1_out"}, {"view_l0a_out"}, "view_l0a");
+    G.GetOp("view_l0a")->SetOpAttribute(std::make_shared<ViewOpAttribute>(Offset{0, 0}, MemoryType::MEM_L0A));
+    G.AddOp(Opcode::OP_VIEW, {"matrix_b"}, {"matrix_b_l1"}, "matrix_b_to_l1");
+    G.GetOp("matrix_b_to_l1")->SetOpAttribute(std::make_shared<ViewOpAttribute>(Offset{0, 0}, MemoryType::MEM_L1));
+    G.AddOp(Opcode::OP_VIEW, {"matrix_b_l1"}, {"matrix_b_l0b"}, "matrix_b_to_l0b");
+    G.GetOp("matrix_b_to_l0b")->SetOpAttribute(std::make_shared<ViewOpAttribute>(Offset{0, 0}, MemoryType::MEM_L0B));
+    G.AddOp(Opcode::OP_A_MUL_B, {"view_l0a_out", "matrix_b_l0b"}, {"matmul_out"}, "matmul");
+    G.AddOp(Opcode::OP_ASSEMBLE, {"matmul_out"}, {"output"}, "output_assemble");
+    G.GetOp("output_assemble")->SetOpAttribute(std::make_shared<AssembleOpAttribute>(Offset{0, 0}));
+    G.SetInCast({"cast_in", "matrix_b"});
+    G.SetOutCast({"output"});
+
+    Function* func = G.GetFunction();
+    AssignMemoryType assignMemoryType;
+    EXPECT_EQ(assignMemoryType.RunOnFunction(*func), SUCCESS);
+    EXPECT_EQ(assignMemoryType.PostCheck(*func), SUCCESS);
+
+    EXPECT_EQ(G.GetTensor("cast_out")->GetMemoryTypeOriginal(), MemoryType::MEM_UB);
+    EXPECT_EQ(G.GetTensor("assemble_out")->GetMemoryTypeOriginal(), MemoryType::MEM_UB);
+    EXPECT_EQ(G.GetTensor("reshape_out")->GetMemoryTypeOriginal(), MemoryType::MEM_UB);
+    EXPECT_EQ(G.GetTensor("view_l1_out")->GetMemoryTypeOriginal(), MemoryType::MEM_L1);
+    EXPECT_EQ(G.GetTensor("view_l0a_out")->GetMemoryTypeOriginal(), MemoryType::MEM_L0A);
+
+    Platform::Instance().GetSoc().SetNPUArch(NPUArch::DAV_UNKNOWN);
+    Platform::Instance().ReloadMemoryPaths("2201");
+}
+
 static void BuildVecDupViewMatmulNoAssembleGraph(std::shared_ptr<Function>& currFunctionPtr,
                                                  VecDupViewMatmulGraph& graph)
 {

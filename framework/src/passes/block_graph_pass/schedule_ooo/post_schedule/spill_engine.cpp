@@ -370,7 +370,7 @@ LogicalTensorPtr SpillEngine::GetSpillTensor(Operation* spillOp, int spillMemId)
     return nullptr;
 }
 
-// 没设过与全零都归一成空 —— 都是"这一跳不带偏移"。运行期值原样留着, 由 IsStaticOffset 挡下来。
+// 没设过与全零都归一成空 —— 都是"这一跳不带偏移"。运行期值原样保留, 后续校验能否在同一参数域重放。
 static std::vector<OpImmediate> NormalizeOffset(const std::vector<OpImmediate>& offset)
 {
     for (const auto& imm : offset) {
@@ -411,11 +411,18 @@ std::vector<OpImmediate> SpillEngine::GetReloadOffset(Operation* moveOp)
     return copyAttr != nullptr ? NormalizeOffset(copyAttr->GetFromOffset()) : std::vector<OpImmediate>{};
 }
 
-// 偏移要原样搬进新建的 copy 属性, 符号值搬过去不保证仍指向同一处, 宁可放弃这次 spill。
-bool SpillEngine::IsStaticOffset(const std::vector<OpImmediate>& offset)
+// 新 copy 仍在同一个 Function 中: Specified 表达式保留同一组符号, Parameter 索引仍引用同一线性 COA 参数域。
+// 只有无效 immediate 或无效参数索引无法安全重放。
+bool SpillEngine::CanReplayOffset(const std::vector<OpImmediate>& offset)
 {
     for (const auto& imm : offset) {
-        if (!imm.IsSpecified() || !imm.GetSpecifiedValue().ConcreteValid()) {
+        if (imm.IsSpecified()) {
+            if (!imm.GetSpecifiedValue().IsValid()) {
+                return false;
+            }
+            continue;
+        }
+        if (!imm.IsParameter() || imm.GetParameterIndex() < 0) {
             return false;
         }
     }
@@ -540,8 +547,8 @@ Status SpillEngine::CollectWalkUpSources(LogicalTensorPtr spillTensor, SpillPlan
     // 回载是一条整块 copyin, 带不了逐源各一份偏移, 所以大搬小的偏移整次 spill 只有一个。
     if (writes.size() == 1) {
         plan.reloadOffset = GetReloadOffset(writes[0]);
-        if (!IsStaticOffset(plan.reloadOffset)) {
-            APASS_LOG_DEBUG_F(Elements::Operation, "Spill: %s reloads at a symbolic offset.",
+        if (!CanReplayOffset(plan.reloadOffset)) {
+            APASS_LOG_DEBUG_F(Elements::Operation, "Spill: %s has an invalid reload offset.",
                               state_.GetOpInfo(writes[0]).c_str());
             return FAILED;
         }
@@ -573,8 +580,8 @@ LogicalTensorPtr SpillEngine::WalkUpOneHop(Operation* writeOp, SpillPlan& plan)
                           state_.GetOpInfo(writeOp).c_str());
         return nullptr;
     }
-    if (!IsStaticOffset(GetSaveOffset(writeOp))) {
-        APASS_LOG_DEBUG_F(Elements::Operation, "Spill: %s saves at a symbolic offset.",
+    if (!CanReplayOffset(GetSaveOffset(writeOp))) {
+        APASS_LOG_DEBUG_F(Elements::Operation, "Spill: %s has an invalid save offset.",
                           state_.GetOpInfo(writeOp).c_str());
         return nullptr;
     }

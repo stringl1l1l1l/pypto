@@ -322,14 +322,12 @@ Status ViewReshapeAssembleReorderUtils::Process(Function& function)
     if (!HasRecords()) {
         return SUCCESS;
     }
-    if (!HasCascadedPattern(function)) {
-        return SUCCESS;
-    }
-
-    status = MergeViewAssembleUtils::MergeViewAssemble(function);
-    if (status != SUCCESS) {
-        APASS_LOG_ERROR_F(Elements::Function, "Merge assemble and view failed.");
-        return status;
+    if (HasCascadedPattern(function)) {
+        status = MergeViewAssembleUtils::MergeViewAssemble(function);
+        if (status != SUCCESS) {
+            APASS_LOG_ERROR_F(Elements::Function, "Merge assemble and view failed.");
+            return status;
+        }
     }
 
     ClearRecords();

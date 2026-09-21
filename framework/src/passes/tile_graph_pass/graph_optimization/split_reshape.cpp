@@ -14,6 +14,9 @@
  */
 
 #include "split_reshape.h"
+
+#include <climits>
+
 #include "interface/tensor/irbuilder.h"
 #include "interface/tensor/logical_tensor.h"
 #include "passes/pass_utils/pass_attr_defs.h"
@@ -223,7 +226,7 @@ Status SplitReshape::ObtainChangingAxis(std::vector<int64_t> alignedShape, std::
 // 目前只判断reshapeop的validshape信息，其他属性不做判断
 // SUCCESS: 动态特征合法，可以执行屏蔽操作
 // FAILED: 不合法的validShape，存在构图问题，需要报错
-// WARNING：动态shape涉及变轴，跳过该reshapeOp的pass
+// WARNING：动态shape涉及非首轴的变轴，跳过该reshapeOp的pass
 Status SplitReshape::CheckDynOutputAlignment(const std::vector<int64_t>& alignedShape,
                                              const std::vector<int64_t>& output,
                                              const std::vector<SymbolicScalar>& dynOutput,
@@ -232,7 +235,7 @@ Status SplitReshape::CheckDynOutputAlignment(const std::vector<int64_t>& aligned
     size_t alignIdx = 0;
     for (size_t i = 0; i < output.size(); ++i) {
         if (alignIdx < alignedShape.size() && alignedShape[alignIdx] == output[i]) {
-            if (changingAxis[alignIdx] && !dynOutput[i].IsImmediate()) {
+            if (i != 0U && changingAxis[alignIdx] && !dynOutput[i].IsImmediate()) {
                 APASS_LOG_DEBUG_F(Elements::Tensor,
                                   "Found undetermined axis from dynOutput[%zu], which is also a merged/split axis.", i);
                 return WARNING;
@@ -243,7 +246,7 @@ Status SplitReshape::CheckDynOutputAlignment(const std::vector<int64_t>& aligned
         if (output[i] == 1) {
             continue;
         }
-        if (!dynOutput[i].IsImmediate()) {
+        if (i != 0U && !dynOutput[i].IsImmediate()) {
             APASS_LOG_DEBUG_F(Elements::Tensor,
                               "Found undetermined axis from dynOutput[%zu], which is also a merged/split axis.", i);
             return WARNING;
@@ -319,12 +322,76 @@ std::shared_ptr<ReshapeOp> SplitReshape::ReshapeOperationExist(const std::shared
     return nullptr;
 }
 
+// 动态首轴由多个输入轴合并时，局部reshape的validShape应由局部输入validShape推导。
+bool SplitReshape::InferDynFirstAxisMergeShape(const std::shared_ptr<ReshapeOp>& reshapeOp,
+                                               const std::vector<SymbolicScalar>& localInputDynShape,
+                                               std::vector<SymbolicScalar>& localOutputDynShape) const
+{
+    if (reshapeOp == nullptr || reshapeOp->originOpPtr == nullptr || reshapeOp->input == nullptr ||
+        reshapeOp->output == nullptr || localInputDynShape.size() != reshapeOp->input->shape.size()) {
+        return false;
+    }
+    std::vector<SymbolicScalar> originDynShape;
+    if (!reshapeOp->originOpPtr->GetAttr(OP_ATTR_VALID_SHAPE, originDynShape) || originDynShape.empty() ||
+        originDynShape.front().IsImmediate()) {
+        return false;
+    }
+    const auto& originInputs = reshapeOp->originOpPtr->GetIOperands();
+    const auto& originOutputs = reshapeOp->originOpPtr->GetOOperands();
+    if (originInputs.empty() || originOutputs.empty() || originInputs.front() == nullptr ||
+        originOutputs.front() == nullptr || originInputs.front()->GetRawTensor() == nullptr ||
+        originOutputs.front()->GetRawTensor() == nullptr) {
+        return false;
+    }
+    const auto& originInputShape = originInputs.front()->GetRawTensor()->GetRawShape();
+    const auto& originOutputShape = originOutputs.front()->GetRawTensor()->GetRawShape();
+    const auto outerAxis = std::find_if(originInputShape.begin(), originInputShape.end(),
+                                        [](int64_t dim) { return dim != 1; });
+    if (outerAxis == originInputShape.end() || originOutputShape.empty() || originOutputShape.front() <= *outerAxis) {
+        return false;
+    }
+
+    const auto& inputShape = reshapeOp->input->shape;
+    const auto& outputShape = reshapeOp->output->shape;
+    if (inputShape.empty() || outputShape.empty() || outputShape.front() <= 0) {
+        return false;
+    }
+    int64_t mergedShape = 1;
+    size_t mergedAxisCount = 0;
+    while (mergedAxisCount < inputShape.size() && mergedShape < outputShape.front()) {
+        const int64_t dim = inputShape[mergedAxisCount];
+        if (dim <= 0 || mergedShape > LLONG_MAX / dim) {
+            return false;
+        }
+        mergedShape *= dim;
+        mergedAxisCount++;
+    }
+    if (mergedShape != outputShape.front() || inputShape.size() - mergedAxisCount != outputShape.size() - 1) {
+        return false;
+    }
+    for (size_t i = 1; i < outputShape.size(); ++i) {
+        if (inputShape[mergedAxisCount + i - 1] != outputShape[i]) {
+            return false;
+        }
+    }
+
+    SymbolicScalar mergedDynShape(1);
+    for (size_t i = 0; i < mergedAxisCount; ++i) {
+        mergedDynShape = (mergedDynShape * localInputDynShape[i]).Simplify();
+    }
+    localOutputDynShape = {mergedDynShape};
+    localOutputDynShape.insert(localOutputDynShape.end(), localInputDynShape.begin() + mergedAxisCount,
+                               localInputDynShape.end());
+    return true;
+}
+
 // 更新reshapeOp输出的dynShape信息
 // 新增reshape的输出validShape应由拆分前reshape输出的validShape和新增输出tensor的offset/shape推导。
 // dynValidShapes中暂存的是原reshape输出坐标系下的有效终点，GetReshapeDynShape中再减去新输出tensor的offset。
 // SUCCESS: 正确地更新了节点的dynValidShapes
 // FAILED: validShape与输出tensor维度不同，一般情况下不会出现
-Status SplitReshape::UpdateDynShape(const std::shared_ptr<ReshapeOp>& reshapeOp)
+Status SplitReshape::UpdateDynShape(const std::shared_ptr<ReshapeOp>& reshapeOp,
+                                    const std::vector<SymbolicScalar>& localInputDynShape)
 {
     std::vector<SymbolicScalar> dynShape;
     if (reshapeOp->originOpPtr == nullptr) {
@@ -351,13 +418,45 @@ Status SplitReshape::UpdateDynShape(const std::shared_ptr<ReshapeOp>& reshapeOp)
                           GetStr(outputOffset).c_str(), GetStr(output->shape).c_str(), GetStr(dynShape).c_str());
         return FAILED;
     }
-    // GetViewValidShape returns the valid size in the new output coordinates; add offset back to get the original end.
-    auto outputDynShape = GetViewValidShape(dynShape, outputOffset, {}, output->shape);
+    std::vector<SymbolicScalar> outputDynShape;
+    if (!InferDynFirstAxisMergeShape(reshapeOp, localInputDynShape, outputDynShape)) {
+        // GetViewValidShape returns the valid size in the new output coordinates; add offset back to get the original
+        // end.
+        outputDynShape = GetViewValidShape(dynShape, outputOffset, {}, output->shape);
+    }
     std::vector<SymbolicScalar> curDynShape;
     for (size_t i = 0; i < outputDynShape.size(); i++) {
         curDynShape.emplace_back((outputDynShape[i] + outputOffset[i]) * (outputDynShape[i] != 0));
     }
     reshapeOp->dynValidShapes.emplace_back(curDynShape);
+    return SUCCESS;
+}
+
+Status SplitReshape::UpdateReshapeOutputDynOffset(const LogicalTensorPtr& reshapeOutput,
+                                                  const ViewOpAttribute& viewOpAttribute) const
+{
+    const auto& viewDynOffset = viewOpAttribute.GetFromDynOffset();
+    if (viewDynOffset.empty()) {
+        return SUCCESS;
+    }
+    if (reshapeOutput == nullptr) {
+        APASS_LOG_ERROR_F(Elements::Tensor, "The output of reshape op is nullptr.");
+        return FAILED;
+    }
+    const auto& reshapeOffset = reshapeOutput->GetOffset();
+    const auto& viewOffset = viewOpAttribute.GetFromOffset();
+    if (reshapeOffset.size() != viewOffset.size() || reshapeOffset.size() != viewDynOffset.size()) {
+        APASS_LOG_ERROR_F(Elements::Tensor,
+                          "The dim of reshape offset %s, view offset %s or view dynamic offset %s is inconsistent.",
+                          GetStr(reshapeOffset).c_str(), GetStr(viewOffset).c_str(), GetStr(viewDynOffset).c_str());
+        return FAILED;
+    }
+    std::vector<SymbolicScalar> reshapeDynOffset;
+    reshapeDynOffset.reserve(reshapeOffset.size());
+    for (size_t i = 0; i < reshapeOffset.size(); ++i) {
+        reshapeDynOffset.emplace_back((viewDynOffset[i] + reshapeOffset[i] - viewOffset[i]).Simplify());
+    }
+    reshapeOutput->UpdateOffset(TensorOffset(reshapeOffset, reshapeDynOffset));
     return SUCCESS;
 }
 
@@ -881,12 +980,17 @@ Status SplitReshape::ProcessPerfectlyMatch(Function& function, Operation& op, co
                           GetFormatBacktrace(op).c_str());
         return FAILED;
     }
+    const auto viewDynOffset = viewOpAttribute->GetFromDynOffset();
+    if (UpdateReshapeOutputDynOffset(reshapeOutput, *viewOpAttribute) != SUCCESS) {
+        return FAILED;
+    }
     auto existOp = ReshapeOperationExist(isAddReshapeOp);
     if (existOp != nullptr) {
         op.ReplaceInput(existOp->output, input);
-        viewOpAttribute->SetFromOffset(existOp->output->offset);
+        viewOpAttribute->SetFromOffset(existOp->output->offset, viewDynOffset);
         GraphUtils::UpdateViewAttr(function, op);
-        if (UpdateDynShape(existOp) != SUCCESS || GroupReshapeOffset(existOp, existOp->output->offset) != SUCCESS) {
+        if (UpdateDynShape(existOp, overlap->GetDynValidShape()) != SUCCESS ||
+            GroupReshapeOffset(existOp, existOp->output->offset) != SUCCESS) {
             APASS_LOG_ERROR_F(Elements::Operation, "UpdateDynShape or GroupReshapeOffset failed. %s",
                               GetFormatBacktrace(op).c_str());
             return FAILED;
@@ -899,9 +1003,9 @@ Status SplitReshape::ProcessPerfectlyMatch(Function& function, Operation& op, co
         return FAILED;
     }
     op.ReplaceInput(reshapeOutput, input);
-    viewOpAttribute->SetFromOffset(reshapeOutput->offset);
+    viewOpAttribute->SetFromOffset(reshapeOutput->offset, viewDynOffset);
     GraphUtils::UpdateViewAttr(function, op);
-    if (UpdateDynShape(isAddReshapeOp) != SUCCESS ||
+    if (UpdateDynShape(isAddReshapeOp, overlap->GetDynValidShape()) != SUCCESS ||
         GroupReshapeOffset(isAddReshapeOp, reshapeOutput->offset) != SUCCESS) {
         APASS_LOG_ERROR_F(Elements::Operation, "UpdateDynShape or GroupReshapeOffset failed. %s",
                           GetFormatBacktrace(op).c_str());
@@ -974,12 +1078,17 @@ Status SplitReshape::ProcessBeCovered(Function& function, Operation& op, const B
     }
     auto isAddReshapeOp = std::make_shared<ReshapeOp>(newReshapeSource, reshapeOutput,
                                                       reshapeOpPtrs_[op.GetIOperands().front()->GetMagic()]);
+    const auto viewDynOffset = viewOpAttribute->GetFromDynOffset();
+    if (UpdateReshapeOutputDynOffset(reshapeOutput, *viewOpAttribute) != SUCCESS) {
+        return FAILED;
+    }
     auto existOp = ReshapeOperationExist(isAddReshapeOp);
-    viewOpAttribute->SetFromOffset(newOffset);
+    viewOpAttribute->SetFromOffset(newOffset, viewDynOffset);
     GraphUtils::UpdateViewAttr(function, op);
     if (existOp != nullptr) {
         op.ReplaceInput(existOp->output, input);
-        if (UpdateDynShape(existOp) != SUCCESS || GroupReshapeOffset(existOp, newOffset) != SUCCESS) {
+        if (UpdateDynShape(existOp, overlap->GetDynValidShape()) != SUCCESS ||
+            GroupReshapeOffset(existOp, newOffset) != SUCCESS) {
             APASS_LOG_ERROR_F(Elements::Operation, "UpdateDynShape or GroupReshapeOffset failed. %s",
                               GetFormatBacktrace(op).c_str());
             return FAILED;
@@ -992,7 +1101,8 @@ Status SplitReshape::ProcessBeCovered(Function& function, Operation& op, const B
         return FAILED;
     }
     op.ReplaceInput(reshapeOutput, input);
-    if (UpdateDynShape(isAddReshapeOp) != SUCCESS || GroupReshapeOffset(isAddReshapeOp, newOffset) != SUCCESS) {
+    if (UpdateDynShape(isAddReshapeOp, overlap->GetDynValidShape()) != SUCCESS ||
+        GroupReshapeOffset(isAddReshapeOp, newOffset) != SUCCESS) {
         APASS_LOG_ERROR_F(Elements::Operation, "UpdateDynShape or GroupReshapeOffset failed. %s",
                           GetFormatBacktrace(op).c_str());
         return FAILED;
@@ -1088,22 +1198,27 @@ Status SplitReshape::ProcessPerfectlyMatchWithAll(Function& function, Operation&
                           GetFormatBacktrace(op).c_str());
         return FAILED;
     }
+    const auto viewDynOffset = viewOpAttribute->GetFromDynOffset();
+    if (UpdateReshapeOutputDynOffset(reshapeOutput, *viewOpAttribute) != SUCCESS) {
+        return FAILED;
+    }
     auto existOp = ReshapeOperationExist(isAddReshapeOp);
     if (existOp != nullptr) {
-        if (UpdateDynShape(existOp) != SUCCESS || GroupReshapeOffset(existOp, existOp->output->offset) != SUCCESS) {
+        if (UpdateDynShape(existOp, para.localInputDynShape) != SUCCESS ||
+            GroupReshapeOffset(existOp, existOp->output->offset) != SUCCESS) {
             APASS_LOG_ERROR_F(Elements::Operation, "Failed to UpdateDynShape or GroupReshapeOffset for existOp. %s",
                               GetFormatBacktrace(op).c_str());
             return FAILED;
         }
         op.ReplaceInput(existOp->output, input);
-        viewOpAttribute->SetFromOffset(existOp->output->offset);
+        viewOpAttribute->SetFromOffset(existOp->output->offset, viewDynOffset);
         GraphUtils::UpdateViewAttr(function, op);
         return SUCCESS;
     }
     op.ReplaceInput(reshapeOutput, input);
-    viewOpAttribute->SetFromOffset(reshapeOutput->offset);
+    viewOpAttribute->SetFromOffset(reshapeOutput->offset, viewDynOffset);
     GraphUtils::UpdateViewAttr(function, op);
-    if (UpdateDynShape(isAddReshapeOp) != SUCCESS ||
+    if (UpdateDynShape(isAddReshapeOp, para.localInputDynShape) != SUCCESS ||
         GroupReshapeOffset(isAddReshapeOp, reshapeOutput->offset) != SUCCESS) {
         APASS_LOG_ERROR_F(Elements::Operation, "Failed to UpdateDynShape or GroupReshapeOffset for isAddReshapeOp. %s",
                           GetFormatBacktrace(op).c_str());
@@ -1157,8 +1272,16 @@ Status SplitReshape::UpdateForPerfectlyMatchWithAll(Function& function, Operatio
             return FAILED;
         }
     }
-    PerfectlyMatchWithAllPara perfectlyMatchwithAllPara = {input,         output,           overlaps.front(),
-                                                           reshapeOutput, newReshapeSource, para.oriViewDynShape};
+    std::vector<SymbolicScalar> localInputDynShape;
+    for (const auto& overlap : overlaps) {
+        const auto overlapOffset = ObtainMapOffset(overlap, reshapeSource);
+        if (GetAssembleDynShape(overlap, newReshapeSource, overlapOffset, localInputDynShape) != SUCCESS) {
+            APASS_LOG_ERROR_F(Elements::Operation, "GetAssembleDynShape failed. %s", GetFormatBacktrace(op).c_str());
+            return FAILED;
+        }
+    }
+    PerfectlyMatchWithAllPara perfectlyMatchwithAllPara = {
+        input, output, overlaps.front(), reshapeOutput, newReshapeSource, para.oriViewDynShape, localInputDynShape};
     if (ProcessPerfectlyMatchWithAll(function, op, perfectlyMatchwithAllPara) != SUCCESS) {
         APASS_LOG_ERROR_F(Elements::Operation, "Process ProcessPerfectlyMatchWithAll failed. %s",
                           GetFormatBacktrace(op).c_str());
@@ -1471,7 +1594,9 @@ Status SplitReshape::GetAssembleDynShape(const LogicalTensorPtr& input, const Lo
     if (dynInputShape.empty()) {
         return SUCCESS;
     }
-    dynValidShape = output->GetDynValidShape();
+    if (dynValidShape.empty()) {
+        dynValidShape = output->GetDynValidShape();
+    }
     if (dynValidShape.empty()) {
         for (size_t i = 0; i < dynInputShape.size(); ++i) {
             dynValidShape.push_back(irBuilder_.CreateConstInt(0));

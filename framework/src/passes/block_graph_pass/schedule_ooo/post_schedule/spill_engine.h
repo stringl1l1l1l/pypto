@@ -155,7 +155,7 @@ private:
     bool CanSaveTensorToDDR(LogicalTensorPtr tensor);
     static std::vector<OpImmediate> GetSaveOffset(Operation* writeOp);
     static std::vector<OpImmediate> GetReloadOffset(Operation* moveOp);
-    static bool IsStaticOffset(const std::vector<OpImmediate>& offset);
+    static bool CanReplayOffset(const std::vector<OpImmediate>& offset);
 
     Status ReplaceConsumersWithCopyin(const SpillMirror& mirror, Operation* spillAllocOp,
                                       SingleSpillCreatedOps& created, std::vector<Operation*>& seeds);

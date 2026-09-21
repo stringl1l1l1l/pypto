@@ -1540,6 +1540,46 @@ TEST_F(ScheduleOoOTest, TestSpillWalkUpThroughSkipOps)
     EXPECT_LT(at(graph.GetOp("viewType")), at(copyout));
 }
 
+TEST_F(ScheduleOoOTest, TestSpillWalkUpPreservesSymbolicReloadOffset)
+{
+    ComputationalGraphBuilder graph;
+    graph.AddTensors(DT_FP32, {128, 64}, {MEM_DEVICE_DDR, MEM_UB}, {"ddr", "source"});
+    graph.AddTensors(DT_FP32, {64, 64}, {MEM_L1, MEM_DEVICE_DDR, MEM_L1}, {"l1", "mirror", "reload"});
+    graph.AddOp(Opcode::OP_UB_ALLOC, {}, {"source"}, "allocSource");
+    graph.AddOp(Opcode::OP_COPY_IN, {"ddr"}, {"source"}, "write");
+    graph.AddOp(Opcode::OP_L1_ALLOC, {}, {"l1"}, "allocL1");
+    graph.AddOp(Opcode::OP_UB_COPY_L1, {"source"}, {"l1"}, "copyL1");
+
+    SymbolicScalar runtimeOffset = SymbolicScalar(AddRuntimeCoaPrefix("GET_PARAM_OFFSET"))(
+        SymbolicScalar(2), SymbolicScalar(17), SymbolicScalar(0));
+    std::vector<OpImmediate> reloadOffset = {OpImmediate::Specified(runtimeOffset), OpImmediate::Parameter(18)};
+    graph.GetOp("copyL1")->SetOpAttribute(std::make_shared<CopyOpAttribute>(
+        reloadOffset, MemoryType::MEM_L1, OpImmediate::Specified({64, 64}), OpImmediate::Specified({128, 64})));
+
+    OoOScheduler scheduler(*graph.GetFunction());
+    ASSERT_EQ(scheduler.Init(graph.GetFunction()->Operations().DuplicatedOpList()), SUCCESS);
+    scheduler.state_.schedInfoMap[graph.GetOp("write")].isRetired = true;
+
+    SpillPlan plan;
+    ASSERT_EQ(scheduler.spillEngine_.CollectWalkUpSources(graph.GetTensor("l1"), plan), SUCCESS);
+    ASSERT_EQ(plan.reloadOffset.size(), reloadOffset.size());
+    EXPECT_TRUE(plan.reloadOffset[0].IsSpecified());
+    EXPECT_EQ(plan.reloadOffset[0].GetSpecifiedValue().Dump(), runtimeOffset.Dump());
+    EXPECT_TRUE(plan.reloadOffset[1].IsParameter());
+    EXPECT_EQ(plan.reloadOffset[1].GetParameterIndex(), 18);
+
+    Operation* reload = scheduler.spillEngine_.CreateWholeReload(graph.GetTensor("mirror"), graph.GetTensor("reload"),
+                                                                 plan);
+    auto attr = std::dynamic_pointer_cast<CopyOpAttribute>(reload->GetOpAttribute());
+    ASSERT_NE(attr, nullptr);
+    const auto& recreatedOffset = attr->GetFromOffset();
+    ASSERT_EQ(recreatedOffset.size(), reloadOffset.size());
+    EXPECT_TRUE(recreatedOffset[0].IsSpecified());
+    EXPECT_EQ(recreatedOffset[0].GetSpecifiedValue().Dump(), runtimeOffset.Dump());
+    EXPECT_TRUE(recreatedOffset[1].IsParameter());
+    EXPECT_EQ(recreatedOffset[1].GetParameterIndex(), 18);
+}
+
 TEST_F(ScheduleOoOTest, TestSpillL0CMultiConsumer)
 {
     ComputationalGraphBuilder subGraph;

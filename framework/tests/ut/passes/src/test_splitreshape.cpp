@@ -262,7 +262,13 @@ TEST_F(TestSplitReshapePass, TestCheckDynStatus)
     output = {kNumTwo, kNumFour};
     alignedShape = {kNumTwo, kNumTwo, kNumTwo};
     dynOutput = {CreateTestScalarVar("a"), kNumFour};
-    EXPECT_EQ(pass.CheckDynStatus(alignedShape, input, output, dynOutput), WARNING);
+    EXPECT_EQ(pass.CheckDynStatus(alignedShape, input, output, dynOutput), SUCCESS);
+
+    input = {kNumTwo, kNumTwo, kNumTwo};
+    output = {kNumFour, kNumTwo};
+    alignedShape = {kNumTwo, kNumTwo, kNumTwo};
+    dynOutput = {CreateTestScalarVar("a"), kNumTwo};
+    EXPECT_EQ(pass.CheckDynStatus(alignedShape, input, output, dynOutput), SUCCESS);
 
     input = {kNumFour, kNumTwo};
     output = {kNumTwo, kNumFour};
@@ -1165,6 +1171,71 @@ TEST_F(TestSplitReshapePass, TestDynUpdateForPerfectlyMatchWithAll)
     EXPECT_EQ(viewOpAttribute->GetFromOffset(), inputView->offset);
 }
 
+TEST_F(TestSplitReshapePass, TestDynFirstAxisMergeForPerfectlyMatchWithAll)
+{
+    auto func = std::make_shared<Function>(Program::GetInstance(), "TestReshapeSplit", "TestReshapeSplit", nullptr);
+    ASSERT_NE(func, nullptr);
+
+    const std::vector<int64_t> reshapeInputShape = {kNumTwo, kNumFour, kNumFour};
+    const std::vector<int64_t> reshapeOutputShape = {kNumEight, kNumFour};
+    const std::vector<int64_t> overlapShape = {kNumOne, kNumTwo, kNumFour};
+    const std::vector<int64_t> localInputShape = {kNumOne, kNumFour, kNumFour};
+    const std::vector<int64_t> localOutputShape = {kNumFour, kNumFour};
+    const std::vector<int64_t> firstOffset = {kNumZero, kNumZero, kNumZero};
+    const std::vector<int64_t> secondOffset = {kNumZero, kNumTwo, kNumZero};
+    const std::vector<int64_t> outputOffset = {kNumZero, kNumZero};
+    const auto globalBatch = CreateTestScalarVar("global_b");
+    const auto tailK = CreateTestScalarVar("tail_k");
+
+    auto inputRaw = std::make_shared<RawTensor>(DT_FP32, reshapeInputShape);
+    auto input0ValidShape = std::vector<SymbolicScalar>{kNumOne, std::min(tailK, SymbolicScalar(kNumTwo)), kNumFour};
+    auto input1ValidShape = std::vector<SymbolicScalar>{
+        kNumOne, std::min(std::max(tailK - kNumTwo, SymbolicScalar(kNumZero)), SymbolicScalar(kNumTwo)), kNumFour};
+    auto input0 = IRBuilder().CreateTensorVar(inputRaw, firstOffset, overlapShape, input0ValidShape);
+    auto input1 = IRBuilder().CreateTensorVar(inputRaw, secondOffset, overlapShape, input1ValidShape);
+    input0->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+    input1->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+
+    auto reshapeInput = IRBuilder().CreateTensorVar(DT_FP32, reshapeInputShape,
+                                                    std::vector<SymbolicScalar>{globalBatch, tailK, kNumFour});
+    reshapeInput->SetMemoryTypeOriginal(MemoryType::MEM_UNKNOWN, false);
+    auto reshapeValidShape = std::vector<SymbolicScalar>{globalBatch * tailK, kNumFour};
+    auto reshapeOutput = IRBuilder().CreateTensorVar(DT_FP32, reshapeOutputShape, reshapeValidShape);
+    reshapeOutput->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+    auto viewOutput = IRBuilder().CreateTensorVar(DT_FP32, localOutputShape, reshapeValidShape);
+    viewOutput->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+
+    auto& assemble0 = PassOperationUtils::AddOperation(*func, Opcode::OP_ASSEMBLE, {input0}, {reshapeInput});
+    assemble0.SetOpAttribute(std::make_shared<AssembleOpAttribute>(MEM_DEVICE_DDR, firstOffset));
+    auto& assemble1 = PassOperationUtils::AddOperation(*func, Opcode::OP_ASSEMBLE, {input1}, {reshapeInput});
+    assemble1.SetOpAttribute(std::make_shared<AssembleOpAttribute>(MEM_DEVICE_DDR, secondOffset));
+    auto& reshape = PassOperationUtils::AddOperation(*func, Opcode::OP_RESHAPE, {reshapeInput}, {reshapeOutput});
+    reshape.SetAttribute(OP_ATTR_VALID_SHAPE, reshapeValidShape);
+    auto& view = PassOperationUtils::AddOperation(*func, Opcode::OP_VIEW, {reshapeOutput}, {viewOutput});
+    view.SetOpAttribute(std::make_shared<ViewOpAttribute>(outputOffset));
+
+    auto inputView = IRBuilder().CreateTensorVar(reshapeOutput->GetRawTensor(), outputOffset, localOutputShape,
+                                                 reshapeValidShape);
+    CalcOverlapPara para;
+    para.overlaps = {input0, input1};
+    para.reshapeSource = reshapeInput;
+    para.input = reshapeOutput;
+    para.output = viewOutput;
+    para.inputView = inputView;
+    ReshapeSourcePara sourcePara = {localInputShape, firstOffset};
+
+    SplitReshape pass;
+    ASSERT_EQ(pass.CollectCopyOut(*func), SUCCESS);
+    ASSERT_EQ(pass.UpdateForPerfectlyMatchWithAll(*func, view, para, sourcePara), SUCCESS);
+    ASSERT_EQ(pass.reshapes_.size(), kSizeOne);
+    const auto splitReshape = pass.reshapes_.begin()->second;
+    ASSERT_EQ(splitReshape->dynValidShapes.size(), kSizeOne);
+    ASSERT_EQ(splitReshape->dynValidShapes[0].size(), kSizeTwo);
+    EXPECT_NE(splitReshape->dynValidShapes[0][0].Dump().find("tail_k"), std::string::npos);
+    EXPECT_EQ(splitReshape->dynValidShapes[0][0].Dump().find("global_b"), std::string::npos);
+    EXPECT_EQ(splitReshape->dynValidShapes[0][1].Dump(), std::to_string(kNumFour));
+}
+
 void RunPassStra(Function& func, const PassName passName)
 {
     std::string passNameStr = PassNameStr(passName);
@@ -1529,7 +1600,7 @@ TEST_F(TestSplitReshapePass, TestDynPerfectlyMatchSTest)
     EXPECT_NE(*(reshapeOutputs[0]->GetConsumers().begin()), *(reshapeOutputs[1]->GetConsumers().begin()));
 }
 
-LogicalTensors BuildDynBeCoveredFunc(std::shared_ptr<Function> func)
+LogicalTensors BuildDynBeCoveredFunc(std::shared_ptr<Function> func, const std::vector<SymbolicScalar>& validShape)
 {
     std::vector<int64_t> shape1 = {kNumTwo, kNumTwo, kNumTwo};
     std::vector<int64_t> shape2 = {kNumTwo, kNumTwo, kNumFour};
@@ -1541,7 +1612,6 @@ LogicalTensors BuildDynBeCoveredFunc(std::shared_ptr<Function> func)
     std::vector<int64_t> viewOffset2 = {kNumZero, kNumTwo};
     std::vector<int64_t> viewOffset3 = {kNumTwo, kNumZero};
     std::vector<int64_t> viewOffset4 = {kNumTwo, kNumTwo};
-    std::vector<SymbolicScalar> validShape = {kNumFour, CreateTestScalarVar("a")};
     std::vector<SymbolicScalar> dynInputShape = {kNumTwo, kNumTwo, CreateTestScalarVar("a")};
 
     auto ubTensor1 = npu::tile_fwk::IRBuilder().CreateTensorVar(DT_FP32, shape2, CreateTestConstIntVector(shape2));
@@ -1612,9 +1682,10 @@ TEST_F(TestSplitReshapePass, TestDynBeCoveredSTest)
 
     std::vector<int64_t> assembleOffset1 = {kNumZero, kNumZero, kNumZero};
     std::vector<int64_t> assembleOffset2 = {kNumZero, kNumZero, kNumTwo};
+    std::vector<SymbolicScalar> validShape = {kNumFour, CreateTestScalarVar("a")};
     std::vector<SymbolicScalar> dynInputShape = {kNumTwo, kNumTwo, CreateTestScalarVar("a")};
 
-    auto inputs = BuildDynBeCoveredFunc(func);
+    auto inputs = BuildDynBeCoveredFunc(func, validShape);
     RunPassStra(*func, PassName::SPLIT_RESHAPE);
 
     std::unordered_map<LogicalTensorPtr, int> inputsWeight = {{inputs[0], 1}, {inputs[1], 10}};
@@ -1647,6 +1718,170 @@ TEST_F(TestSplitReshapePass, TestDynBeCoveredSTest)
     EXPECT_NE(view1, view2);
     EXPECT_NE(view1, view3);
     EXPECT_NE(view1, view4);
+}
+
+TEST_F(TestSplitReshapePass, TestSplitReshapeWithDynamicFirstAxis)
+{
+    auto func = std::make_shared<Function>(Program::GetInstance(), "TestReshapeSplit", "TestReshapeSplit", nullptr);
+    ASSERT_NE(func, nullptr);
+    std::vector<SymbolicScalar> validShape = {CreateTestScalarVar("a"), kNumFour};
+    BuildDynBeCoveredFunc(func, validShape);
+
+    SplitReshape pass;
+    EXPECT_EQ(pass.RunOnFunction(*func), SUCCESS);
+    ASSERT_EQ(pass.reshapes_.size(), kSizeTwo);
+    const std::vector<int64_t> expectedShape = {kNumFour, kNumTwo};
+    for (const auto& [hash, reshape] : pass.reshapes_) {
+        (void)hash;
+        EXPECT_EQ(reshape->output->shape, expectedShape);
+    }
+}
+
+TEST_F(TestSplitReshapePass, TestSplitDynamicFirstAxisMergeKeepsLocalShapeAndOffset)
+{
+    auto func = std::make_shared<Function>(Program::GetInstance(), "TestReshapeSplit", "TestReshapeSplit", nullptr);
+    ASSERT_NE(func, nullptr);
+
+    const std::vector<int64_t> reshapeInputShape = {kNumTwo, kNumTwo, kNumFour};
+    const std::vector<int64_t> reshapeOutputShape = {kNumFour, kNumFour};
+    const std::vector<int64_t> inputTileShape = {kNumOne, kNumTwo, kNumFour};
+    const std::vector<int64_t> outputTileShape = {kNumTwo, kNumFour};
+    const std::vector<int64_t> firstInputOffset = {kNumZero, kNumZero, kNumZero};
+    const std::vector<int64_t> secondInputOffset = {kNumOne, kNumZero, kNumZero};
+    const std::vector<int64_t> firstOutputOffset = {kNumZero, kNumZero};
+    const std::vector<int64_t> secondOutputOffset = {kNumTwo, kNumZero};
+    const auto globalBatch = CreateTestScalarVar("global_b");
+    const auto localBatch = CreateTestScalarVar("local_b");
+    const auto dynInner = CreateTestScalarVar("inner");
+    const std::vector<SymbolicScalar> inputTileValidShape = {localBatch, dynInner, kNumFour};
+    const std::vector<SymbolicScalar> reshapeValidShape = {globalBatch * dynInner, kNumFour};
+
+    auto reshapeInput = IRBuilder().CreateTensorVar(DT_FP32, reshapeInputShape,
+                                                    std::vector<SymbolicScalar>{globalBatch, dynInner, kNumFour});
+    reshapeInput->SetMemoryTypeOriginal(MemoryType::MEM_UNKNOWN, false);
+    auto reshapeOutput = IRBuilder().CreateTensorVar(DT_FP32, reshapeOutputShape, reshapeValidShape);
+    reshapeOutput->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+
+    auto inputRaw = std::make_shared<RawTensor>(DT_FP32, reshapeInputShape);
+    auto input0 = IRBuilder().CreateTensorVar(inputRaw, firstInputOffset, inputTileShape, inputTileValidShape);
+    auto input1 = IRBuilder().CreateTensorVar(inputRaw, secondInputOffset, inputTileShape, inputTileValidShape);
+    input0->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+    input1->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+
+    auto outputRaw = std::make_shared<RawTensor>(DT_FP32, reshapeOutputShape);
+    const std::vector<SymbolicScalar> firstDynOffset = {kNumZero, kNumZero};
+    const std::vector<SymbolicScalar> secondDynOffset = {dynInner, kNumZero};
+    auto output0ValidShape = GetViewValidShape(reshapeValidShape, firstOutputOffset, firstDynOffset, outputTileShape);
+    auto output1ValidShape = GetViewValidShape(reshapeValidShape, secondOutputOffset, secondDynOffset, outputTileShape);
+    auto output0 = IRBuilder().CreateTensorVar(outputRaw, firstOutputOffset, outputTileShape, output0ValidShape);
+    auto output1 = IRBuilder().CreateTensorVar(outputRaw, secondOutputOffset, outputTileShape, output1ValidShape);
+    output0->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+    output1->SetMemoryTypeOriginal(MemoryType::MEM_DEVICE_DDR, false);
+
+    auto& assemble0 = PassOperationUtils::AddOperation(*func, Opcode::OP_ASSEMBLE, {input0}, {reshapeInput});
+    assemble0.SetOpAttribute(std::make_shared<AssembleOpAttribute>(MEM_DEVICE_DDR, firstInputOffset));
+    auto& assemble1 = PassOperationUtils::AddOperation(*func, Opcode::OP_ASSEMBLE, {input1}, {reshapeInput});
+    assemble1.SetOpAttribute(std::make_shared<AssembleOpAttribute>(MEM_DEVICE_DDR, secondInputOffset));
+    auto& reshape = PassOperationUtils::AddOperation(*func, Opcode::OP_RESHAPE, {reshapeInput}, {reshapeOutput});
+    reshape.SetAttribute(OP_ATTR_VALID_SHAPE, reshapeValidShape);
+    auto& view0 = PassOperationUtils::AddOperation(*func, Opcode::OP_VIEW, {reshapeOutput}, {output0});
+    view0.SetOpAttribute(std::make_shared<ViewOpAttribute>(firstOutputOffset, firstDynOffset, output0ValidShape));
+    auto& view1 = PassOperationUtils::AddOperation(*func, Opcode::OP_VIEW, {reshapeOutput}, {output1});
+    view1.SetOpAttribute(std::make_shared<ViewOpAttribute>(secondOutputOffset, secondDynOffset, output1ValidShape));
+    func->inCasts_ = {input0, input1};
+    func->outCasts_ = {output0, output1};
+
+    SplitReshape pass;
+    ASSERT_EQ(pass.RunOnFunction(*func), SUCCESS);
+    ASSERT_EQ(pass.reshapes_.size(), kSizeTwo);
+
+    LogicalTensorPtr targetInput;
+    LogicalTensorPtr targetOutput;
+    LogicalTensors splitOutputs;
+    size_t reshapeCount = 0;
+    for (auto& op : func->Operations(false)) {
+        if (op.GetOpcode() != Opcode::OP_RESHAPE) {
+            continue;
+        }
+        reshapeCount++;
+        auto output = op.GetOutputOperand(kSizeZero);
+        splitOutputs.emplace_back(output);
+        if (output != nullptr && output->GetOffset() == secondOutputOffset) {
+            targetInput = op.GetInputOperand(kSizeZero);
+            targetOutput = output;
+        }
+    }
+    EXPECT_EQ(reshapeCount, kSizeTwo);
+    ASSERT_EQ(splitOutputs.size(), kSizeTwo);
+    EXPECT_EQ(splitOutputs[0]->GetRawTensor(), splitOutputs[1]->GetRawTensor());
+    ASSERT_NE(targetInput, nullptr);
+    ASSERT_NE(targetOutput, nullptr);
+    EXPECT_EQ(targetInput->GetShape(), inputTileShape);
+    EXPECT_EQ(targetOutput->GetShape(), outputTileShape);
+
+    const auto& localValidShape = targetOutput->GetDynValidShape();
+    ASSERT_EQ(localValidShape.size(), kSizeTwo);
+    EXPECT_NE(localValidShape[0].Dump().find("local_b"), std::string::npos);
+    EXPECT_NE(localValidShape[0].Dump().find("inner"), std::string::npos);
+    EXPECT_EQ(localValidShape[0].Dump().find("global_b"), std::string::npos);
+    EXPECT_EQ(localValidShape[1].Dump(), std::to_string(kNumFour));
+
+    const auto& reshapeDynOffset = targetOutput->GetDynOffset();
+    ASSERT_EQ(reshapeDynOffset.size(), kSizeTwo);
+    EXPECT_EQ(reshapeDynOffset[0].Dump(), dynInner.Dump());
+    EXPECT_EQ(reshapeDynOffset[1].Dump(), std::to_string(kNumZero));
+
+    ASSERT_EQ(targetOutput->GetConsumers().size(), kSizeOne);
+    auto targetView = *targetOutput->GetConsumers().begin();
+    ASSERT_NE(targetView, nullptr);
+    ASSERT_EQ(targetView->GetOpcode(), Opcode::OP_VIEW);
+    auto targetViewAttr = dynamic_cast<ViewOpAttribute*>(targetView->GetOpAttribute().get());
+    ASSERT_NE(targetViewAttr, nullptr);
+    EXPECT_EQ(targetViewAttr->GetFromOffset(), secondOutputOffset);
+    ASSERT_EQ(targetViewAttr->GetFromDynOffset().size(), kSizeTwo);
+    EXPECT_EQ(targetViewAttr->GetFromDynOffset()[0].Dump(), dynInner.Dump());
+    EXPECT_EQ(targetViewAttr->GetFromDynOffset()[1].Dump(), std::to_string(kNumZero));
+}
+
+TEST_F(TestSplitReshapePass, TestDynamicFirstAxisUsesViewDynOffset)
+{
+    auto func = std::make_shared<Function>(Program::GetInstance(), "TestReshapeSplit", "TestReshapeSplit", nullptr);
+    ASSERT_NE(func, nullptr);
+    std::vector<SymbolicScalar> validShape = {CreateTestScalarVar("a"), kNumFour};
+    BuildDynBeCoveredFunc(func, validShape);
+
+    Operation* targetView = nullptr;
+    const std::vector<int64_t> targetOffset = {kNumTwo, kNumZero};
+    for (auto& op : func->Operations(false)) {
+        if (op.GetOpcode() != Opcode::OP_VIEW) {
+            continue;
+        }
+        auto viewAttr = dynamic_cast<ViewOpAttribute*>(op.GetOpAttribute().get());
+        if (viewAttr != nullptr && viewAttr->GetFromOffset() == targetOffset) {
+            targetView = &op;
+            break;
+        }
+    }
+    ASSERT_NE(targetView, nullptr);
+
+    auto viewAttr = dynamic_cast<ViewOpAttribute*>(targetView->GetOpAttribute().get());
+    ASSERT_NE(viewAttr, nullptr);
+
+    SplitReshape pass;
+    ASSERT_EQ(pass.CollectCopyOut(*func), SUCCESS);
+    auto input = targetView->GetIOperands().front();
+    auto output = targetView->GetOOperands().front();
+    auto inputView = IRBuilder().CreateTensorVar(input->GetRawTensor(), targetOffset, output->shape,
+                                                 std::vector<SymbolicScalar>{});
+    CheckParam checkParam = {input, output, inputView};
+    CheckOutputParam checkOutputParam;
+    ASSERT_EQ(pass.CheckValidOp(checkParam, checkOutputParam), SUCCESS);
+
+    auto expectedDynShape = GetViewValidShape(validShape, targetOffset, {}, output->shape);
+    ASSERT_EQ(checkOutputParam.curViewDynShape.size(), expectedDynShape.size());
+    for (size_t i = 0; i < expectedDynShape.size(); ++i) {
+        EXPECT_EQ(checkOutputParam.curViewDynShape[i].Dump(), expectedDynShape[i].Dump());
+    }
 }
 
 LogicalTensors BuildDynPerfectlyMatchWithAllFunc(std::shared_ptr<Function> func)

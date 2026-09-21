@@ -126,3 +126,42 @@ TEST_F(SplitLargeLocalRawTest, TestSplitRawTensorUpdateShmemGetToOffset)
         EXPECT_EQ(toOffset[i].GetSpecifiedValue().Concrete(), expectedToOffset[i]);
     }
 }
+
+TEST_F(SplitLargeLocalRawTest, TestSplitRawTensorWithSymbolicOffset)
+{
+    constexpr int64_t num128 = 128;
+    constexpr int64_t num256 = 256;
+    const Shape shape{num128, num128};
+    const Shape rawShape{num256, num128};
+    const Offset tensorOffset{num128, 0};
+    const Offset zeroOffset{0, 0};
+    const SymbolicScalar dynBase("dyn_offset");
+    const std::vector<SymbolicScalar> dynOffset{(dynBase + num128).Simplify(), 0};
+    ComputationalGraphBuilder G;
+
+    AddTensor(G, "input", rawShape, rawShape, zeroOffset, MemoryType::MEM_UB);
+    AddTensor(G, "middle", shape, rawShape, tensorOffset, MemoryType::MEM_UB);
+    AddTensor(G, "output", shape, shape, zeroOffset, MemoryType::MEM_UB);
+    auto middle = G.GetTensor("middle");
+    middle->UpdateOffset(TensorOffset(tensorOffset, dynOffset));
+
+    G.AddOp(Opcode::OP_RESHAPE, {"input"}, {"middle"}, "reshape");
+    G.AddOp(Opcode::OP_VIEW, {"middle"}, {"output"}, "view");
+    G.GetOp("view")->SetOpAttribute(std::make_shared<ViewOpAttribute>(tensorOffset, dynOffset));
+    G.SetInCast({"input"});
+
+    Function* function = G.GetFunction();
+    SplitRawTensor splitRawTensorPass;
+    ASSERT_EQ(splitRawTensorPass.RunOnFunction(*function), SUCCESS);
+    EXPECT_EQ(splitRawTensorPass.PostCheck(*function), SUCCESS);
+    EXPECT_EQ(middle->GetOffset(), zeroOffset);
+    EXPECT_TRUE(middle->GetDynOffset().empty());
+
+    auto viewAttr = std::static_pointer_cast<ViewOpAttribute>(G.GetOp("view")->GetOpAttribute());
+    EXPECT_EQ(viewAttr->GetFromOffset(), zeroOffset);
+    ASSERT_EQ(viewAttr->GetFromDynOffset().size(), zeroOffset.size());
+    for (const auto& offset : viewAttr->GetFromDynOffset()) {
+        ASSERT_TRUE(offset.IsImmediate());
+        EXPECT_EQ(offset.Concrete(), 0);
+    }
+}
