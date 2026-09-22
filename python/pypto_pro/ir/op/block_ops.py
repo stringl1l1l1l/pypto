@@ -1237,7 +1237,9 @@ def _validate_offsets(
             raise InvalidShape(f"{op_name}: offsets[{i}]={off_val}{label} exceeds tensor dim {i} size {t_dim.value}")
 
 
-def _ir_getval(container: Expr, offset: int | Expr, *, span: Span | None = None) -> Expr:
+def _ir_getval(
+    container: Expr, offset: int | Expr, *, preserve_dtype: bool = False, span: Span | None = None
+) -> Expr:
     actual_span = span or _span()
     _ctype = container.type
     if not isinstance(_ctype, (_ir_core.TileType, _ir_core.TensorType)):
@@ -1251,7 +1253,8 @@ def _ir_getval(container: Expr, offset: int | Expr, *, span: Span | None = None)
         )
     _check_scalar_access_supported("getval", container, actual_span)
     offset_expr = offset if isinstance(offset, Expr) else _normalize_expr(offset, actual_span, int_dtype=DataType.INT64)
-    return _ir_core.create_op_call(block_ir_op("getval"), [container, offset_expr], {}, actual_span)
+    kwargs = {"preserve_dtype": True} if preserve_dtype else {}
+    return _ir_core.create_op_call(block_ir_op("getval"), [container, offset_expr], kwargs, actual_span)
 
 
 def _ir_setval(container: Expr, offset: int | Expr, value: int | float | Expr, *, span: Span | None = None) -> Expr:

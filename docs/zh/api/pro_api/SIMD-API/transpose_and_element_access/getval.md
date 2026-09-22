@@ -36,6 +36,10 @@ pypto_pro.language.getval(container: Tile | Tensor, offset: int) -> Scalar
 ## 返回值说明
 
 container元素类型为除DT_UINT64以外的整数类型时，统一返回DT_INT64类型的标量，其它场景返回与container元素类型一致的标量。
+SIMD上下文中的container[i, j, ...]读取也遵循该规则。
+
+在SIMT入口函数及其SIMT辅助函数中，使用container[i, j, ...]读取元素时，返回标量保留container的元素类型，不进行整数提升，以便直接用于要求类型精确匹配的SIMT操作。
+SIMT函数中不支持显式调用pypto_pro.language.getval，应使用上述下标语法。
 
 ## 调用示例
 

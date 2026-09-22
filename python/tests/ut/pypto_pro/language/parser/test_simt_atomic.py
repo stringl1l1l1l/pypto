@@ -209,6 +209,40 @@ def test_atomic_add_supports_gm_int64_tensor():
     assert "simt.launch" in str(program)
 
 
+@pytest.mark.parametrize("dtype", [pl.DT_INT32, pl.DT_UINT32, pl.DT_FP16, pl.DT_BF16, pl.DT_FP32])
+@pytest.mark.parametrize("use_tile", [False, True], ids=["tensor", "tile"])
+def test_atomic_add_accepts_loaded_elements(dtype, use_tile):
+    @pl.vector_function(mode="simt")
+    def loaded_values(dst, values):
+        value = values[0, 0]
+        pl.simt.atomic_add(dst[0, 0], value)
+        pl.simt.atomic_add(dst[0, 1], values[0, 1])
+
+    if use_tile:
+        function = _parse_two_tile_function(loaded_values, dtype, dtype)
+    else:
+        @pl.vector_function(mode="simt", max_threads=1)
+        def entry(dst, values):
+            loaded_values(dst, values)
+
+        @pl.jit
+        def kernel(dst: pl.Tensor[[1, 32], dtype], values: pl.Tensor[[1, 32], dtype]):
+            with pl.section_vector():
+                entry[1](dst, values)
+
+        program, _ = kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+        function = program.get_function("loaded_values")
+
+    loads = [
+        stmt.value
+        for stmt in function.body.stmts
+        if isinstance(stmt, ir.AssignStmt) and isinstance(stmt.value, ir.Call) and stmt.value.name == "block.getval"
+    ]
+    assert len(loads) == 2
+    assert all(load.type.dtype == dtype for load in loads)
+    assert str(function).count("simt.atomic_add") == 2
+
+
 def test_atomic_add_contextually_types_numeric_literals():
     @pl.vector_function(mode="simt")
     def literal_values(unsigned, signed):

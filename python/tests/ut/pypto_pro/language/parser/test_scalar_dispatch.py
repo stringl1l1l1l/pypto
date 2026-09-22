@@ -15,8 +15,66 @@ when called with scalar arguments.
 """
 
 import pypto_pro.language as pl
+import pytest
 
 from pypto.pypto_impl import ir
+
+
+@pytest.mark.parametrize(
+    "dtype,expected",
+    [(pl.DT_INT8, pl.DT_INT64), (pl.DT_UINT32, pl.DT_INT64),
+     (pl.DT_UINT64, pl.DT_UINT64), (pl.DT_FP32, pl.DT_FP32)],
+)
+@pytest.mark.parametrize("use_tile", [False, True], ids=["tensor", "tile"])
+def test_simd_element_reads_keep_scalar_promotion(dtype, expected, use_tile):
+    @pl.jit(auto_mutex=False)
+    def kernel(data: pl.Tensor[[1, 32], dtype]):
+        with pl.section_vector():
+            if use_tile:
+                container = pl.make_tile(
+                    pl.TileType(shape=[1, 32], dtype=dtype, target_memory=pl.MemorySpace.Vec), addr=0
+                )
+            else:
+                container = data
+            first = pl.getval(container, 0)
+            second = container[0, 1]
+            pl.setval(container, 2, first + second)
+
+    program, _ = kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    function = program.get_function("kernel")
+    loads = [
+        stmt.value
+        for stmt in function.body.stmts
+        if isinstance(stmt, ir.AssignStmt) and isinstance(stmt.value, ir.Call) and stmt.value.name == "block.getval"
+    ]
+    assert len(loads) == 2
+    assert all(load.type.dtype == expected for load in loads)
+
+
+def test_simd_integer_reads_merge_as_int64_across_branches():
+    @pl.jit(auto_mutex=False)
+    def kernel(
+        narrow: pl.Tensor[[1], pl.DT_INT8],
+        unsigned: pl.Tensor[[1], pl.DT_UINT32],
+        out: pl.Tensor[[1], pl.DT_INT64],
+        flag: pl.DT_BOOL,
+    ):
+        with pl.section_vector():
+            if flag:
+                value = narrow[0]
+            else:
+                value = pl.getval(unsigned, 0)
+            out[0] = value
+
+    program, _ = kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    function = program.get_function("kernel")
+    branch = next(stmt for stmt in function.body.stmts if isinstance(stmt, ir.IfStmt))
+    assert len(branch.return_vars) == 1
+    assert branch.return_vars[0].type.dtype == pl.DT_INT64
+    for body in (branch.then_body, branch.else_body):
+        loads = [stmt.value for stmt in body.stmts if isinstance(stmt, ir.AssignStmt)]
+        load = next(value for value in loads if isinstance(value, ir.Call) and value.name == "block.getval")
+        assert load.type.dtype == pl.DT_INT64
 
 
 def test_scalar_min():

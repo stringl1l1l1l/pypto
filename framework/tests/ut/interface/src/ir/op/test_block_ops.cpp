@@ -263,6 +263,26 @@ TEST_F(BlockOpsMemoryTest, GetVal_IntegerContainer_ReturnsInt64UnlessUint64)
     }
 }
 
+TEST_F(BlockOpsMemoryTest, GetVal_SimtPreservesContainerDtype)
+{
+    auto& reg = OpRegistry::GetInstance();
+    const std::vector<DataType> cases = {
+        DataType::INT8,   DataType::INT16,  DataType::INT32, DataType::INT64, DataType::UINT8, DataType::UINT16,
+        DataType::UINT32, DataType::UINT64, DataType::FP16,  DataType::BF16,  DataType::FP32,  DataType::BOOL,
+    };
+    for (const auto& source_dtype : cases) {
+        SCOPED_TRACE(source_dtype.ToString());
+        auto offset = MakeScalarVar("i", DataType::INT64);
+        const std::vector<std::pair<std::string, std::any>> kwargs = {{"preserve_dtype", true}};
+        auto tile_call = reg.Create("block.getval", {MakeTileVar("tile", {64}, source_dtype), offset}, kwargs, Sp());
+        auto tensor_call = reg.Create("block.getval", {MakeTensorVar("tensor", {64}, source_dtype), offset}, kwargs,
+                                      Sp());
+
+        EXPECT_EQ(As<ScalarType>(tile_call->GetType())->dtype_, source_dtype);
+        EXPECT_EQ(As<ScalarType>(tensor_call->GetType())->dtype_, source_dtype);
+    }
+}
+
 TEST_F(BlockOpsMemoryTest, GetVal_WrongArgCount_Throws)
 {
     auto& reg = OpRegistry::GetInstance();

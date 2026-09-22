@@ -448,8 +448,8 @@ def test_simt_callee_codegen_emits_native_nested_calls_and_tile_abi():
     apply_signature = next(line for line in cpp.splitlines() if "_callee_apply(" in line and "__simt_callee__" in line)
     entry_signature = next(line for line in cpp.splitlines() if "inline void _callee_entry(" in line)
 
-    assert "__simt_callee__ inline int64_t" in add_signature
-    assert "__simt_callee__ inline int64_t" in load_signature
+    assert "__simt_callee__ inline int32_t" in add_signature
+    assert "__simt_callee__ inline int32_t" in load_signature
     assert "__simt_callee__ inline void" in store_signature
     for signature in (store_signature, apply_signature):
         assert re.search(r"__ubuf__\s+int32_t\s*\*\s*dst(?:_\d+)*\b", signature)
@@ -468,7 +468,7 @@ def test_simt_callee_codegen_emits_native_nested_calls_and_tile_abi():
     assert max(add_pos, load_pos, store_pos) < apply_pos < entry_pos
     add_function = cpp[add_pos:cpp.index("\n}\n", add_pos)]
     apply_function = cpp[apply_pos:entry_pos]
-    assert re.search(r"\bvalue(?:_\d+)*\s*\+\s*\(\(int64_t\)delta(?:_\d+)*\)", add_function)
+    assert re.search(r"\bvalue(?:_\d+)*\s*\+\s*delta(?:_\d+)*", add_function)
     assert re.search(r"\breturn\s+[^;]+;", add_function)
     assert re.search(r"_callee_load\(src(?:_\d+)?,\s*index(?:_\d+)?\)", apply_function)
     assert re.search(r"_callee_add\([^;]+\)", apply_function)

@@ -44,9 +44,9 @@ using npu::tile_fwk::ExternalError;
 
 namespace {
 
-DataType GetValResultDtype(const DataType& element_dtype)
+DataType GetValResultDtype(const DataType& element_dtype, bool preserve_dtype)
 {
-    if (!element_dtype.IsInt()) {
+    if (preserve_dtype || !element_dtype.IsInt()) {
         return element_dtype;
     }
     return element_dtype == DataType::UINT64 ? DataType::UINT64 : DataType::INT64;
@@ -171,13 +171,15 @@ TypePtr DeduceGetValType([[maybe_unused]] const std::vector<ExprPtr>& args,
     PRO_IR_CHECK(ExternalError::INVALID_TYPE, offset_type->dtype_.IsInt())
         << "getval offset must have integer dtype, but got " << offset_type->dtype_.ToString();
 
+    // SIMT element reads preserve their storage dtype; SIMD scalar reads retain integer widening.
+    const bool preserve_dtype = GetOpKwarg<bool>(kwargs, "preserve_dtype", false);
     if (auto tile_type = As<TileType>(first_type)) {
-        return std::make_shared<ScalarType>(GetValResultDtype(tile_type->dtype_));
+        return std::make_shared<ScalarType>(GetValResultDtype(tile_type->dtype_, preserve_dtype));
     }
     auto tensor_type = As<TensorType>(first_type);
     PRO_IR_CHECK(ExternalError::INVALID_TYPE, tensor_type)
         << "getval requires first argument to be TileType or TensorType, but got " << first_type->TypeName();
-    return std::make_shared<ScalarType>(GetValResultDtype(tensor_type->dtype_));
+    return std::make_shared<ScalarType>(GetValResultDtype(tensor_type->dtype_, preserve_dtype));
 }
 
 TypePtr DeduceTileValidShapeType(const std::vector<ExprPtr>& args,
@@ -350,6 +352,7 @@ REGISTER_OP("block.getval")
     .set_description("Read a scalar value from a tile or tensor at offset")
     .add_argument("container", "Input tile (TileType) or tensor (TensorType)")
     .add_argument("offset", "Element offset (ScalarType with integer dtype)")
+    .set_attr<bool>("preserve_dtype")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
         return DeduceGetValType(args, kwargs);

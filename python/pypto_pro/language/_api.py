@@ -1009,7 +1009,11 @@ def dequant(out: Tile, src: Tile, scale: Tile, offset: Tile) -> None:
 
 @_api_decl
 def getval(container: "Tile | Tensor", offset: int) -> Scalar:
-    """Read a scalar value from a Tile or Tensor at the given linear offset."""
+    """Read a scalar at the given linear offset, widening integer elements except UINT64 to INT64.
+
+    Inside SIMT vector functions and their SIMT helpers, use element indexing instead;
+    those reads preserve the Tile or Tensor's element dtype.
+    """
 
 
 @_api_decl

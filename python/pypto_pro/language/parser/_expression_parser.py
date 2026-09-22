@@ -880,7 +880,8 @@ class ExpressionParserMixin:
             # All-integer index: A[i, j] → getval(A, i*cols+j)
             index_expr = self._parse_scalar_subscript_index(value_expr, subscript.slice, span)
             from pypto_pro.ir.op.block_ops import _ir_getval
-            result = _ir_getval(value_expr, index_expr, span=span)
+            is_simt = self._current_func_type in (ir.FunctionType.SimtVF, ir.FunctionType.SimtCallee)
+            result = _ir_getval(value_expr, index_expr, preserve_dtype=is_simt, span=span)
             mutex_locked = False
             if self._auto_mutex:
                 from ._op_pipeline import get_op_pipe

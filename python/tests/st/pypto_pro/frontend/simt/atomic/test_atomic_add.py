@@ -49,6 +49,75 @@ def _assert_target(state, expected):
 
 
 @pl.vector_function(mode="simt", max_threads=THREADS)
+def atomic_add_loaded_gm_value(
+    target: pl.Tensor[[1, THREADS], pl.DT_INT32],
+    value_tensor: pl.Tensor[[1, 1], pl.DT_INT32],
+):
+    pl.simt.atomic_add(target[0, 0], value_tensor[0, 0])
+
+
+@pl.jit(auto_mutex=True, arch="a5")
+def simt_atomic_add_loaded_gm_value(
+    target: pl.Tensor[[1, THREADS], pl.DT_INT32],
+    value_tensor: pl.Tensor[[1, 1], pl.DT_INT32],
+):
+    with pl.section_vector():
+        atomic_add_loaded_gm_value[THREADS](target, value_tensor)
+
+
+@pytest.mark.soc("950")
+def test_atomic_add_accepts_loaded_gm_value():
+    initial = torch.full((1, THREADS), 7, dtype=torch.int32)
+    value = torch.tensor([[-3]], dtype=torch.int32)
+
+    result, loaded_value = _run_kernel(simt_atomic_add_loaded_gm_value, (initial, value))
+
+    expected = initial.clone()
+    expected[0, 0] = 7 + THREADS * value[0, 0]
+    torch.testing.assert_close(result, expected, rtol=0, atol=0)
+    torch.testing.assert_close(loaded_value, value, rtol=0, atol=0)
+
+
+@pytest.mark.soc("950")
+@pytest.mark.parametrize(
+    "dtype,torch_dtype,value",
+    [(pl.DT_INT32, torch.int32, -3), (pl.DT_UINT32, torch.uint32, 3), (pl.DT_FP32, torch.float32, 0.25)],
+)
+@pytest.mark.parametrize("use_tile", [False, True], ids=["tensor", "tile"])
+def test_atomic_add_from_loaded_elements(dtype, torch_dtype, value, use_tile):
+    @pl.vector_function(mode="simt", max_threads=THREADS)
+    def add_loaded(dst, values):
+        pl.simt.atomic_add(dst[0, 0], values[0, 0])
+        scalar = values[0, 1]
+        pl.simt.atomic_add(dst[0, 1], scalar)
+
+    @pl.jit(auto_mutex=True)
+    def kernel(dst: pl.Tensor[[1, ELEMENTS], dtype], values: pl.Tensor[[1, ELEMENTS], dtype]):
+        with pl.section_vector():
+            if use_tile:
+                tile_type = pl.TileType(shape=[1, ELEMENTS], dtype=dtype, target_memory=pl.MemorySpace.Vec)
+                dst_group = pl.make_tile_group(type=tile_type, addrs=0, mutex_ids=[0])
+                values_group = pl.make_tile_group(type=tile_type, addrs=0x0400, mutex_ids=[1])
+                dst_tile = dst_group.current()
+                values_tile = values_group.current()
+                pl.load(dst_tile, dst, [0, 0])
+                pl.load(values_tile, values, [0, 0])
+                add_loaded[THREADS](dst_tile, values_tile)
+                pl.store(dst, dst_tile, [0, 0])
+            else:
+                add_loaded[THREADS](dst, values)
+
+    initial = torch.full((1, ELEMENTS), 7, dtype=torch_dtype)
+    values = torch.full((1, ELEMENTS), value, dtype=torch_dtype)
+    result, loaded_values = _run_kernel(kernel, (initial, values))
+    expected = initial.clone()
+    expected[0, 0] = 7 + THREADS * value
+    expected[0, 1] = 7 + THREADS * value
+    torch.testing.assert_close(result, expected, rtol=0, atol=0)
+    torch.testing.assert_close(loaded_values, values, rtol=0, atol=0)
+
+
+@pl.vector_function(mode="simt", max_threads=THREADS)
 def atomic_add_ub_all_dtypes(
     int32_tile,
     uint32_tile,

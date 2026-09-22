@@ -15,6 +15,23 @@ import torch
 ELEMENTS = 64
 
 
+@pl.vector_function(mode="simt", max_threads=1)
+def bitcast_loaded_gm_value(
+    src: pl.Tensor[[1, 1], pl.DT_INT32],
+    dst: pl.Tensor[[1, 1], pl.DT_FP32],
+):
+    dst[0, 0] = pl.simt.bitcast(src[0, 0], pl.DT_FP32)
+
+
+@pl.jit(auto_mutex=True, arch="a5")
+def simt_bitcast_loaded_gm_value(
+    src: pl.Tensor[[1, 1], pl.DT_INT32],
+    dst: pl.Tensor[[1, 1], pl.DT_FP32],
+):
+    with pl.section_vector():
+        bitcast_loaded_gm_value[1](src, dst)
+
+
 @pl.vector_function(mode="simt", max_threads=ELEMENTS)
 def bitcast_all_scalar_pairs(
     src_int16: pl.Tensor[[1, ELEMENTS], pl.DT_INT16],
@@ -98,6 +115,17 @@ def _bits16(value):
 
 def _bits32(value):
     return value.contiguous().view(torch.int32)
+
+
+@pytest.mark.soc("950")
+def test_bitcast_accepts_loaded_gm_value(a5_device):
+    src = torch.tensor([[0x3F800000]], dtype=torch.int32)
+    dst = torch.empty((1, 1), dtype=torch.float32, device=a5_device)
+
+    simt_bitcast_loaded_gm_value[None, 1](src.to(a5_device), dst)
+    torch.npu.synchronize()
+
+    assert torch.equal(_bits32(dst.cpu()), src)
 
 
 @pytest.mark.soc("950")
