@@ -93,7 +93,10 @@ void DeviceTaskContext::InitDrcoRootFuncList(DynDeviceTask* dyntask)
         sizeof(npu::tile_fwk::DrcoGlobalStitchNodeMatrix));
     new (stitchNodeMatrix) npu::tile_fwk::DrcoGlobalStitchNodeMatrix();
     rootFuncList->stitchNodeMatrix = stitchNodeMatrix;
-    rootFuncList->stitchNodeBase = workspace_->GetStitchPoolBase();
+    auto* ctrlCache = devProg_->GetControlFlowCache();
+    rootFuncList->stitchNodeBase = (ctrlCache != nullptr && ctrlCache->IsRecording()) ?
+                                       reinterpret_cast<uint64_t>(ctrlCache) :
+                                       workspace_->GetStitchPoolBase();
     rootFuncList->totalTaskCount = dyntask->devTask.coreFunctionCnt;
     rootFuncList->devTaskFinished = 0;
     new (&rootFuncList->devTaskFinishFlagList) npu::tile_fwk::DrcoDevTaskFinishFlagList();
