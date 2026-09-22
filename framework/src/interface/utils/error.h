@@ -23,31 +23,7 @@
 
 namespace npu::tile_fwk {
 struct TerminateHandler {
-    TerminateHandler()
-    {
-        struct sigaction sa;
-        sa.sa_handler = TerminateHandler::SigAction;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = SA_RESTART;
-
-        sigaction(SIGSEGV, &sa, &ori[0]);
-        sigaction(SIGFPE, &sa, &ori[1]);
-
-        std::set_terminate([] {
-            try {
-                auto eptr = std::current_exception();
-                if (eptr) {
-                    std::rethrow_exception(eptr);
-                }
-            } catch (const std::exception& e) {
-                PYPTO_LOGE_FULL("Caught exception: %s", e.what());
-                ErrorManager::Instance().OutputErrorMessage();
-                std::cerr << "Caught exception: '" << e.what() << "'\n";
-            }
-            (void)fflush(nullptr);
-            _Exit(1);
-        });
-    }
+    TerminateHandler();
 
     static void SigAction(int signo)
     {

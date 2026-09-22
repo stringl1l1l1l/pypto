@@ -21,6 +21,7 @@
 #include <algorithm>
 
 #include "error.h"
+#include "utils/host_log/log_time.h"
 #include "interface/utils/string_utils.h"
 #include "tilefwk/pypto_fwk_log.h"
 
@@ -124,6 +125,33 @@ const char* Error::what() const noexcept
             return ss.str();
         })
         .c_str();
+}
+
+TerminateHandler::TerminateHandler()
+{
+    InitializeLogTime();
+    struct sigaction sa;
+    sa.sa_handler = TerminateHandler::SigAction;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+
+    sigaction(SIGSEGV, &sa, &ori[0]);
+    sigaction(SIGFPE, &sa, &ori[1]);
+
+    std::set_terminate([] {
+        try {
+            auto eptr = std::current_exception();
+            if (eptr) {
+                std::rethrow_exception(eptr);
+            }
+        } catch (const std::exception& e) {
+            PYPTO_LOGE_FULL("Caught exception: %s", e.what());
+            ErrorManager::Instance().OutputErrorMessage();
+            std::cerr << "Caught exception: '" << e.what() << "'\n";
+        }
+        (void)fflush(nullptr);
+        _Exit(1);
+    });
 }
 
 static struct TerminateHandler terminateHandler;

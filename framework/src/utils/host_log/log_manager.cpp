@@ -21,11 +21,12 @@
 #include <sys/syscall.h>
 #include <array>
 #include <cstring>
-#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include "securec.h"
 #include "file_utils.h"
+#include "host_log/log_time.h"
 
 namespace npu::tile_fwk {
 namespace {
@@ -75,30 +76,6 @@ bool GetEnvStr(const char* envName, std::string& envValue)
     }
     envValue = envTemp;
     return true;
-}
-
-std::string GetCurrentTime()
-{
-    auto now = std::chrono::system_clock::now();
-    auto nowTime = std::chrono::system_clock::to_time_t(now);
-    std::tm* nowTm = std::localtime(&nowTime);
-    std::stringstream ss;
-    ss << std::put_time(nowTm, "%Y-%m-%d %H:%M:%S");
-    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-    ss << "." << std::setfill('0') << std::setw(3) << milliseconds.count();
-    return ss.str();
-}
-
-std::string GetCurrentTimeStr()
-{
-    auto now = std::chrono::system_clock::now();
-    auto nowTime = std::chrono::system_clock::to_time_t(now);
-    std::tm* nowTm = std::localtime(&nowTime);
-    std::stringstream ss;
-    ss << std::put_time(nowTm, "%Y%m%d%H%M%S");
-    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-    ss << std::setfill('0') << std::setw(3) << milliseconds.count();
-    return ss.str();
 }
 
 int ParseStrToInt(const std::string& str)
