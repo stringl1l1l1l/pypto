@@ -27,7 +27,6 @@ from pypto.pypto_impl.ir import (
     Expr,
     PipeType,
     Span,
-    SyncAllMode,
     SyncCoreType,
 )
 
@@ -320,53 +319,24 @@ def wait_cross_core(
 
 
 def sync_all(
-    workspaces: list[Expr | int] | None = None,
     *,
     core_type: SyncCoreType = SyncCoreType.MIX,
-    mode: SyncAllMode = SyncAllMode.HARD,
     span: Span | None = None,
 ) -> Call:
     """Global core synchronization (delegates to pto-isa SYNCALL).
 
-    Hard mode (default): no workspace needed, uses FFTS hardware signal.
-    Soft mode: requires workspace buffers for GM-polling synchronization.
+    Uses FFTS hardware signal.
 
     Args:
-        workspaces: List of workspace parameters for soft mode. Dispatched by type:
-              - TensorType → gm_workspace (required for soft mode)
-              - Vec TileType → ub_workspace (required for aiv_only/mix)
-              - Mat TileType → l1_workspace (required for aic_only/mix)
-              - int/Expr scalar → used_cores (optional, defaults to 0 = all cores)
-            Defaults to empty list. Not needed for hard mode.
         core_type: ``pl.SyncCoreType.AIV_ONLY``, ``pl.SyncCoreType.AIC_ONLY``, or ``pl.SyncCoreType.MIX`` (default).
             AIV-only syncs vector cores only; Mix syncs both AIC and AIV cores.
-        mode: ``pl.SyncAllMode.HARD`` (default) or ``pl.SyncAllMode.SOFT``.
-            Hard mode uses FFTS hardware; Soft mode uses GM workspace polling.
         span: Optional source span for debugging (auto-captured if not provided).
 
     Returns:
         Call expression for global core synchronization.
     """
-    if workspaces is None:
-        workspaces = []
-
-    kwargs: dict[str, object] = {"mode": mode, "core_type": core_type}
-    # Resolved before the checks below so their errors can report a location.
     actual_span = _get_span_or_capture(span)
-
-    if mode == SyncAllMode.HARD:
-        if workspaces:
-            raise NotSupported("Hard mode sync_all does not accept workspace arguments", span=actual_span)
-    elif mode == SyncAllMode.SOFT:
-        if not workspaces:
-            raise InvalidArgument(
-                "Soft mode sync_all requires workspaces list (e.g. [gm, ub])", span=actual_span
-            )
-
-    # Build args[0]: always a MakeTuple (empty for hard, populated for soft)
-    ws_tuple = _to_make_tuple(workspaces)
-
-    return _ir_core.create_op_call("system.sync_all", [ws_tuple], kwargs, actual_span)
+    return _ir_core.create_op_call("system.sync_all", [], {"core_type": core_type}, actual_span)
 
 
 def dcci(
@@ -616,9 +586,10 @@ def _parse_system_sync_dst(self, call: ast.Call):
 @op_impl("system.sync_all")
 def _parse_system_sync_all(self, call: ast.Call):
     span = self.span_tracker.get_span(call)
+    if call.args:
+        raise InvalidArgument("sync_all does not accept positional arguments", span=span)
     kwargs = self.parse_op_kwargs(call)
-    workspaces = self.parse_expression(call.args[0]) if call.args else None
-    return sync_all(workspaces, **kwargs, span=span)
+    return sync_all(**kwargs, span=span)
 
 
 @op_impl("system.set_mm_layout_transform")

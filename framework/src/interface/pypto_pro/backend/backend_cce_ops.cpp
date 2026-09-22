@@ -2065,13 +2065,12 @@ REGISTER_BACKEND_OP(BackendCCE, "system.mutex_unlock_dyn")
 // ============================================================================
 // Global Core Synchronization (sync_all)
 // ============================================================================
-// Delegates to pto-isa SYNCALL<SyncAllMode, SyncCoreType>(...) / SYNCALL<SyncCoreType>().
+// Delegates to pto-isa SYNCALL<SyncCoreType>().
 
 static std::string MakeSystemSyncAllCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& codegen_base)
 {
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
 
-    auto mode = static_cast<ir::SyncAllMode>(op->HasKwarg("mode") ? op->GetKwarg<int>("mode") : 0);
     auto core_type = static_cast<ir::SyncCoreType>(op->HasKwarg("core_type") ? op->GetKwarg<int>("core_type") : 2);
 
     std::string core_type_tok;
@@ -2082,46 +2081,7 @@ static std::string MakeSystemSyncAllCodegenCCE(const ir::CallPtr& op, codegen::C
     else
         core_type_tok = "SyncCoreType::Mix";
 
-    if (mode == ir::SyncAllMode::HARD) {
-        // args[0] is an empty MakeTuple for hard mode
-        codegen.Emit("SYNCALL<" + core_type_tok + ">();");
-        return "";
-    }
-
-    // Soft mode: args[0] is a MakeTuple with workspace elements, dispatch by type
-    PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == 1)
-        << "system.sync_all expects 1 arg (workspaces tuple)";
-    auto tuple = ir::As<ir::MakeTuple>(op->args_[0]);
-    PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, tuple) << "system.sync_all: workspaces must be a tuple";
-
-    std::string gm, ub, l1, used_cores = "0";
-    for (const auto& elem : tuple->elements_) {
-        auto elem_type = elem->GetType();
-        if (ir::As<ir::TensorType>(elem_type)) {
-            gm = codegen.GetExprAsCode(elem);
-        } else if (auto tile_type = ir::As<ir::TileType>(elem_type)) {
-            auto space = tile_type->memref_.value()->memorySpace_;
-            if (space == ir::MemorySpace::Vec) {
-                ub = codegen.GetExprAsCode(elem);
-            } else if (space == ir::MemorySpace::Mat) {
-                l1 = codegen.GetExprAsCode(elem);
-            }
-        } else if (ir::As<ir::ScalarType>(elem_type)) {
-            used_cores = codegen.GetExprAsCode(elem);
-        }
-    }
-
-    std::ostringstream oss;
-    oss << "SYNCALL<SyncAllMode::Soft, " << core_type_tok << ">(" << gm;
-    if (core_type == ir::SyncCoreType::AIV_ONLY) {
-        oss << ", " << ub;
-    } else if (core_type == ir::SyncCoreType::AIC_ONLY) {
-        oss << ", " << l1;
-    } else { // MIX
-        oss << ", " << ub << ", " << l1;
-    }
-    oss << ", " << used_cores << ");";
-    codegen.Emit(oss.str());
+    codegen.Emit("SYNCALL<" + core_type_tok + ">();");
     return "";
 }
 

@@ -16,16 +16,14 @@
 
 在多个AIV核、多个AIC核，或AIV与AIC核之间建立核间屏障。参与同步的核到达sync_all后等待，直到本轮所有参与核均已到达，再继续执行。
 
-当前仅支持HARD模式，使用FFTS硬件同步，不需要workspace。
+使用FFTS硬件同步。
 
 ## 函数原型
 
 ```python
 pypto_pro.language.system.sync_all(
-    workspaces: Optional[List] = None,
     *,
     core_type: SyncCoreType = pypto_pro.language.SyncCoreType.MIX,
-    mode: SyncAllMode = pypto_pro.language.SyncAllMode.HARD,
 ) -> None
 ```
 
@@ -33,9 +31,7 @@ pypto_pro.language.system.sync_all(
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| workspaces | 输入 | 可选，当前仅支持HARD模式，不使用workspace，保持默认值None或传空列表。 |
 | core_type | 输入 | 可选，[pypto_pro.language.SyncCoreType](../basic_data_structures/SyncCoreType.md)枚举值，指定参与屏障的核类型，默认为pypto_pro.language.SyncCoreType.MIX。该参数不指定参与核数量。 |
-| mode | 输入 | 可选，[pypto_pro.language.SyncAllMode](../basic_data_structures/SyncAllMode.md)枚举值，指定同步实现模式，默认为pypto_pro.language.SyncAllMode.HARD，当前仅支持pypto_pro.language.SyncAllMode.HARD。 |
 
 ## 约束说明
 
@@ -44,7 +40,7 @@ pypto_pro.language.system.sync_all(
 - 多流或多个算子并发执行，且并发算子申请的核数总和超过物理核数时，如果至少两个并发算子使用sync_all，部分核可能因未被调度而无法到达屏障，造成死锁。须保证每个同步算子所需的核能够同时执行。
 - sync_all建立参与核之间的屏障。屏障前后需要跨核读写GM数据时，还需满足相应的数据可见性要求。
 - 与set_cross_core/wait_cross_core并用时，两侧的MIX屏障必须位于该SET/WAIT对的同一侧；禁止Cube侧先执行sync_all再SET、Vector侧先WAIT再执行sync_all，否则会形成环形等待。
-- HARD模式会占用核间同步事件ID：AIV_ONLY在AIV侧占用14，AIC_ONLY在AIC侧占用11；MIX在AIC侧占用11～13、在AIV侧占用12～13，MIX 1:2场景的AIC还会占用28和29。与set_cross_core/wait_cross_core同时使用时，不得将这些事件ID用于尚未完成的手工核间同步。
+- sync_all会占用核间同步事件ID：AIV_ONLY在AIV侧占用14，AIC_ONLY在AIC侧占用11；MIX在AIC侧占用11～13、在AIV侧占用12～13，MIX 1:2场景的AIC还会占用28和29。与set_cross_core/wait_cross_core同时使用时，不得将这些事件ID用于尚未完成的手工核间同步。
 
 ## 返回值说明
 
@@ -52,7 +48,7 @@ pypto_pro.language.system.sync_all(
 
 ## 调用示例
 
-下面是纯Vector Kernel展示HARD AIV_ONLY屏障的放置方式。各AIV按核号处理互不重叠的行，TileGroup和auto_mutex负责核内pipe依赖；sync_all位于循环外，使所有参与AIV在本阶段结束后再越过屏障。
+下面是纯Vector Kernel展示AIV_ONLY屏障的放置方式。各AIV按核号处理互不重叠的行，TileGroup和auto_mutex负责核内pipe依赖；sync_all位于循环外，使所有参与AIV在本阶段结束后再越过屏障。
 
 ```python
 import pypto_pro.language as pl
@@ -78,23 +74,21 @@ def sync_all_kernel(
             pl.store(out, tile_out, [row, 0])
 
         pl.system.sync_all(
-            mode=pl.SyncAllMode.HARD,
             core_type=pl.SyncCoreType.AIV_ONLY,
         )
 ```
 
-该示例使用HARD AIV_ONLY屏障，不需要传入workspaces。
+该示例使用AIV_ONLY屏障。
 
-### HARD模式
+### 核类型
 
-HARD模式的三种core_type调用方式如下。以下片段分别用于对应类型的Kernel。
+三种core_type调用方式如下。以下片段分别用于对应类型的Kernel。
 
 ```python
 # 纯Vector Kernel：所有参与AIV都执行
 with pl.section_vector():
     # ... Vector阶段计算
     pl.system.sync_all(
-        mode=pl.SyncAllMode.HARD,
         core_type=pl.SyncCoreType.AIV_ONLY,
     )
 
@@ -102,7 +96,6 @@ with pl.section_vector():
 with pl.section_cube():
     # ... Cube阶段计算
     pl.system.sync_all(
-        mode=pl.SyncAllMode.HARD,
         core_type=pl.SyncCoreType.AIC_ONLY,
     )
 
@@ -110,14 +103,12 @@ with pl.section_cube():
 with pl.section_cube():
     # ... Cube阶段计算
     pl.system.sync_all(
-        mode=pl.SyncAllMode.HARD,
         core_type=pl.SyncCoreType.MIX,
     )
 
 with pl.section_vector():
     # ... Vector阶段计算
     pl.system.sync_all(
-        mode=pl.SyncAllMode.HARD,
         core_type=pl.SyncCoreType.MIX,
     )
 ```

@@ -300,7 +300,6 @@
       - [pypto_pro.language.ReluPreMode](pro_api/SIMD-API/basic_data_structures/ReluPreMode.md)
       - [pypto_pro.language.RoundMode](pro_api/SIMD-API/basic_data_structures/RoundMode.md)
       - [pypto_pro.language.STPhase](pro_api/SIMD-API/basic_data_structures/STPhase.md)
-      - [pypto_pro.language.SyncAllMode](pro_api/SIMD-API/basic_data_structures/SyncAllMode.md)
       - [pypto_pro.language.SyncCoreType](pro_api/SIMD-API/basic_data_structures/SyncCoreType.md)
       - [pypto_pro.language.Tensor](pro_api/SIMD-API/basic_data_structures/Tensor.md)
       - [pypto_pro.language.TensorLayout](pro_api/SIMD-API/basic_data_structures/TensorLayout.md)

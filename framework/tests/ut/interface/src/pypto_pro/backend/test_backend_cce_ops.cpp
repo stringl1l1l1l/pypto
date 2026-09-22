@@ -1130,14 +1130,13 @@ TEST(BackendCceOpsTest, BlockSubviewInVFSectionSupportsScalarOffset)
 }
 
 // ============================================================================
-// Sync all (HARD mode)
+// Sync all
 // ============================================================================
 
 TEST(BackendCceOpsTest, SyncAllHardMix)
 {
-    auto empty_tuple = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{}, ir::Span::Unknown());
-    Kwargs kwargs = {{"mode", 0}};
-    auto call = std::make_shared<const ir::Call>("system.sync_all", std::vector<ir::ExprPtr>{empty_tuple}, kwargs,
+    Kwargs kwargs = {};
+    auto call = std::make_shared<const ir::Call>("system.sync_all", std::vector<ir::ExprPtr>{}, kwargs,
                                                  ir::Span::Unknown());
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
@@ -1148,41 +1147,14 @@ TEST(BackendCceOpsTest, SyncAllHardMix)
 
 TEST(BackendCceOpsTest, SyncAllHardAIVOnly)
 {
-    auto empty_tuple = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{}, ir::Span::Unknown());
-    Kwargs kwargs = {{"mode", 0}, {"core_type", 0}};
-    auto call = std::make_shared<const ir::Call>("system.sync_all", std::vector<ir::ExprPtr>{empty_tuple}, kwargs,
+    Kwargs kwargs = {{"core_type", 0}};
+    auto call = std::make_shared<const ir::Call>("system.sync_all", std::vector<ir::ExprPtr>{}, kwargs,
                                                  ir::Span::Unknown());
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
     auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
     EXPECT_NE(generated.find("SYNCALL<SyncCoreType::AIVOnly>();"), std::string::npos);
-}
-
-TEST(BackendCceOpsTest, SyncAllSoftUsesCoreSpecificWorkspaces)
-{
-    auto gm = MakeTensorVar("gm", {64}, ir::DataType::UINT8);
-    auto ub = MakeVar("ub", MakeTileType({16, 16}, ir::DataType::FP16, ir::MemorySpace::Vec));
-    auto l1 = MakeVar("l1", MakeTileType({16, 16}, ir::DataType::FP16, ir::MemorySpace::Mat));
-    auto used_cores = MakeVar("used_cores", std::make_shared<const ir::ScalarType>(ir::DataType::INT32));
-
-    auto make_sync_all = [&](ir::SyncCoreType core_type, std::vector<ir::ExprPtr> workspaces) {
-        Kwargs kwargs = {{"mode", static_cast<int>(ir::SyncAllMode::SOFT)}, {"core_type", static_cast<int>(core_type)}};
-        return std::make_shared<const ir::Call>(
-            "system.sync_all", std::vector<ir::ExprPtr>{MakeTuple(std::move(workspaces))}, kwargs, ir::Span::Unknown());
-    };
-
-    auto aiv_code = RunCodegen("system.sync_all", make_sync_all(ir::SyncCoreType::AIV_ONLY, {gm, ub, used_cores}));
-    EXPECT_NE(aiv_code.find("SYNCALL<SyncAllMode::Soft, SyncCoreType::AIVOnly>(gm, ub, used_cores);"),
-              std::string::npos);
-
-    auto aic_code = RunCodegen("system.sync_all", make_sync_all(ir::SyncCoreType::AIC_ONLY, {gm, l1, used_cores}));
-    EXPECT_NE(aic_code.find("SYNCALL<SyncAllMode::Soft, SyncCoreType::AICOnly>(gm, l1, used_cores);"),
-              std::string::npos);
-
-    auto mix_code = RunCodegen("system.sync_all", make_sync_all(ir::SyncCoreType::MIX, {gm, ub, l1, used_cores}));
-    EXPECT_NE(mix_code.find("SYNCALL<SyncAllMode::Soft, SyncCoreType::Mix>(gm, ub, l1, used_cores);"),
-              std::string::npos);
 }
 
 // ============================================================================

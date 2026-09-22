@@ -187,7 +187,7 @@ def four_stage_kernel(
         with pl.section_cube():
             a_use_hi(i, a_hi, a_left)
 
-    pl.system.sync_all(mode=pl.SyncAllMode.HARD, core_type=pl.SyncCoreType.MIX)
+    pl.system.sync_all(core_type=pl.SyncCoreType.MIX)
 
     for j in pl.range(0, NT):
         with pl.section_vector():
@@ -245,7 +245,7 @@ def mixed_preload_kernel(
         with pl.section_cube():
             a_use_lo(i, a_lo, a_left)
 
-    pl.system.sync_all(mode=pl.SyncAllMode.HARD, core_type=pl.SyncCoreType.MIX)
+    pl.system.sync_all(core_type=pl.SyncCoreType.MIX)
 
     for j in pl.range(0, NT):
         with pl.section_vector():

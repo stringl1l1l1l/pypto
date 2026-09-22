@@ -52,7 +52,6 @@ __all__ = [
     "QuantMode",
     "CrossCoreSyncMode",
     "SyncCoreType",
-    "SyncAllMode",
     "CacheLine",
     "DcciDst",
     "DT_FP4",
@@ -257,7 +256,6 @@ from pypto.ir import (
     SqueezeMode,
     StoreDist,
     STPhase,
-    SyncAllMode,
     SyncCoreType,
     VFRoundMode,
 )

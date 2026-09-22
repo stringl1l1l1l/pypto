@@ -90,7 +90,6 @@ def sync_all_kernel(
             pl.store(out, tile_out, [row, 0])
 
         pl.system.sync_all(
-            mode=pl.SyncAllMode.HARD,
             core_type=pl.SyncCoreType.AIV_ONLY,
         )
 

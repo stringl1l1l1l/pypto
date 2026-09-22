@@ -58,95 +58,6 @@ bool IsDcciTensorOffset(const ExprPtr& offset)
     return true;
 }
 
-TypePtr DeduceSyncAllType(const std::vector<ExprPtr>& args, const std::vector<std::pair<std::string, std::any>>& kwargs)
-{
-    int mode = 0;      // SyncAllMode::HARD = 0
-    int core_type = 2; // SyncCoreType::MIX = 2
-    for (const auto& [key, value] : kwargs) {
-        if (key == "mode")
-            mode = std::any_cast<int>(value);
-        if (key == "core_type")
-            core_type = std::any_cast<int>(value);
-    }
-
-    if (mode == 0) { // HARD
-        // args[0] is an empty MakeTuple for hard mode
-        if (!args.empty()) {
-            auto tuple = As<MakeTuple>(args[0]);
-            PRO_IR_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, !tuple || tuple->elements_.empty())
-                << "system.sync_all hard mode does not accept workspace arguments";
-        }
-    } else if (mode == 1) { // SOFT
-        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, core_type == 0 || core_type == 1 || core_type == 2)
-            << "system.sync_all soft mode core_type must be AIV_ONLY(0), AIC_ONLY(1), or MIX(2), got " << core_type;
-        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 1)
-            << "system.sync_all soft mode requires exactly 1 argument (workspaces list), got " << args.size();
-
-        // Unpack MakeTuple elements and classify by type
-        auto tuple = As<MakeTuple>(args[0]);
-        PRO_IR_CHECK(ExternalError::INVALID_TYPE, tuple)
-            << "system.sync_all soft mode: workspaces argument must be a list/tuple";
-
-        bool has_gm = false, has_ub = false, has_l1 = false, has_used_cores = false;
-        for (const auto& elem : tuple->elements_) {
-            auto elem_type = elem->GetType();
-            if (As<TensorType>(elem_type)) {
-                PRO_IR_CHECK(ExternalError::INVALID_OPERATION, !has_gm)
-                    << "system.sync_all: duplicate gm_workspace (TensorType) in workspaces list";
-                has_gm = true;
-            } else if (auto tile_type = As<TileType>(elem_type)) {
-                PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, tile_type->memref_.has_value())
-                    << "system.sync_all: workspace tile must have memref";
-                auto space = tile_type->memref_.value()->memorySpace_;
-                if (space == MemorySpace::Vec) {
-                    PRO_IR_CHECK(ExternalError::INVALID_OPERATION, !has_ub)
-                        << "system.sync_all: duplicate ub_workspace (Vec TileType) in workspaces list";
-                    has_ub = true;
-                } else if (space == MemorySpace::Mat) {
-                    PRO_IR_CHECK(ExternalError::INVALID_OPERATION, !has_l1)
-                        << "system.sync_all: duplicate l1_workspace (Mat TileType) in workspaces list";
-                    has_l1 = true;
-                } else {
-                    PRO_IR_CHECK(ExternalError::INVALID_OPERATION, false)
-                        << "system.sync_all: workspace tile must be Vec or Mat, got " << static_cast<int>(space);
-                }
-            } else if (IsIntScalar(elem)) {
-                PRO_IR_CHECK(ExternalError::INVALID_OPERATION, !has_used_cores)
-                    << "system.sync_all: duplicate used_cores (int scalar) in workspaces list";
-                has_used_cores = true;
-            } else {
-                PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, false)
-                    << "system.sync_all: unrecognized element type in workspaces list: " << elem_type->TypeName();
-            }
-        }
-
-        // Validate required workspaces per core_type
-        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, has_gm)
-            << "system.sync_all soft mode: workspaces list must contain a gm_workspace (TensorType)";
-        if (core_type == 0) { // AIV_ONLY
-            PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, has_ub)
-                << "system.sync_all soft aiv_only: workspaces list must contain ub_workspace (Vec TileType)";
-            PRO_IR_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, !has_l1)
-                << "system.sync_all soft aiv_only: l1_workspace (Mat TileType) is not allowed";
-        } else if (core_type == 1) { // AIC_ONLY
-            PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, has_l1)
-                << "system.sync_all soft aic_only: workspaces list must contain l1_workspace (Mat TileType)";
-            PRO_IR_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, !has_ub)
-                << "system.sync_all soft aic_only: ub_workspace (Vec TileType) is not allowed";
-        } else { // MIX
-            PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, has_ub)
-                << "system.sync_all soft mix: workspaces list must contain ub_workspace (Vec TileType)";
-            PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, has_l1)
-                << "system.sync_all soft mix: workspaces list must contain l1_workspace (Mat TileType)";
-        }
-    } else {
-        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, false)
-            << "system.sync_all: mode must be HARD(0) or SOFT(1), got " << mode;
-    }
-
-    return GetUnknownType();
-}
-
 } // namespace
 
 // ============================================================================
@@ -259,18 +170,13 @@ REGISTER_OP("system.wait_cross_core_dyn")
     .f_deduce_type(DeduceUnknownType);
 
 // Register system.sync_all (Global Core Synchronization)
-// Delegates to pto-isa SYNCALL<SyncAllMode, SyncCoreType>() / pto.syncall MLIR op.
-// Hard mode (default): no arguments.
-// Soft mode: workspaces list passed as a single MakeTuple arg.
-//   Backend codegen dispatches by type: TensorType→gm, Vec TileType→ub, Mat TileType→l1, ScalarType→used_cores.
+// Delegates to pto-isa SYNCALL<SyncCoreType>() / pto.syncall MLIR op.
 REGISTER_OP("system.sync_all")
-    .set_description("Global core synchronization (hard or soft mode)")
+    .set_description("Global core synchronization")
     .set_op_category("SyncOp")
-    .add_argument("workspaces",
-                  "Soft mode workspace list as MakeTuple (Tensor gm + Tile ub/l1 + optional int used_cores)")
-    .set_attr<int>("mode")
+    .no_argument()
     .set_attr<int>("core_type")
-    .f_deduce_type(DeduceSyncAllType);
+    .f_deduce_type(DeduceUnknownType);
 
 // Register system.dcci (Data Cache Clean and Invalid)
 // Arguments:

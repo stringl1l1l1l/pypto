@@ -159,17 +159,6 @@ def test_sync_all_core_type_rejects_plain_integer():
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
 
-def test_sync_all_mode_rejects_plain_integer():
-    with pytest.raises(InvalidVal, match="'mode' expects an enum value"):
-
-        @pl.jit(auto_mutex=False)
-        def func(_jit_entry: pl.DT_INT64):
-            pl.system.sync_all(mode=0)
-
-
-        func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
-
-
 @pytest.mark.parametrize("event_id", [True, False])
 def test_sync_event_id_rejects_bool(event_id):
     @pl.jit(auto_mutex=False)
@@ -340,14 +329,23 @@ def test_manual_mutex_has_no_auto_candidate_metadata(builder):
     assert "mutex_ids" not in str(call)
 
 
-def test_sync_all_hard_mode_rejects_workspaces_in_frontend():
-    with pytest.raises(NotSupported, match="Hard mode sync_all does not accept workspace arguments"):
-        pl.system.sync_all([0], mode=pl.SyncAllMode.HARD)
+def test_sync_all_rejects_workspaces_in_frontend():
+    with pytest.raises(TypeError, match="positional argument"):
+        pl.system.sync_all([0])
 
 
-def test_sync_all_soft_mode_requires_workspaces_in_frontend():
-    with pytest.raises(ValueError, match="Soft mode sync_all requires workspaces list"):
-        pl.system.sync_all(mode=pl.SyncAllMode.SOFT)
+def test_sync_all_rejects_mode_in_frontend():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'mode'"):
+        pl.system.sync_all(mode=0)
+
+
+def test_sync_all_rejects_workspaces_in_parser():
+    @pl.jit(auto_mutex=False)
+    def func(_jit_entry: pl.DT_INT64):
+        pl.system.sync_all([0])
+
+    with pytest.raises(InvalidArgument, match="does not accept positional arguments"):
+        func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
 
 def test_complex_integer_event_id_expression_is_accepted():

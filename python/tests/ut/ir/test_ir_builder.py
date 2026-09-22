@@ -490,7 +490,7 @@ def test_builder_if_with_runtime_op():
 
     b.begin_function("f", sp)
     b.begin_if(ir.ConstBool(True, sp), sp)
-    sync = pypto_impl.ir.create_op_call("system.sync_all", [], {"mode": 0, "core_type": 2}, sp)
+    sync = pypto_impl.ir.create_op_call("system.sync_all", [], {"core_type": 2}, sp)
     b.emit(ir.EvalStmt(sync, sp))
     if_stmt = b.end_if(sp)
     func = b.end_function(sp)

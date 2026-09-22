@@ -580,10 +580,6 @@ void BindTypeClass(py::module_& ir)
         .value("AIC_ONLY", ir::SyncCoreType::AIC_ONLY, "Sync cube cores only")
         .value("MIX", ir::SyncCoreType::MIX, "Sync both AIC and AIV cores");
 
-    py::enum_<ir::SyncAllMode>(ir, "SyncAllMode", "Synchronization mode for sync_all")
-        .value("HARD", ir::SyncAllMode::HARD, "Hardware FFTS signal (default)")
-        .value("SOFT", ir::SyncAllMode::SOFT, "GM workspace polling");
-
     py::enum_<ir::CacheLine>(ir, "CacheLine", "Cache line scope for DCCI")
         .value("SINGLE_CACHE_LINE", ir::CacheLine::SINGLE_CACHE_LINE, "Single cache line")
         .value("ENTIRE_DATA_CACHE", ir::CacheLine::ENTIRE_DATA_CACHE, "Entire data cache");

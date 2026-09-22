@@ -81,7 +81,7 @@ def _api_decl(func):
 
 
 @_api_decl
-def load(dst_tile: Tile, src_tensor: Tensor, offsets: Offset, *, order: Optional[List[int]] = None) -> None:
+def load(dst_tile: Tile, src_tensor: Tensor, /, offsets: Offset, *, order: Optional[List[int]] = None) -> None:
     """Load data from GM Tensor into on-chip Tile by absolute element coordinates.
 
     Args:
@@ -97,7 +97,9 @@ def load(dst_tile: Tile, src_tensor: Tensor, offsets: Offset, *, order: Optional
 
 
 @_api_decl
-def load_tile(dst_tile: Tile, src_tensor: Tensor, tile_offsets: Offset, *, order: Optional[List[int]] = None) -> None:
+def load_tile(
+    dst_tile: Tile, src_tensor: Tensor, /, tile_offsets: Offset, *, order: Optional[List[int]] = None
+) -> None:
     """Load data from GM Tensor into on-chip Tile by tile-block index.
 
     Offsets are in tile-block units, internally multiplied by tile shape.
@@ -120,6 +122,7 @@ def load_tile(dst_tile: Tile, src_tensor: Tensor, tile_offsets: Offset, *, order
 def store(
     dst_tensor: Tensor,
     src_tile: Tile,
+    /,
     offsets: Offset,
     *,
     relu_pre_mode: Optional[ReluPreMode] = None,
@@ -167,6 +170,7 @@ def store(
 def store_tile(
     dst_tensor: Tensor,
     src_tile: Tile,
+    /,
     tile_offsets: Offset,
     *,
     relu_pre_mode: Optional[ReluPreMode] = None,
@@ -243,6 +247,7 @@ def init_output(
 def move(
     dst_tile: Tile,
     src_tile: Tile,
+    /,
     offset: Optional[Offset] = None,
     *,
     acc_to_vec_mode: Optional[AccToVecMode] = None,
@@ -299,7 +304,7 @@ def move(
 
 
 @_api_decl
-def insert(dst_tile: Tile, src_tile: Tile, offset: List[int]) -> None:
+def insert(dst_tile: Tile, src_tile: Tile, /, offset: List[int]) -> None:
     """Insert a small Tile into a larger Tile at the given 2-D offset (TINSERT).
 
     Args:
@@ -310,7 +315,7 @@ def insert(dst_tile: Tile, src_tile: Tile, offset: List[int]) -> None:
 
 
 @_api_decl
-def ssbuf_load(struct_var: Any, offset: int) -> None:
+def ssbuf_load(struct_var: Any, offset: int, /) -> None:
     """Load data from SuperScalar Buffer (SSBUF) into a struct variable.
 
     Args:
@@ -320,7 +325,7 @@ def ssbuf_load(struct_var: Any, offset: int) -> None:
 
 
 @_api_decl
-def ssbuf_store(struct_var: Any, offset: int) -> None:
+def ssbuf_store(struct_var: Any, offset: int, /) -> None:
     """Write a struct variable to SuperScalar Buffer (SSBUF).
 
     Args:
@@ -624,7 +629,7 @@ def fused_mul_add_relu(out: Tile, a: Tile, b: Tile) -> None:
 
 
 @_api_decl
-def axpy(out: Tile, src: Tile, alpha: Scalar) -> None:
+def axpy(out: Tile, src: Tile, alpha: Scalar, /) -> None:
     """AXPY: ``out[i] = alpha * src[i] + out[i]``
 
     Args:
@@ -659,7 +664,8 @@ def partmul(out: Tile, src0: Tile, src1: Tile) -> None:
 
 @_api_decl
 def matmul(
-    dst_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, bias_tile: Tile = None, *, phase: Optional[AccPhase] = None
+    dst_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, bias_tile: Optional[Tile] = None, /,
+    *, phase: Optional[AccPhase] = None
 ) -> None:
     """Matrix multiply: ``dst = lhs @ rhs`` (L0A × L0B → L0C).
 
@@ -670,14 +676,14 @@ def matmul(
         dst_tile: Accumulator Tile (L0C, output)
         lhs_tile: Left matrix Tile (L0A)
         rhs_tile: Right matrix Tile (L0B)
-        bias_tile: Optional — Bias Tile (L0B Bias area, shape [1, N], row-broadcast)
+        bias_tile: Optional positional Bias Tile (L0B Bias area, shape [1, N], row-broadcast)
         phase: Optional — ``pl.AccPhase.Partial`` or ``pl.AccPhase.Final``
     """
 
 
 @_api_decl
 def matmul_acc(
-    dst_tile: Tile, acc_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, *, phase: Optional[AccPhase] = None
+    dst_tile: Tile, acc_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, /, *, phase: Optional[AccPhase] = None
 ) -> None:
     """Accumulating matrix multiply: ``dst = acc + lhs @ rhs`` (K-dim block accumulation).
 
@@ -692,7 +698,7 @@ def matmul_acc(
 
 @_api_decl
 def matmul_mx(
-    dst_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, scale_a: Tile, scale_b: Tile,
+    dst_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, /, scale_a: Tile, scale_b: Tile,
     *, phase: Optional[AccPhase] = None
 ) -> None:
     """MX matmul with per-group E8M0 scale: ``dst = lhs @ rhs``
@@ -712,7 +718,7 @@ def matmul_mx(
 
 @_api_decl
 def matmul_mx_acc(
-    dst_tile: Tile, acc_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, scale_a: Tile, scale_b: Tile,
+    dst_tile: Tile, acc_tile: Tile, lhs_tile: Tile, rhs_tile: Tile, /, scale_a: Tile, scale_b: Tile,
     *, phase: Optional[AccPhase] = None
 ) -> None:
     """MX matmul with accumulation: ``dst = acc + lhs @ rhs``
@@ -993,14 +999,14 @@ def setval(container: "Tile | Tensor", offset: int, value: Scalar) -> None:
 
 
 @_api_decl
-def set_validshape(tile: "Tile | TileGroup", shape: List[int]) -> None:
+def set_validshape(tile: "Tile | TileGroup", /, shape: List[int]) -> None:
     """Set the valid shape of a Tile or tile_group (for partial-tile / tail-block operations).
 
     When a tile_group is passed, valid_shape is set on all tiles in the group.
     """
 
 @_api_decl
-def reinterpret(tile: "Tile | TileGroup", *, dtype: DType = None, shape: List[int] = None,
+def reinterpret(tile: "Tile | TileGroup", /, *, dtype: DType = None, shape: List[int] = None,
                 layout: Optional[TensorLayout] = None) -> "Tile | TileGroup":
     """Reinterpret a Tile or tile_group's dtype/shape/layout metadata without data movement.
 
@@ -1064,7 +1070,7 @@ def fill_index(out: Tile, start: Scalar) -> None:
 
 
 @_api_decl
-def pto_assert(condition: bool, format_str: Optional[str] = None, *args, loc: bool = False) -> None:
+def pto_assert(condition: bool, /, format_str: Optional[str] = None, *args, loc: bool = False) -> None:
     """Runtime assert: abort if condition is false, optionally print error message.
 
     Args:
@@ -1128,7 +1134,7 @@ def trap() -> None:
 
 
 @_api_decl
-def min(lhs: Scalar, rhs: Scalar) -> Scalar:
+def min(lhs: Scalar, rhs: Scalar, /) -> Scalar:
     """Return the minimum of two scalars.
 
     Scalar-only operation for loop-bound calculations etc.
@@ -1144,7 +1150,7 @@ def min(lhs: Scalar, rhs: Scalar) -> Scalar:
 
 
 @_api_decl
-def max(lhs: Scalar, rhs: Scalar) -> Scalar:
+def max(lhs: Scalar, rhs: Scalar, /) -> Scalar:
     """Return the maximum of two scalars.
 
     Scalar-only operation for loop-bound calculations etc.
@@ -1215,7 +1221,7 @@ def maximum(out: Tile, lhs: Tile, rhs: Union[Tile, Scalar], *, dim: Optional[int
 
 
 @_api_decl
-def const(value: Union[int, float], dtype: DType) -> Scalar:
+def const(value: Union[int, float], dtype: DType, /) -> Scalar:
     """Create a typed compile-time constant.
 
     Args:
@@ -1225,7 +1231,7 @@ def const(value: Union[int, float], dtype: DType) -> Scalar:
 
 
 @_api_decl
-def astype(x: Scalar, dtype: DType) -> Scalar:
+def astype(x: Scalar, dtype: DType, /) -> Scalar:
     """Convert a runtime scalar expression to ``dtype``.
 
     Args:
@@ -1239,7 +1245,7 @@ def astype(x: Scalar, dtype: DType) -> Scalar:
 # ===================================================================
 
 
-def range(start: int, stop: Optional[int] = None, step: int = 1):
+def range(start: int, stop: Optional[int] = None, step: int = 1, /):
     """Loop iterator for ``for`` loops.
 
     Usage::
@@ -1315,7 +1321,7 @@ def get_spr() -> int:
 
 
 @_api_decl
-def set_saturation_flag(mode: SaturationFlagMode, enable: bool) -> None:
+def set_saturation_flag(*, mode: SaturationFlagMode, enable: bool) -> None:
     """Set the saturation flag in the CTRL special purpose register.
 
     Controls the global saturation mode for Cast (vcvt) and other
@@ -1338,7 +1344,7 @@ def set_saturation_flag(mode: SaturationFlagMode, enable: bool) -> None:
 
 
 @_api_decl
-def get_saturation_flag(mode: SaturationFlagMode) -> bool:
+def get_saturation_flag(*, mode: SaturationFlagMode) -> bool:
     """Read the saturation flag from the CTRL special purpose register.
 
     Returns the current saturation state for the given mode category.
@@ -1353,7 +1359,7 @@ def get_saturation_flag(mode: SaturationFlagMode) -> bool:
 
 
 @_api_decl
-def set_ctrl_spr(start_bit: int, end_bit: int, value: int) -> None:
+def set_ctrl_spr(start_bit: int, end_bit: int, value: int, /) -> None:
     """Set a bit range in the CTRL special purpose register.
 
     Writes ``value`` into the CTRL register bits ``[start_bit, end_bit]``,
@@ -1372,7 +1378,7 @@ def set_ctrl_spr(start_bit: int, end_bit: int, value: int) -> None:
 
 
 @_api_decl
-def get_ctrl_spr(start_bit: int, end_bit: int) -> int:
+def get_ctrl_spr(start_bit: int, end_bit: int, /) -> int:
     """Read a bit range from the CTRL special purpose register.
 
     Returns the value of CTRL register bits ``[start_bit, end_bit]``.
@@ -1388,7 +1394,7 @@ def get_ctrl_spr(start_bit: int, end_bit: int) -> int:
 
 
 @_api_decl
-def reset_ctrl_spr(start_bit: int, end_bit: int) -> None:
+def reset_ctrl_spr(start_bit: int, end_bit: int, /) -> None:
     """Reset a bit range in the CTRL register to default values.
 
     Restores CTRL register bits ``[start_bit, end_bit]`` to their
@@ -1405,6 +1411,7 @@ def reset_ctrl_spr(start_bit: int, end_bit: int) -> None:
 @_api_decl
 def make_tile(
     tile_type: Any,
+    /,
     *,
     addr: int,
 ) -> Tile:
