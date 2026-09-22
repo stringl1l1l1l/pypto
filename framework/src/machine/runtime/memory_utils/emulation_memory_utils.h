@@ -28,14 +28,15 @@ struct EmulationMemoryUtils {
     EmulationMemoryUtils() {}
     ~EmulationMemoryUtils() = default;
     static bool IsDevice() { return false; }
-    uint8_t* AllocDev(size_t size, uint8_t** cachedDevAddrHolder)
+    // 默认 8 字节对齐；统一用 aligned_alloc 保证基址按 align 对齐
+    uint8_t* AllocDev(size_t size, uint8_t** cachedDevAddrHolder, size_t align = 8)
     {
         (void)cachedDevAddrHolder;
         if (size == 0 || size >= 0xFFFFFFFFF) {
             MACHINE_LOGE(DevCommonErr::PARAM_INVALID, "AllocDev failed: size=%zu bytes", size);
             return nullptr;
         }
-        uint8_t* rawPtr = (uint8_t*)malloc(size);
+        uint8_t* rawPtr = (uint8_t*)aligned_alloc(align, (size + align - 1) / align * align);
         if (rawPtr == nullptr) {
             MACHINE_LOGE(DevCommonErr::MALLOC_FAILED, "AllocDev failed: malloc %zu bytes", size);
             return nullptr;
@@ -45,10 +46,10 @@ struct EmulationMemoryUtils {
         return rawPtr;
     }
 
-    uint8_t* AllocZero(uint64_t size, uint8_t** cachedDevAddrHolder)
+    uint8_t* AllocZero(uint64_t size, uint8_t** cachedDevAddrHolder, size_t align = 8)
     {
         (void)cachedDevAddrHolder;
-        uint8_t* devPtr = AllocDev(size, nullptr);
+        uint8_t* devPtr = AllocDev(size, nullptr, align);
         memset_s(devPtr, size, 0, size);
         return devPtr;
     }

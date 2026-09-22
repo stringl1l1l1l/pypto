@@ -3381,6 +3381,9 @@ void DevControlFlowCache::Init(void* dyndevAttrPtr, uint64_t cacheSize, uint64_t
 
     initOffset = AlignUp(initOffset, alignof(DynFuncHeader*));
     deviceTaskCacheList.HostInitDataSizeOffset(initOffset, DEFAULT_CACHE_DEVICE_TASK_NUM);
+    // stitch 节点 nodeNext 低 6 位复用为子链长度，节点地址须 64 字节对齐；
+    // cache 对象基址已按 64 对齐分配，此处把 cacheData 相对对象基址的偏移也对齐到 64
+    initOffset = AlignUp(initOffset, CFGCACHE_ALIGN);
     cacheData.HostInitDataSizeOffset(initOffset, cacheSize);
     isRecording = false;
     isRecordingStopped = false;

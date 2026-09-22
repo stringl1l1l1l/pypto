@@ -22,6 +22,12 @@ namespace npu::tile_fwk {
 
 constexpr uint32_t DUPPED_STITCH_NODE_U32_SIZE = 0x10;
 constexpr uint32_t DUPPED_STITCH_SIZE = DUPPED_STITCH_NODE_U32_SIZE - (sizeof(void*) / sizeof(uint32_t)) - 0x1;
+// nodeNext 编码（全部落在低 6 位，节点地址 64 字节对齐 → 低 6 位恒为 0）：
+// nodeNext == 0 表示无后继节点；非 0 时：
+//   bit0-5   = 后续节点数 R（以本节点为头的子链内、除自己外的节点数，≤63）
+constexpr uint64_t DUPPED_STITCH_NODE_ADDR_MASK = 0xFFFFFFFFFFFFFFC0ULL;
+constexpr uint32_t DUPPED_STITCH_NODE_REMAIN_COUNT_MASK = 0x3F;
+constexpr uint64_t DUPPED_STITCH_NODE_ALIGN = DUPPED_STITCH_NODE_REMAIN_COUNT_MASK + 1;
 
 struct DevAscendFunctionOperationSuccInfo {
     uint16_t staticIndex;
@@ -40,8 +46,16 @@ struct DevAscendFunctionDuppedStitchNode {
     void SafePushBack(uint32_t taskId) { nodeTaskList[nodeSize++] = taskId; }
 
     uint32_t Size() const { return nodeSize; }
-    DevAscendFunctionDuppedStitchNode* const& Next() const { return nodeNext; }
-    DevAscendFunctionDuppedStitchNode*& Next() { return nodeNext; }
+
+    // 遍历接口：内部解码 nodeNext 低 6 位编码后返回真实后继地址
+    DevAscendFunctionDuppedStitchNode* Next() const
+    {
+        return (DevAscendFunctionDuppedStitchNode*)((uint64_t)nodeNext & DUPPED_STITCH_NODE_ADDR_MASK);
+    }
+
+    // 原始字段引用：仅内部编码写入 / 控制流缓存重定位使用，外部禁止
+    DevAscendFunctionDuppedStitchNode* const& NextRaw() const { return nodeNext; }
+    DevAscendFunctionDuppedStitchNode*& NextRaw() { return nodeNext; }
 
     // 函数在核心流程，已在Size()内循环，校验会影响性能
     uint32_t At(uint32_t idx) const { return nodeTaskList[idx]; }
@@ -58,7 +72,6 @@ struct DevAscendFunctionDuppedStitchNode {
     uint32_t nodeSize;
     uint32_t nodeTaskList[DUPPED_STITCH_SIZE];
 };
-
 } // namespace npu::tile_fwk
 
 #endif

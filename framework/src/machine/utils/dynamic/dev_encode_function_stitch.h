@@ -68,6 +68,46 @@ struct DevAscendFunctionDuppedStitchList {
         return oss.str();
     }
 
+    // 子链长度编码（节点地址 64 字节对齐 → 低 6 位恒 0，可复用）：
+    // 低 6 位写"本节点之后的节点数 R"（子链大小 S = R + 1，R ≤ 63）。
+    // 链头写 min(N-1,63)；其余节点 idx（从 1 起）写 min(lowbit(idx)-1, 63, N-1-idx)，
+    // 即把链按 2 的幂（1,2,4,8,16,32 / 每 64 一轮）切成子链，末段截断到链尾。
+    // 两遍线性遍历（第一遍统计 N，第二遍写 R），无递归、无重复 walk；
+    // 叶子/链尾节点低 6 位天然为 0，不编码；任务数始终读 nodeSize，不参与编码。
+    void EncodeStitchNodes()
+    {
+        uint32_t chainNodeCount = 0;
+        for (auto* n = head_; n != nullptr; n = n->Next()) {
+            chainNodeCount++;
+        }
+        if (chainNodeCount <= 1) {
+            return;
+        }
+        uint32_t headSuccNodeCount = chainNodeCount - 1;
+        if (headSuccNodeCount > npu::tile_fwk::DUPPED_STITCH_NODE_REMAIN_COUNT_MASK) {
+            headSuccNodeCount = npu::tile_fwk::DUPPED_STITCH_NODE_REMAIN_COUNT_MASK;
+        }
+        head_->NextRaw() = reinterpret_cast<DevAscendFunctionDuppedStitch*>(
+            reinterpret_cast<uint64_t>(head_->Next()) |
+            (static_cast<uint64_t>(headSuccNodeCount) & npu::tile_fwk::DUPPED_STITCH_NODE_REMAIN_COUNT_MASK));
+        uint32_t nodeIndex = 1;
+        for (auto* n = head_->Next(); n != nullptr; n = n->Next(), nodeIndex++) {
+            uint32_t subChainFullSize = nodeIndex & (~nodeIndex + 1u);
+            uint32_t succNodeCount = subChainFullSize - 1;
+            if (succNodeCount > npu::tile_fwk::DUPPED_STITCH_NODE_REMAIN_COUNT_MASK) {
+                succNodeCount = npu::tile_fwk::DUPPED_STITCH_NODE_REMAIN_COUNT_MASK;
+            }
+            uint32_t nodesToChainEnd = chainNodeCount - 1 - nodeIndex;
+            if (nodesToChainEnd < succNodeCount) {
+                succNodeCount = nodesToChainEnd;
+            }
+            n->NextRaw() = reinterpret_cast<DevAscendFunctionDuppedStitch*>(
+                reinterpret_cast<uint64_t>(n->Next()) |
+                (static_cast<uint64_t>(succNodeCount) & npu::tile_fwk::DUPPED_STITCH_NODE_REMAIN_COUNT_MASK));
+        }
+    }
+
+public:
     template <typename T = uint32_t>
     static std::string DumpTask(T* idx, int size)
     {

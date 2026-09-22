@@ -285,13 +285,13 @@ struct DevControlFlowCache {
         return reinterpret_cast<uintptr_t>(ctrlFlowLastField.End()) - reinterpret_cast<uintptr_t>(this);
     }
 
-#define CFGCACHE_ALIGN 8
+#define CFGCACHE_ALIGN 64
     void* AllocateCache(uint64_t size)
     {
         void* result = nullptr;
         if (cacheDataOffset + size < cacheData.size()) {
             result = &cacheData[cacheDataOffset];
-            /* make cache 8 byte aligned */
+            /* make cache 64 byte aligned */
             cacheDataOffset += (size + CFGCACHE_ALIGN - 1) / CFGCACHE_ALIGN * CFGCACHE_ALIGN;
             DEV_VERBOSE_DEBUG("cacheDataOffset is: %lu", cacheDataOffset);
         } else {

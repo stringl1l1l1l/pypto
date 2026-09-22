@@ -164,8 +164,9 @@ DevControlFlowCache* EmulationLauncher::CreateHostCtrlFlowCache(DevAscendProgram
     uintdevptr_t initOffset = reinterpret_cast<uintdevptr_t>(encodeCtrlCache.data);
     InitHostCtrlFlowCacheLayout(encodeCtrlCache, devProg, dyndevAttr, initOffset);
     uint32_t ctrlCacheAllocSize = encodeCtrlCache.GetSize();
+    // stichNode在保持controlFlow 64B 对齐。
     DevControlFlowCache* hostCtrlFlowCache = reinterpret_cast<DevControlFlowCache*>(
-        memUtils.AllocZero(ctrlCacheAllocSize, nullptr));
+        memUtils.AllocZero(ctrlCacheAllocSize, nullptr, static_cast<size_t>(npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN)));
     if (hostCtrlFlowCache == nullptr) {
         return nullptr;
     }

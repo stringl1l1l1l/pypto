@@ -725,6 +725,23 @@ INLINE void DrcoResolveDependOnceCore(DrcoEntryState* state, __gm__ npu::tile_fw
     }
 }
 
+// 解码 stitch 节点 nodeNext 低 6 位：本节点之后的节点数 R（子链大小 S = R + 1，R ≤ 63）。
+// 链头写 min(N-1,63)；每个子链头写其子链后续节点数（EncodeStitchNodes 写入）。
+// 任务数始终从 nodeSize 字段读取（不参与编码）。
+INLINE static uint32_t StitchNodeRemainingCount(__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node)
+{
+    return static_cast<uint32_t>(reinterpret_cast<uint64_t>(node->nodeNext) &
+                                 npu::tile_fwk::DUPPED_STITCH_NODE_REMAIN_COUNT_MASK);
+}
+
+// device 侧遍历解码：nodeNext 低 6 位含编码，清低 6 位后返回真实后继地址
+INLINE static __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* StitchNodeDecodedNext(
+    __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node)
+{
+    return reinterpret_cast<__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode*>(
+        reinterpret_cast<uint64_t>(node->nodeNext) & npu::tile_fwk::DUPPED_STITCH_NODE_ADDR_MASK);
+}
+
 // 就地遍历单个 stitch 节点解依赖：DrcoResolveDepend 首节点路径与矩阵 push 失败兜底共用，
 // 走完整 DrcoResolveDependOnce 路由（含 hub 处理）
 INLINE void DrcoResolveStitchNodeTasks(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
@@ -813,6 +830,56 @@ INLINE void DrcoStitchNodeTasksResolveCore(DrcoEntryState* state, __gm__ npu::ti
     }
 }
 
+// 尝试把子链头 subChainHead 推入矩阵，失败则就地解该子链整段兜底。
+// 子链边界由 subChainHead 编码的 R 确定（S = R + 1 个节点，走满 S 个即停，不越界到链尾）。
+INLINE void DrcoStitchNodeTryPushChain(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+                                       __gm__ DrcoGlobalStitchNodeMatrix* matrix,
+                                       __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* subChainHead,
+                                       uint32_t& rowCursor, uint32_t succTaskIdListCoreList[][BATCH_PUSH_BUF_SIZE],
+                                       uint32_t succTaskIdListSizeCoreList[])
+{
+    if (subChainHead == nullptr) {
+        return;
+    }
+    if (DrcoStitchNodeMatrixTryPush(state, rootFuncList, matrix, subChainHead, rowCursor)) {
+        return;
+    }
+    uint32_t count = StitchNodeRemainingCount(subChainHead) + 1;
+    for (__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* cur = subChainHead; cur != nullptr && count > 0;
+         cur = StitchNodeDecodedNext(cur), count--) {
+        DrcoStitchNodeTasksResolveCore(state, rootFuncList, cur, succTaskIdListCoreList, succTaskIdListSizeCoreList);
+    }
+}
+
+// 按 2 的幂序列（1,2,4,8,16,32 / 每 64 一轮）把 subChainHead 起的子链头 push 入矩阵，由消费核 pop 接力。
+// limitNodeCount 为本链头之后的后续节点数上限：整链展开传 0xFFFFFFFF（沿链走到 null 自然终止），
+// 子链展开传 R(node)。nodeStride 翻倍推进；推进到最后一个子链头（下一 nodeStride 越过限界）即停，
+// 不再沿链走到子链尾——最大子链（长度约为当前子链的一半）内部由 pop 它的消费核继续展开，避免重复遍历。
+INLINE void DrcoStitchNodePushSubChainHeads(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+                                            __gm__ DrcoGlobalStitchNodeMatrix* matrix,
+                                            __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* subChainHead,
+                                            uint32_t limitNodeCount, uint32_t& rowCursor,
+                                            uint32_t succTaskIdListCoreList[][BATCH_PUSH_BUF_SIZE],
+                                            uint32_t succTaskIdListSizeCoreList[])
+{
+    uint32_t nodeStride = 1;
+    while (subChainHead != nullptr && nodeStride <= limitNodeCount) {
+        DrcoStitchNodeTryPushChain(state, rootFuncList, matrix, subChainHead, rowCursor, succTaskIdListCoreList,
+                                   succTaskIdListSizeCoreList);
+        uint32_t nextStride = (nodeStride < 32) ? (nodeStride << 1) : 64;
+        if (nextStride > limitNodeCount) {
+            break;
+        }
+        for (uint32_t i = 0; i < nodeStride && subChainHead != nullptr; i++) {
+            subChainHead = StitchNodeDecodedNext(subChainHead);
+        }
+        nodeStride = nextStride;
+    }
+}
+
+// 生产核整链幂分解：先按 2 的幂序列（1,2,4,8,16,32 / 每 64 一轮）把子链头 push 入矩阵
+// （由消费核 pop 接力），push 完成后再解链头（chainHead）依赖（先 push 后解依赖）；
+// push 失败则就地解对应子链整段兜底（矩阵写不进则保证前向推进）。
 INLINE void DrcoResolveDepend(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                               uint32_t* taskIdList, uint32_t taskCount = 1)
 {
@@ -875,34 +942,19 @@ INLINE void DrcoResolveDepend(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoR
         uint32_t stitchIndex = succInfo->stitchIndex;
         if (stitchIndex != 0) {
             __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode** succStitchList = rootFuncData->succStitchList;
-            // 先保存首节点，其余节点一次性 push 到本类型 localStitchNodeMatrix 自己的行，由消费核
-            // fetch 时 pop 解依赖（摊平长链遍历开销）；push 结束后再统一就地解依赖：首节点 +
-            // 首个 push 失败起的剩余链尾（矩阵写不进则整段链尾就地兜底，保证前向推进）
-            __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* firstNode = succStitchList[stitchIndex];
-            __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* fallbackNode = nullptr;
+            // 整链幂分解：先按 2 的幂 + 每 64 一轮 push 子链头入矩阵，
+            // 消费核 pop 后按 2 的幂序列（1,2,4,8,16,32）继续接力（每个节点只被解一次）；
+            // push 完成后解链头依赖；push 失败则就地解对应子链整段兜底（矩阵写不进则保证前向推进）。
+            __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* chainHead = succStitchList[stitchIndex];
             __gm__ DrcoGlobalStitchNodeMatrix* matrix = DrcoRootFuncListGetStitchNodeMatrix(rootFuncList);
 
-            if (firstNode != nullptr) {
-                // 起点跳过 producer 自己的行：首个节点若落本行，唯一消费者是自己——producer 常因
-                // 执行当前任务或 fetch 空转占用，整条链的展开被单核串行阻塞；+1 落到其他核行，
-                // 空闲核立即可并行消费（后续节点经 start 轮转自然遍布全行域）
-                uint32_t start = 1;
-
-                for (__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node = firstNode->nodeNext;
-                     node != nullptr && fallbackNode == nullptr; node = node->nodeNext) {
-                    if (DrcoStitchNodeMatrixTryPush(state, rootFuncList, matrix, node, start)) {
-                        TraceEvent(state, curTaskId, EVENT_STITCH_NODE(node->nodeSize));
-                    } else {
-                        fallbackNode = node;
-                    }
-                }
-
-                DrcoResolveStitchNodeTasks(state, rootFuncList, firstNode, curTaskId, hubStack, hubStackTop,
-                                           succTaskIdListCoreList, succTaskIdListSizeCoreList);
-            }
-            for (__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node = fallbackNode; node != nullptr;
-                 node = node->nodeNext) {
-                DrcoResolveStitchNodeTasks(state, rootFuncList, node, curTaskId, hubStack, hubStackTop,
+            if (chainHead != nullptr) {
+                // 先按 2 的幂序列 push 剩余子链头，最后解链头依赖
+                uint32_t rowCursor = 0;
+                DrcoStitchNodePushSubChainHeads(state, rootFuncList, matrix, StitchNodeDecodedNext(chainHead),
+                                                0xFFFFFFFFu, rowCursor, succTaskIdListCoreList,
+                                                succTaskIdListSizeCoreList);
+                DrcoResolveStitchNodeTasks(state, rootFuncList, chainHead, curTaskId, hubStack, hubStackTop,
                                            succTaskIdListCoreList, succTaskIdListSizeCoreList);
             }
         }
@@ -1004,10 +1056,10 @@ INLINE __gm__ DrcoLocalReadyMatrix* TryGetOtherLocalMatrix(__gm__ npu::tile_fwk:
     return nullptr;
 }
 
-// 消费本核行上的 defer stitch 节点：与 PopColTasks 相同的两阶段 CAS 抢占
-// （CAS(0,0) 原子读 → CAS(offset,0) 独占），节点内任务就地解依赖后 batch push；
-// 节点内容 host 侧构建后不可变，slot 存相对 stitch pool 基址的 u32 偏移，CAS 发布偏移即可，
-// 经 DrcoRootFuncList::stitchNodeBase 还原节点地址；只 pop 自己类型内编号对应的行
+// 消费核 pop 本行上 matrix 中 stitch 节点：两阶段 CAS 抢占
+// （CAS(0,0) 原子读 → CAS(offset,0) 独占）。pop 到子链头后：留首节点本地，
+// 先按 2 的幂序列（1,2,4,8,16,32）把剩余子链头 push 入矩阵（由其他核接力），
+// 末段（链尾）可能不满，最后再解本地首节点依赖；push 失败则就地解对应子链整段兜底。
 INLINE void DrcoStitchNodeMatrixPopResolve(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                                            __gm__ DrcoGlobalStitchNodeMatrix* matrix, uint32_t rowIdx)
 {
@@ -1025,6 +1077,11 @@ INLINE void DrcoStitchNodeMatrixPopResolve(DrcoEntryState* state, __gm__ npu::ti
         __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode*
             node = (__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode*)(rootFuncList->stitchNodeBase +
                                                                               nodeOffset);
+        // 先按 2 的幂序列 push 剩余子链头，最后解本地首节点依赖
+        uint32_t remain = StitchNodeRemainingCount(node);
+        uint32_t rowCursor = 0;
+        DrcoStitchNodePushSubChainHeads(state, rootFuncList, matrix, StitchNodeDecodedNext(node), remain, rowCursor,
+                                        succTaskIdListCoreList, succTaskIdListSizeCoreList);
         DrcoStitchNodeTasksResolveCore(state, rootFuncList, node, succTaskIdListCoreList, succTaskIdListSizeCoreList);
     }
     DrcoFlushBatchTasks(state, rootFuncList, succTaskIdListCoreList, succTaskIdListSizeCoreList);

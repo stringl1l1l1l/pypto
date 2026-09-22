@@ -1315,7 +1315,7 @@ void DevControlFlowCache::TaskAddrRelocProgramAndCtrlCache(uint64_t srcProgram, 
                 DevAscendFunctionDuppedStitch*& stitchRef = stitchList.Head();
                 for (DevAscendFunctionDuppedStitch** nodePtr = &stitchRef; *nodePtr != nullptr;) {
                     DevAscendFunctionDuppedStitch* node = RelocControlFlowCachePointer(*nodePtr, relocCtrlCache);
-                    nodePtr = &node->Next();
+                    nodePtr = &node->NextRaw();
                 }
             }
             RelocDuppedDataAndDynFuncData(relocProgram, relocCtrlCache, duppedData, dynData, dynDataCache,
