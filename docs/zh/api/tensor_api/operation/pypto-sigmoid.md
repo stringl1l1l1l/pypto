@@ -36,6 +36,10 @@ sigmoid(input: Tensor) -> Tensor
 
 返回Tensor类型。其Shape、数据类型与输入Tensor一致，其元素为输入元素经sigmoid函数映射到 \(0, 1\)区间的结果。
 
+## 约束说明
+
+无
+
 ## 调用示例
 
 ```python

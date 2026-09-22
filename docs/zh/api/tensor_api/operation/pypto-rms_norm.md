@@ -34,6 +34,11 @@ rms_norm(input: Tensor, gamma: Tensor = None, epsilon: float = 1e-6) -> Tensor
 
 归一化后的Tensor，Shape与输入Tensor input相同，输出Tensor将被转换回输入Tensor的原始数据类型。
 
+## 约束说明
+
+无
+
+
 ## 调用示例
 
 ```python
