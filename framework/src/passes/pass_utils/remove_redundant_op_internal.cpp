@@ -357,6 +357,9 @@ void MigrateRemovedOpsTokenDependency(Function& function, const std::vector<Oper
             continue;
         }
         auto oldTokens = removedOp->result_token_;
+        if (oldTokens.empty()) {
+            continue;
+        }
         std::vector<Operation*> externalConsumers;
         for (const auto& oldToken : oldTokens) {
             for (const auto& consumerStmt : function.GetVarDependency().GetConsumers(oldToken)) {

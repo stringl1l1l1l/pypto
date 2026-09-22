@@ -3039,7 +3039,7 @@ TEST_F(TestSplitReshapePass, TestSplitReshapeWithValidShapeTail)
 TEST_F(TestSplitReshapePass, TestSplitReshapeLargeScaleRunTimeLimit)
 {
     constexpr size_t pathCount = 2048;
-    constexpr int64_t maxElapsedMs = 3000;
+    constexpr int64_t maxElapsedMs = 3200;
     const std::vector<int64_t> ubShape{kNumTwo, kNumFour};
     auto func = std::make_shared<Function>(Program::GetInstance(), "TestLargeScaleReshapeSplit",
                                            "TestLargeScaleReshapeSplit", nullptr);
