@@ -44,7 +44,7 @@ PYPTO_DECLARE_ENUM(
 | M | 矩阵计算流水，负责Cube/MAD等matmul计算。 |
 | V | 向量计算流水，负责element-wise、reduce、cast、quant、dequant等向量操作。 |
 | S | 标量流水，负责getval、setval等标量操作。 |
-| FIX | Fixpipe流水，负责累加器结果读出（L0C Buffer → UB/GM/L1 Buffer）以及随路量化/反量化（L0C Buffer → UB/GM）等操作。 |
+| FIX | Fixpipe流水，负责将累加器结果从L0C Buffer搬运至GM、UB或L1 Buffer，以及随路量化/反量化等操作。 |
 | ALL | 表示本AI Core的全部流水，包括V、M、MTE1、MTE2、MTE3和FIX等流水。 |
 
 ## 约束说明
@@ -62,6 +62,7 @@ PYPTO_DECLARE_ENUM(
 | move | L1 Buffer → Fixpipe Buffer | FIX |
 | move | L1 Buffer → UB | V |
 | move | L0C Buffer → UB | FIX |
+| move/insert | L0C Buffer → L1 Buffer | FIX |
 | move | UB → UB | V |
 | move | UB → L1 Buffer | MTE3 |
 | move | 其余 | V |

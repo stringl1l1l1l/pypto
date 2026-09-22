@@ -13,7 +13,7 @@
 import inspect
 
 from pypto_pro import ir
-from pypto_pro._errors import InvalidArgument, InvalidFormat, InvalidTile, InvalidType, InvalidVal
+from pypto_pro._errors import InvalidArgument, InvalidFormat, InvalidTile, InvalidType, InvalidVal, NotSupported
 import pypto_pro.language as pl
 import pytest
 
@@ -24,8 +24,19 @@ def _program_ir(func: ir.Function) -> str:
     return str(func)
 
 
+def _find_call(func: ir.Function, name: str):
+    return next(stmt.expr for stmt in func.body.stmts if isinstance(stmt, ir.EvalStmt) and stmt.expr.name == name)
+
+
 def test_coordinate_apis_use_sequence_parameters():
-    assert list(inspect.signature(pl.insert).parameters) == ["dst_tile", "src_tile", "offset"]
+    assert list(inspect.signature(pl.insert).parameters) == [
+        "dst_tile",
+        "src_tile",
+        "offset",
+        "relu_pre_mode",
+        "scale",
+        "phase",
+    ]
     assert list(inspect.signature(pl.set_validshape).parameters) == ["tile", "shape"]
 
 
@@ -300,6 +311,281 @@ def test_insert_with_offset_sequence():
     assert "block.insert" in ir_str
 
 
+def test_acc_to_mat_move_with_scalar_offset_preserves_quantization_and_phase():
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_INT8, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        pl.move(dst, src, [16, 16], scale=0.5, phase=pl.STPhase.Final)
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    call = _find_call(program.get_function(main.__name__), "block.move")
+
+    assert len(call.args) == 4
+    assert isinstance(call.args[2], ir.MakeTuple)
+    assert isinstance(call.args[3], ir.ConstInt)
+    assert "phase" in call.kwargs
+
+
+def test_acc_to_mat_move_with_scaling_tile_offset_builds_move():
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_INT8, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+        scale_type = pl.TileType(shape=[1, 32], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Scaling, layout=pl.ND)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        scale = pl.make_tile(scale_type, addr=0x0000)
+        pl.move(dst, src, [16, 16], scale=scale)
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    call = _find_call(program.get_function(main.__name__), "block.move")
+
+    assert len(call.args) == 4
+    assert isinstance(call.args[2], ir.MakeTuple)
+    assert call.args[3].type.memref.memory_space_ == ir.MemorySpace.Scaling
+
+
+def test_scaling_tile_move_rejects_unsupported_memory_path():
+    with pytest.raises(NotSupported, match="Scaling Tile scale only supports Acc-to-Vec or Acc-to-Mat"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            src_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Mat)
+            dst_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Left)
+            scale_type = pl.TileType(shape=[1, 16], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Scaling)
+            src = pl.make_tile(src_type, addr=0x0000)
+            dst = pl.make_tile(dst_type, addr=0x0000)
+            scale = pl.make_tile(scale_type, addr=0x0000)
+            pl.move(dst, src, scale=scale)
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
+def test_move_insert_dispatch_validates_fused_parameters_in_insert():
+    with pytest.raises(NotSupported, match="only supported for Acc-to-Mat inserts"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            src_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_INT8, target_memory=pl.MemorySpace.Mat)
+            src = pl.make_tile(src_type, addr=0x0000)
+            dst = pl.make_tile(dst_type, addr=0x0000)
+            pl.move(dst, src, [0, 0], scale=0.5)
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
+def test_move_rejects_non_2d_offset():
+    with pytest.raises(InvalidArgument, match="move: offset must contain exactly 2 elements"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            tile_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP32)
+            src = pl.make_tile(tile_type, addr=0x0000)
+            dst = pl.make_tile(tile_type, addr=0x1000)
+            pl.move(dst, src, [0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_acc_to_mat_insert_preserves_scale_relu_and_phase():
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[64, 64], dtype=pl.DT_INT8, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        pl.insert(
+            dst,
+            src,
+            [16, 32],
+            scale=0.5,
+            relu_pre_mode=pl.ReluPreMode.NormalRelu,
+            phase=pl.STPhase.Final,
+        )
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    call = _find_call(program.get_function(main.__name__), "block.insert")
+
+    assert len(call.args) == 5
+    assert isinstance(call.args[4], ir.ConstInt)
+    assert "relu_pre_mode" in call.kwargs
+    assert "phase" in call.kwargs
+
+
+def test_acc_to_mat_move_insert_dispatch_preserves_phase():
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        pl.move(dst, src, [16, 16], phase=pl.STPhase.Final)
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    call = _find_call(program.get_function(main.__name__), "block.insert")
+
+    assert "phase" in call.kwargs
+
+
+def test_acc_to_mat_whole_move_preserves_phase():
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        pl.move(dst, src, phase=pl.STPhase.Final)
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    call = _find_call(program.get_function(main.__name__), "block.move")
+
+    assert "phase" in call.kwargs
+
+
+def test_acc_to_mat_insert_with_scaling_tile_preserves_operand():
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[64, 64], dtype=pl.DT_INT8, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+        scale_type = pl.TileType(shape=[1, 32], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Scaling, layout=pl.ND)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        scale = pl.make_tile(scale_type, addr=0x0000)
+        pl.insert(dst, src, [16, 32], scale=scale)
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    call = _find_call(program.get_function(main.__name__), "block.insert")
+
+    assert len(call.args) == 5
+    assert call.args[4].type.memref.memory_space_ == ir.MemorySpace.Scaling
+
+
+@pytest.mark.parametrize("layout", [pl.ND, pl.DN])
+def test_a5_acc_to_mat_move_accepts_supported_destination_layouts(monkeypatch, layout):
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Mat, layout=layout)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        pl.move(dst, src)
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    assert "block.move" in _program_ir(program.get_function(main.__name__))
+
+
+@pytest.mark.parametrize(
+    ("src_dtype", "dst_dtype", "with_scale"),
+    [
+        pytest.param(pl.DT_FP32, pl.DT_FP32, False, id="fp32_to_fp32"),
+        pytest.param(pl.DT_FP32, pl.DT_FP16, False, id="fp32_to_fp16"),
+        pytest.param(pl.DT_FP32, pl.DT_BF16, False, id="fp32_to_bf16"),
+        pytest.param(pl.DT_INT32, pl.DT_INT32, False, id="int32_to_int32"),
+        pytest.param(pl.DT_FP32, pl.DT_INT8, True, id="fp32_to_int8_quant"),
+        pytest.param(pl.DT_FP32, pl.DT_UINT8, True, id="fp32_to_uint8_quant"),
+        pytest.param(pl.DT_FP32, pl.DT_FP16, True, id="fp32_to_fp16_quant"),
+        pytest.param(pl.DT_FP32, pl.DT_BF16, True, id="fp32_to_bf16_quant"),
+        pytest.param(pl.DT_FP32, pl.DT_HF8, True, id="fp32_to_hf8_quant"),
+        pytest.param(pl.DT_FP32, pl.DT_FP8E4M3FN, True, id="fp32_to_fp8e4m3fn_quant"),
+        pytest.param(pl.DT_INT32, pl.DT_INT8, True, id="int32_to_int8_quant"),
+        pytest.param(pl.DT_INT32, pl.DT_UINT8, True, id="int32_to_uint8_quant"),
+        pytest.param(pl.DT_INT32, pl.DT_FP16, True, id="int32_to_fp16_quant"),
+        pytest.param(pl.DT_INT32, pl.DT_BF16, True, id="int32_to_bf16_quant"),
+    ],
+)
+def test_acc_to_mat_move_accepts_supported_dtype_matrix(src_dtype, dst_dtype, with_scale):
+    @pl.jit(auto_mutex=False)
+    def main(_jit_entry: pl.DT_INT64):
+        src_type = pl.TileType(shape=[32, 32], dtype=src_dtype, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+        dst_type = pl.TileType(shape=[32, 32], dtype=dst_dtype, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+        src = pl.make_tile(src_type, addr=0x0000)
+        dst = pl.make_tile(dst_type, addr=0x4000)
+        if with_scale:
+            pl.move(dst, src, scale=0.5)
+        else:
+            pl.move(dst, src)
+
+    program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+    assert "block.move" in _program_ir(program.get_function(main.__name__))
+
+
+def test_acc_to_mat_move_rejects_acc_to_vec_mode():
+    with pytest.raises(NotSupported, match="only supported for Acc-to-Vec"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+            dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+            src = pl.make_tile(src_type, addr=0x0000)
+            dst = pl.make_tile(dst_type, addr=0x4000)
+            pl.move(dst, src, acc_to_vec_mode=pl.AccToVecMode.SingleModeVec0)
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
+def test_acc_to_mat_move_rejects_unsupported_layout():
+    with pytest.raises(InvalidType, match="unsupported layout/dtype combination"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+            dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Mat, layout=pl.ZN)
+            src = pl.make_tile(src_type, addr=0x0000)
+            dst = pl.make_tile(dst_type, addr=0x4000)
+            pl.move(dst, src)
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
+def test_acc_to_mat_move_rejects_unsupported_dtype_conversion():
+    with pytest.raises(InvalidType, match="unsupported layout/dtype combination"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+            dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_INT8, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+            src = pl.make_tile(src_type, addr=0x0000)
+            dst = pl.make_tile(dst_type, addr=0x4000)
+            pl.move(dst, src)
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
+@pytest.mark.parametrize("layout", [pl.ND, pl.DN])
+def test_acc_to_mat_extract_rejects_non_nz_destination_layout(layout):
+    with pytest.raises(InvalidType, match="extract: unsupported layout/dtype combination"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            src_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+            dst_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Mat, layout=layout)
+            src = pl.make_tile(src_type, addr=0x0000)
+            dst = pl.make_tile(dst_type, addr=0x4000)
+            pl.move(dst, src, [0, 0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
+def test_acc_to_mat_insert_rejects_unsupported_dtype_conversion():
+    with pytest.raises(InvalidType, match="insert: unsupported quantized layout/dtype combination"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            src_type = pl.TileType(shape=[32, 32], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ)
+            dst_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP8E5M2, target_memory=pl.MemorySpace.Mat, layout=pl.NZ)
+            src = pl.make_tile(src_type, addr=0x0000)
+            dst = pl.make_tile(dst_type, addr=0x4000)
+            pl.insert(dst, src, [16, 32], scale=0.5)
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
 def test_manual_transpose():
     @pl.jit(auto_mutex=False)
     def main(
@@ -341,8 +627,7 @@ def test_set_validshape_tile_group_4buf():
         output: pl.Tensor[[128, 128], pl.DT_FP16],
     ):
         tile_type = pl.TileType(shape=[128, 128], dtype=pl.DT_FP16, valid_shape=[-1, -1])
-        a_db = pl.make_tile_group(
-            type=tile_type, addrs=0x0000, mutex_ids=[0, 1, 2, 3])
+        a_db = pl.make_tile_group(type=tile_type, addrs=0x0000, mutex_ids=[0, 1, 2, 3])
         pl.set_validshape(a_db, [rows, cols])
         tile_a = a_db.next()
         pl.load(tile_a, a, [0, 0])
@@ -366,8 +651,7 @@ def test_set_validshape_tile_group_single_tile():
         output: pl.Tensor[[128, 128], pl.DT_FP16],
     ):
         tile_type = pl.TileType(shape=[128, 128], dtype=pl.DT_FP16, valid_shape=[-1, -1])
-        a_db = pl.make_tile_group(
-            type=tile_type, addrs=0x0000, mutex_ids=[0])
+        a_db = pl.make_tile_group(type=tile_type, addrs=0x0000, mutex_ids=[0])
         pl.set_validshape(a_db, [128, cols])
         tile_a = a_db.next()
         pl.load(tile_a, a, [0, 0])

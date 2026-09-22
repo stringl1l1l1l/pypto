@@ -73,15 +73,18 @@ public:
         // part lives inside each builder).
         auto tensor_bounds = [this](const CallPtr& c) { return RecordGmAccess(c); };
         auto tile_transfer_bounds = [this](const CallPtr& c) {
-            // move/move_fp (TEXTRACT): the offset is the SOURCE extraction
+            // move (TEXTRACT): the offset is the SOURCE extraction
             // start, the window the DESTINATION's valid shape.
             ExprPtr src_off_row = Int64Const(0);
             ExprPtr src_off_col = Int64Const(0);
-            if (auto off_tuple = As<MakeTuple>(c->args_.back())) {
-                if (!off_tuple->elements_.empty())
-                    src_off_row = off_tuple->elements_[0];
-                if (off_tuple->elements_.size() > 1)
-                    src_off_col = off_tuple->elements_[1];
+            for (size_t i = 2; i < c->args_.size(); ++i) {
+                if (auto off_tuple = As<MakeTuple>(c->args_[i])) {
+                    if (!off_tuple->elements_.empty())
+                        src_off_row = off_tuple->elements_[0];
+                    if (off_tuple->elements_.size() > 1)
+                        src_off_col = off_tuple->elements_[1];
+                    break;
+                }
             }
             ExprPtr win_row = TileDim(c->args_[0], 0);
             ExprPtr win_col = TileDim(c->args_[0], 1);
@@ -110,7 +113,6 @@ public:
             {"block.load", tensor_bounds},
             {"block.store", tensor_bounds},
             {"block.move", tile_transfer_bounds},
-            {"block.move_fp", tile_transfer_bounds},
             {"block.insert", tile_insert_bounds},
             {"block.getval", scalar_bounds},
             {"block.setval", scalar_bounds},

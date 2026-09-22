@@ -864,7 +864,7 @@ class CallParserMixin:
 
         if op_name == "simt.launch":
             return ir.PipeType.V
-        if op_name == "move":
+        if op_name in ("move", "insert"):
             dst_mem = tilerefs[0].memory if tilerefs[0] else None
             src_mem = tilerefs[1].memory if len(tilerefs) > 1 and tilerefs[1] else None
             if src_mem is not None and dst_mem is not None:
@@ -1671,7 +1671,7 @@ class CallParserMixin:
         and emits lock/unlock per unique slot.
         Returns None -the caller still parses the op normally.
 
-        Phase-aware skip on Acc tiles: when matmul/matmul_acc/store carries
+        Phase-aware skip on Acc tiles: when a matmul or FixPipe drain op carries
         phase="partial"/"final", the cube/fixp handshake on the Acc-memory
         accumulator is taken over by the hardware unit_flag bit
         (AccPhase/STPhase). The software mutex on the Acc buf is redundant
@@ -1692,7 +1692,7 @@ class CallParserMixin:
             return
 
         # 1. Build unique_refs: scan args for slot.tile mutex refs, dedup by slot,
-        #    then drop Acc tiles when a phase-aware matmul/store carries the
+        #    then drop Acc tiles when a phase-aware matmul/FixPipe op carries the
         #    unit_flag (the hardware handshake replaces the software mutex there).
         scan_args = call.args
         tilerefs = [self._try_resolve_tileref(arg) for arg in scan_args]
@@ -1706,7 +1706,16 @@ class CallParserMixin:
             seen.add(tref.slot_id)
             unique_refs.append(tref)
 
-        if op_name in ("matmul", "matmul_acc", "matmul_mx", "matmul_mx_acc", "store", "store_tile", "move"):
+        if op_name in (
+            "matmul",
+            "matmul_acc",
+            "matmul_mx",
+            "matmul_mx_acc",
+            "store",
+            "store_tile",
+            "move",
+            "insert",
+        ):
             phase = None
             for kw in call.keywords:
                 if kw.arg == "phase":

@@ -141,7 +141,7 @@ static std::string GetAccToVecModeCCE(int mode, bool allow_dual)
     auto m = static_cast<ir::AccToVecMode>(mode);
     if (!allow_dual && (m == ir::AccToVecMode::DualModeSplitM || m == ir::AccToVecMode::DualModeSplitN)) {
         PRO_CODEGEN_THROW(::pypto::ir::ValueError, ExternalError::NOT_IMPLEMENTED_ERROR)
-            << "block.move_fp: fp_tile only supports single-mode acc_to_vec_mode";
+            << "block.move: Scaling Tile only supports single-mode acc_to_vec_mode";
     }
     return ir::EnumToString(m);
 }
@@ -496,16 +496,16 @@ static std::string MakeBlockOutStoreCodegenCCE(const ir::CallPtr& op, codegen::C
     // When phase is present, STPhase is the first template parameter of TSTORE
     // (per pto-isa pto_instr.hpp UF-aware overloads at lines 224/240/257/275).
     std::string src_type = TileTypeStringForTemplate(codegen, src_tile, op->args_[1]);
-    std::string dst_type = "decltype(" + dst_tensor_access + ")";
 
     if (!relu_template.empty()) {
         // TSTORE<[STPhase,] TileData, GlobalData, AtomicType::AtomicNone, ReluPreMode>(dst, src[, preQuant])
-        EmitTemplated(codegen, "TSTORE", {phase_template, src_type, dst_type, "AtomicType::AtomicNone", relu_template},
+        EmitTemplated(codegen, "TSTORE",
+                      {phase_template, src_type, TypeOf(dst_tensor_access), "AtomicType::AtomicNone", relu_template},
                       {args});
     } else if (op->args_.size() > 3 || !phase_template.empty()) {
         // TSTORE<[STPhase,] TileData, GlobalData>(dst, src, preQuant)  -  default AtomicType & ReluPreMode
         // pre_quant_scalar is the optional trailing operand (args_[3]).
-        EmitTemplated(codegen, "TSTORE", {phase_template, src_type, dst_type}, {args});
+        EmitTemplated(codegen, "TSTORE", {phase_template, src_type, TypeOf(dst_tensor_access)}, {args});
     } else {
         EmitTemplated(codegen, "TSTORE", {}, {args});
     }
@@ -515,6 +515,36 @@ static std::string MakeBlockOutStoreCodegenCCE(const ir::CallPtr& op, codegen::C
         codegen.Emit("set_atomic_none();");
     }
     return "";
+}
+
+// TMOV, TEXTRACT, and TINSERT share the same phase/type/scale/relu template structure.
+static void EmitMoveInsertInstructionCCE(codegen::CCECodegen& codegen, const ir::CallPtr& op,
+                                         const std::string& instruction, const std::string& dst, const std::string& src,
+                                         const ir::ExprPtr& scale_operand, const std::string& mode_template,
+                                         const std::string& row, const std::string& col)
+{
+    std::string scale;
+    std::string tile_scale_type;
+    if (scale_operand != nullptr) {
+        if (ir::As<ir::TileType>(scale_operand->GetType()) != nullptr) {
+            scale = codegen.GetExprAsCode(scale_operand);
+            tile_scale_type = TileTypeStringForTemplate(codegen, scale, scale_operand);
+        } else {
+            auto dst_tile_type = ir::As<ir::TileType>(op->args_[0]->GetType());
+            scale = MakePreQuantExprCCE(codegen, scale_operand, dst_tile_type->dtype_);
+        }
+    }
+
+    std::string relu_template;
+    if (op->HasKwarg("relu_pre_mode")) {
+        relu_template = GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode"));
+    }
+
+    const std::string dst_type = TileTypeStringForTemplate(codegen, dst, op->args_[0]);
+    const std::string src_type = TileTypeStringForTemplate(codegen, src, op->args_[1]);
+    EmitTemplated(codegen, instruction,
+                  {GetSTPhaseCCE(op), dst_type, src_type, tile_scale_type, mode_template, relu_template},
+                  {dst, src, scale, row, col});
 }
 
 // ============================================================================
@@ -616,25 +646,26 @@ static std::string MakeBlockOutInitOutputCodegenCCE(const ir::CallPtr& op, codeg
 }
 
 // ============================================================================
-// block.insert  - args = [dst, src, row, col]
+// block.insert  - args = [dst, src, row, col, [scale]]
 // ============================================================================
 static std::string MakeBlockOutInsertCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& codegen_base)
 {
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
-    PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == 4)
-        << "block.insert: expected 4 args, got " << op->args_.size();
+    PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == 4 || op->args_.size() == 5)
+        << "block.insert: expected 4 or 5 args, got " << op->args_.size();
 
     std::string dst = codegen.GetExprAsCode(op->args_[0]);
     std::string src = codegen.GetExprAsCode(op->args_[1]);
     std::string row = codegen.GetExprAsCode(op->args_[2]);
     std::string col = codegen.GetExprAsCode(op->args_[3]);
-    codegen.Emit("TINSERT(" + dst + ", " + src + ", " + row + ", " + col + ");");
+    ir::ExprPtr scale_operand = op->args_.size() == 5 ? op->args_[4] : nullptr;
+    EmitMoveInsertInstructionCCE(codegen, op, "TINSERT", dst, src, scale_operand, "", row, col);
 
     return "";
 }
 
 // ============================================================================
-// block.move  - args = [dst, src] or [dst, src, offset]
+// block.move  - args = [dst, src, [offset], [scale]]
 // ============================================================================
 static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& codegen_base,
                                               const std::string& op_name)
@@ -646,12 +677,23 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
     std::string dst = codegen.GetExprAsCode(op->args_[0]);
     std::string src = codegen.GetExprAsCode(op->args_[1]);
 
-    // Build trailing template params (acc_to_vec_mode, relu_pre_mode) shared by both
-    // TEXTRACT and TMOV paths. These come AFTER the dst/src type pair.
-    std::string acc_mode;
+    ir::ExprPtr offset_operand = nullptr;
+    ir::ExprPtr scale_operand = nullptr;
+    for (size_t i = 2; i < op->args_.size(); ++i) {
+        if (ir::As<ir::MakeTuple>(op->args_[i]) != nullptr) {
+            CHECK(offset_operand == nullptr) << "block.move: multiple offsets are not supported";
+            offset_operand = op->args_[i];
+        } else {
+            CHECK(scale_operand == nullptr) << "block.move: multiple scales are not supported";
+            scale_operand = op->args_[i];
+        }
+    }
+    const bool has_tile_scale = scale_operand != nullptr && ir::As<ir::TileType>(scale_operand->GetType()) != nullptr;
+
+    std::string mode_template;
     if (op->HasKwarg("acc_to_vec_mode")) {
         int mode_val = op->GetKwarg<int>("acc_to_vec_mode");
-        acc_mode = GetAccToVecModeCCE(mode_val, true);
+        mode_template = GetAccToVecModeCCE(mode_val, !has_tile_scale);
         // Auto-align Acc valid_shape for DualModeSplitM (M%2==0) / DualModeSplitN (N%32==0).
         auto mode = static_cast<ir::AccToVecMode>(mode_val);
         if (mode == ir::AccToVecMode::DualModeSplitM) {
@@ -661,114 +703,21 @@ static std::string MakeBlockOutMoveCodegenCCE(const ir::CallPtr& op, codegen::Co
                          ".GetValidCol() + 31) / 32 * 32);");
         }
     }
-    std::string relu = op->HasKwarg("relu_pre_mode") ? GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode")) : "";
-
-    // Template param list: [STPhase,] DstType, SrcType [, acc_to_vec_mode, relu_pre_mode]
-
-    // Optional trailing operands are distinguished by TYPE, not position: a MakeTuple is the 2D
-    // sub-tile offset; a ScalarType is the pre_quant_scalar scale. Layout is [dst, src, offset?, pre_quant?]
-    // so args_[2] may be either, and args_[3] (when present) is always pre_quant_scalar.
-    ir::ExprPtr offset_operand = nullptr;
-    ir::ExprPtr pre_quant_operand = nullptr;
-    if (op->args_.size() > 2) {
-        if (ir::As<ir::MakeTuple>(op->args_[2]) != nullptr) {
-            offset_operand = op->args_[2];
-        } else {
-            pre_quant_operand = op->args_[2];
-        }
-    }
-    if (op->args_.size() > 3) {
-        pre_quant_operand = op->args_[3];
-    }
-
-    // L1->L0 sub-tile read: use pto::TEXTRACT when a 2D offset [offset_m, offset_k]
-    // is provided (TupleType). TMOV requires src.shape == dst.shape; TEXTRACT supports a
-    // WIDE src + NARROW dst at an explicit offset.
-    // Signature: pto::TEXTRACT(l0Tile, l1Tile, offsetM, offsetK) (element units).
+    std::string instruction = "TMOV";
+    std::string row;
+    std::string col;
     if (offset_operand != nullptr) {
         auto make_tuple = ir::As<ir::MakeTuple>(offset_operand);
         PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, make_tuple)
             << op_name << ": offset must be a tuple [offset_m, offset_k]";
         PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, make_tuple->elements_.size() == 2)
             << op_name << ": offset must have 2 elements";
-        auto m_offset_expr = codegen.GetExprAsCode(make_tuple->elements_[0]);
-        auto k_offset_expr = codegen.GetExprAsCode(make_tuple->elements_[1]);
-
-        EmitTemplated(codegen, "TEXTRACT", {GetSTPhaseCCE(op), TypeOf(dst), TypeOf(src), acc_mode, relu},
-                      {dst, src, m_offset_expr, k_offset_expr});
-        return "";
+        row = codegen.GetExprAsCode(make_tuple->elements_[0]);
+        col = codegen.GetExprAsCode(make_tuple->elements_[1]);
+        instruction = "TEXTRACT";
     }
 
-    // No offset: TMOV
-    std::string args = dst + ", " + src;
-
-    if (pre_quant_operand != nullptr) {
-        auto dst_tile_type = ir::As<ir::TileType>(op->args_[0]->GetType());
-        ir::DataType dst_dtype = DataType::INT8;
-        if (dst_tile_type != nullptr) {
-            dst_dtype = dst_tile_type->dtype_;
-        }
-        args += ", " + MakePreQuantExprCCE(codegen, pre_quant_operand, dst_dtype);
-    }
-
-    EmitTemplated(codegen, "TMOV", {GetSTPhaseCCE(op), TypeOf(dst), TypeOf(src), acc_mode, relu}, {args});
-
-    return "";
-}
-
-// ============================================================================
-// block.move_fp  - args = [src, fp_tile, dst]
-// Emits TMOV_FP(dst, src, fp) or TMOV<..., FpTileData, AccToVecMode, ReluPreMode>(dst, src, fp);
-// ============================================================================
-static ir::TileTypePtr CheckMoveFpTileSpace(const ir::ExprPtr& arg, ir::MemorySpace expected_space,
-                                            const char* role_name)
-{
-    auto tile_type = ir::As<ir::TileType>(arg->GetType());
-    PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, tile_type != nullptr)
-        << "block.move_fp " << role_name << " must be TileType";
-    PRO_CODEGEN_CHECK(ExternalError::INVALID_VAL, tile_type->memref_.has_value())
-        << "block.move_fp " << role_name << " tile must have an allocated memory space";
-    if (tile_type->memref_.value()->memorySpace_ != expected_space) {
-        PRO_CODEGEN_THROW(::pypto::ir::ValueError, ExternalError::INVALID_OPERATION)
-            << "block.move_fp: " << role_name << " tile memory space mismatch";
-    }
-    return tile_type;
-}
-
-static std::string MakeBlockOutMoveFpCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& codegen_base)
-{
-    auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
-    PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == 3)
-        << "block.move_fp: expected 3 args, got " << op->args_.size();
-
-    CheckMoveFpTileSpace(op->args_[0], ir::MemorySpace::Vec, "destination");
-    CheckMoveFpTileSpace(op->args_[1], ir::MemorySpace::Acc, "source");
-    CheckMoveFpTileSpace(op->args_[2], ir::MemorySpace::Scaling, "fp");
-
-    std::string dst = codegen.GetExprAsCode(op->args_[0]);
-    std::string src = codegen.GetExprAsCode(op->args_[1]);
-    std::string fp_tile = codegen.GetExprAsCode(op->args_[2]);
-    std::string args = dst + ", " + src + ", " + fp_tile;
-
-    std::string phase_template = GetSTPhaseCCE(op);
-
-    std::string relu_template = op->HasKwarg("relu_pre_mode") ? GetReluPreModeCCE(op->GetKwarg<int>("relu_pre_mode")) :
-                                                                "";
-
-    if (op->HasKwarg("acc_to_vec_mode")) {
-        std::string mode_enum = GetAccToVecModeCCE(op->GetKwarg<int>("acc_to_vec_mode"), false);
-        std::string fp_type = TileTypeStringForTemplate(codegen, fp_tile, op->args_[2]);
-        EmitTemplated(codegen, "TMOV", {phase_template, TypeOf(dst), TypeOf(src), fp_type, mode_enum, relu_template},
-                      {args});
-        return "";
-    }
-
-    if (phase_template.empty() && relu_template.empty()) {
-        EmitTemplated(codegen, "TMOV_FP", {}, {args});
-    } else {
-        EmitTemplated(codegen, "TMOV_FP", {phase_template, TypeOf(dst), TypeOf(src), TypeOf(fp_tile), relu_template},
-                      {args});
-    }
+    EmitMoveInsertInstructionCCE(codegen, op, instruction, dst, src, scale_operand, mode_template, row, col);
 
     return "";
 }
@@ -1469,12 +1418,6 @@ REGISTER_BACKEND_OP(BackendCCE, "block.move")
     .set_pipe(ir::PipeType::MTE1)
     .f_codegen([](const ir::CallPtr& op, codegen::CodegenBase& codegen) {
         return MakeBlockOutMoveCodegenCCE(op, codegen, "block.move");
-    });
-
-REGISTER_BACKEND_OP(BackendCCE, "block.move_fp")
-    .set_pipe(ir::PipeType::FIX)
-    .f_codegen([](const ir::CallPtr& op, codegen::CodegenBase& codegen) {
-        return MakeBlockOutMoveFpCodegenCCE(op, codegen);
     });
 
 REGISTER_BACKEND_OP(BackendCCE, "block.insert")

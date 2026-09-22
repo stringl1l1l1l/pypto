@@ -39,9 +39,9 @@ pypto_pro.language.move(
 | src_tile | 输入 | 源操作数，Tile类型，支持的数据类型与分形详见[约束说明](#约束说明)。 |
 | offset | 输入 | 可选，表示小Tile在大Tile中的相对位置，格式为[offset_m, offset_n]，单位为元素个数。<br>- 当源操作数的shape >= 目的操作数的shape时，表示从源操作数的第offset_m行offset_n列开始读，数据的搬运量取自目的操作数的valid_shape。<br>- 当源操作数的shape < 目的操作数的shape时，表示从目的操作数的第offset_m行offset_n列开始写，数据的搬运量取自源操作数的valid_shape。 |
 | acc_to_vec_mode | 输入 | 可选，L0C Buffer→UB搬运时是否开启双目标搬运模式，[pypto_pro.language.AccToVecMode](../basic_data_structures/AccToVecMode.md)类型。<br>- DualModeSplitN与phase同时使用时，若N未32对齐，可能出现卡死现象。可以在矩阵乘运算前对L0B Buffer的N设置valid shape，使其向上对齐到32的倍数。 |
-| relu_pre_mode | 输入 | 可选，L0C Buffer→UB搬运时是否开启随路ReLU操作，[pypto_pro.language.ReluPreMode](../basic_data_structures/ReluPreMode.md)类型。 |
+| relu_pre_mode | 输入 | 可选，L0C Buffer→UB或L1 Buffer搬运时是否开启随路ReLU操作，[pypto_pro.language.ReluPreMode](../basic_data_structures/ReluPreMode.md)类型。 |
 | scale | 输入 | 可选，是否使能量化功能及设置量化模式下的量化参数，数据在搬出L0C Buffer时由Fixpipe乘以该比例并转换到目的数据类型。不支持与双目标搬运（AccToVecMode.DualModeSplitM / AccToVecMode.DualModeSplitN）同时使用。不同的传入形式会影响量化粒度，支持如下类型：<br>- **float类型**：直接传入固定值（如scale = 2.0），适用于整块Tile使用同一比例。<br>- **Scalar类型**：量化比例在运行时确定，需按数据类型传值。<br>&nbsp;&nbsp;- DT_FP32：直接传原始比例值（如0.5）。<br>&nbsp;&nbsp;- DT_INT32、DT_INT64：传预编码的float32位模式转成的整数（如struct.pack("!f", 0.5)）。<br>- **Tile类型**：每列使用独立比例，需满足以下要求：<br>&nbsp;&nbsp;- 目标存储区域必须为Fixpipe Buffer。<br>&nbsp;&nbsp;- shape为[1, N]（列量化），N必须是16的倍数且N ≤ 512。<br>&nbsp;&nbsp;- dtype为DT_INT64。<br>&nbsp;&nbsp;- 目的操作数的Tile数据类型为DT_INT8时，Fixpipe Buffer中的Tile每个DT_INT64元素的bit46需置1，用于选择有符号量化；未置位时L0C Buffer中的负值会被按无符号解读。<br>&nbsp;&nbsp;- 用户需要先把比例数据从GM搬到L1 Buffer，再搬到Fixpipe Buffer，并完成MTE1→FIX同步。|
-| phase | 输入 | 可选，详见 [phase 使用约束](../cube_computation/phase.md) |
+| phase | 输入 | 可选，L0C Buffer搬运时是否启用unit_flag同步，详见[phase使用约束](../cube_computation/phase.md)。 |
 
 ## 约束说明
 
@@ -61,7 +61,10 @@ pypto_pro.language.move(
   | L1 Buffer → L0B_MX Buffer | 源与目的分形均为NN。 | 源与目的必须相同，仅支持DT_FP8E8M0。 |
   | L0C Buffer → UB（不配置scale） | NZ → ND，NZ → DN，NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
   | L0C Buffer → UB（配置scale） | NZ → ND，NZ → DN，NZ → NZ。 | 支持DT_FP32 → DT_INT8/DT_UINT8/DT_HF8/DT_FP16/DT_BF16/DT_FP8E4M3FN/DT_FP32，以及DT_INT32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16。 |
-  | L0C Buffer → L1 Buffer（仅支持目的Tile的shape大于源Tile） | NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
+  | L0C Buffer → L1 Buffer（源与目的Tile的shape相同，不配置scale） | NZ → NZ、NZ → ND、NZ → DN。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
+  | L0C Buffer → L1 Buffer（源与目的Tile的shape相同，配置scale） | NZ → NZ、NZ → ND、NZ → DN。 | 支持DT_FP32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16/DT_HF8/DT_FP8E4M3FN，以及DT_INT32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16。 |
+  | L0C Buffer → L1 Buffer（源与目的Tile的shape不同，不配置scale） | NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
+  | L0C Buffer → L1 Buffer（源与目的Tile的shape不同，配置scale） | NZ → NZ。 | 支持DT_FP32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16/DT_HF8/DT_FP8E4M3FN，以及DT_INT32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16。 |
 
 - 尾块场景下，需要搭配pypto_pro.language.set_validshape与[pypto_pro.language.TileType](../basic_data_structures/TileType.md)中的compact参数使用，否则可能出现精度失败或卡死现象。
 - L1 Buffer → L0A_MX Buffer/L0B_MX Buffer要求目的Tile必须满足L0A_MX Buffer地址 = L0A Buffer地址 >> 4或L0B_MX Buffer地址 = L0B Buffer地址 >> 4，否则MX矩阵乘时会读取错误的量化系数。

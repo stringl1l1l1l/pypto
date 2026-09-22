@@ -14,9 +14,9 @@
 
 ## 功能说明
 
-矩阵计算结果分阶段写回GM时使用的阶段枚举。用于store和store_tile接口，与矩阵计算接口的[pypto_pro.language.AccPhase](AccPhase.md)配合，保证L0C Buffer中的结果在计算完成后写回，并在最终写回后允许后续计算复用该存储空间。
+矩阵计算结果从L0C Buffer分阶段搬出时使用的阶段枚举。用于store、store_tile、move和insert接口，与矩阵计算接口的[pypto_pro.language.AccPhase](AccPhase.md)配合，保证L0C Buffer中的结果在计算完成后搬往GM、UB或L1 Buffer，并在最终搬出后允许后续计算复用该存储空间。
 
-对应的matmul、matmul_acc、matmul_mx或matmul_mx_acc配置AccPhase时，store或store_tile也必须配置STPhase。矩阵计算的最后一次写操作须使用AccPhase.Final，计算结果的最后一次写回须使用STPhase.Final。对同一计算结果执行多次写回时，最后一次之前使用STPhase.Partial。STPhase不能与Tile类型的scale同时使用。
+对应的matmul、matmul_acc、matmul_mx或matmul_mx_acc配置AccPhase时，搬出结果的store、store_tile、move或insert也必须配置STPhase。矩阵计算的最后一次写操作须使用AccPhase.Final，计算结果的最后一次搬出须使用STPhase.Final。对同一计算结果执行多次搬出时，最后一次之前使用STPhase.Partial。store和store_tile的STPhase不能与Tile类型的scale同时使用。
 
 ## 原型定义
 

@@ -10,7 +10,7 @@
 """P5: 参数互斥与错误处理测试
 
 验证 scale 参数的错误处理和互斥校验：
-1. per-channel 互斥校验（与 phase/dual-mode 的互斥，scale=Tile；relu_pre_mode 已支持透传到 store_fp/move_fp）
+1. per-channel 互斥校验（与 phase/dual-mode 的互斥，scale=Tile；relu_pre_mode 已支持透传到 store_fp/move）
 2. scale 类型错误（非法类型）
 3. scale=Tensor 拒绝（Tensor 自动路径已移除）
 4. per-channel 维度错误（1D/3D/0D tile、[N,1]、col 未对齐）
@@ -60,13 +60,13 @@ def _make_qk() -> tuple[torch.Tensor, torch.Tensor]:
 # ============================================================================
 # 1. per-channel 互斥校验（scale=Tile）
 # ============================================================================
-# NOTE: fp_tile + relu_pre_mode was previously rejected here; the combination is
-# now supported (store_fp/move_fp pass ReluPreMode through to the fixpipe) and
+# NOTE: Scaling Tile + relu_pre_mode was previously rejected here; the combination is
+# now supported (store_fp/move pass ReluPreMode through to the fixpipe) and
 # covered by test_scale_relu_fusion.py::test_per_channel_scale_relu_fusion.
 
 
-def test_err_per_channel_with_phase():
-    """per-channel scale 不能与 phase 同时使用"""
+def test_err_store_per_channel_with_phase():
+    """store 当前不支持 per-channel scale 与 phase 同时使用"""
 
     @pl.jit()
     def kernel(
@@ -434,8 +434,8 @@ def test_err_legacy_fp_tile():
 # ============================================================================
 
 
-def test_err_move_offset_with_per_channel_scale():
-    """move 的 offset 不能与 per-channel scale 同时使用（move_fp 路径不接受 offset）"""
+def test_err_acc_to_vec_move_offset_with_per_channel_scale():
+    """Acc-to-Vec move 不支持 offset 与 per-channel scale 同时使用"""
 
     @pl.jit()
     def kernel(
@@ -457,8 +457,8 @@ def test_err_move_offset_with_per_channel_scale():
         kernel(q, k, out)
 
 
-def test_err_move_offset_with_scalar_scale():
-    """move 的 offset 不能与标量 scale 同时使用（TEXTRACT 路径丢弃 pre_quant）"""
+def test_err_acc_to_vec_move_offset_with_scalar_scale():
+    """Acc-to-Vec move 不支持 offset 与标量 scale 同时使用"""
 
     @pl.jit()
     def kernel(

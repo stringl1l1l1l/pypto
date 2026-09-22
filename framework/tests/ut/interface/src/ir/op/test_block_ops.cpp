@@ -1152,7 +1152,7 @@ TEST_F(BlockOpsOutMemoryTest, BlockStore_InvalidScaleType_Throws)
 }
 
 // ============================================================================
-// out_memory.cpp: block.move, block.move_fp, block.ub_copy
+// out_memory.cpp: block.move, block.ub_copy
 // ============================================================================
 
 TEST_F(BlockOpsOutMemoryTest, BlockMove_OutSrc_ReturnsOutType)
@@ -1172,10 +1172,10 @@ TEST_F(BlockOpsOutMemoryTest, BlockMove_WrongArgCount_Throws)
                  npu::tile_fwk::Error);
 }
 
-TEST_F(BlockOpsOutMemoryTest, BlockMoveFp_3Args_ReturnsOutType)
+TEST_F(BlockOpsOutMemoryTest, BlockMove_WithScalingTile_ReturnsOutType)
 {
     auto& reg = OpRegistry::GetInstance();
-    auto call = reg.Create("block.move_fp",
+    auto call = reg.Create("block.move",
                            {MakeTileVar("o", {16, 32}, DataType::FP16), MakeTileVar("s", {16, 32}, DataType::FP32),
                             MakeTileVar("fp", {16, 32}, DataType::FP32)},
                            Sp());
@@ -1184,13 +1184,25 @@ TEST_F(BlockOpsOutMemoryTest, BlockMoveFp_3Args_ReturnsOutType)
     EXPECT_EQ(rt->dtype_, DataType::FP16);
 }
 
-TEST_F(BlockOpsOutMemoryTest, BlockMoveFp_WrongArgCount_Throws)
+TEST_F(BlockOpsOutMemoryTest, BlockMove_WithOffsetAndScalingTile_ReturnsOutType)
 {
     auto& reg = OpRegistry::GetInstance();
-    EXPECT_THROW((void)reg.Create(
-                     "block.move_fp",
-                     {MakeTileVar("s", {16, 32}, DataType::FP32), MakeTileVar("o", {16, 32}, DataType::FP16)}, Sp()),
-                 npu::tile_fwk::Error);
+    auto call = reg.Create("block.move",
+                           {MakeTileVar("o", {16, 32}, DataType::FP16), MakeTileVar("s", {32, 64}, DataType::FP32),
+                            MakeOffsetsTuple({0, 16}), MakeTileVar("fp", {1, 32}, DataType::INT64)},
+                           Sp());
+    EXPECT_NE(As<TileType>(call->GetType()), nullptr);
+}
+
+TEST_F(BlockOpsOutMemoryTest, BlockMove_InvalidOptionalArgument_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW(
+        (void)reg.Create("block.move",
+                         {MakeTileVar("o", {16, 32}, DataType::FP16), MakeTileVar("s", {32, 64}, DataType::FP32),
+                          MakeTensorVar("invalid", {1, 32}, DataType::INT64)},
+                         Sp()),
+        npu::tile_fwk::Error);
 }
 
 TEST_F(BlockOpsOutMemoryTest, BlockUbCopy_ReturnsOutType)
@@ -1215,6 +1227,17 @@ TEST_F(BlockOpsOutMemoryTest, BlockInsert_4Args_ReturnsOutType)
                            Sp());
     auto rt = As<TileType>(call->GetType());
     ASSERT_NE(rt, nullptr);
+}
+
+TEST_F(BlockOpsOutMemoryTest, BlockInsert_WithScale_ReturnsOutType)
+{
+    auto& reg = OpRegistry::GetInstance();
+    auto call = reg.Create("block.insert",
+                           {MakeTileVar("o", {64, 64}, DataType::INT8), MakeTileVar("src", {16, 16}, DataType::FP32),
+                            MakeScalarVar("row", DataType::INT32), MakeScalarVar("col", DataType::INT32),
+                            MakeScalarVar("scale", DataType::INT64)},
+                           Sp());
+    EXPECT_NE(As<TileType>(call->GetType()), nullptr);
 }
 
 TEST_F(BlockOpsOutMemoryTest, BlockInsert_WrongArgCount_Throws)

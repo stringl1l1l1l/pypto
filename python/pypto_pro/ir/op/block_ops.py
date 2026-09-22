@@ -276,8 +276,8 @@ def _resolve_scale_param(
         scale_type = getattr(scale, "type", None)
         if isinstance(scale_type, _ir_core.TileType):
             # User-prepared Scaling tile (per-channel): already validated by
-            # _auto_alloc_scaling_tile_hook before the builder runs; resolve it
-            # here to the store/move Scaling Tile operand.
+            # _validate_scaling_tile_hook before the builder runs; resolve it
+            # here to the store/move/insert Scaling Tile operand.
             return None, scale
         if not isinstance(scale_type, _ir_core.ScalarType):
             raise InvalidType(
@@ -583,17 +583,14 @@ def _maybe_dispatch_to_insert(
     src: Expr,
     offset: Expr | Sequence[Any] | None,
     acc_to_vec_mode: AccToVecMode | None,
-    relu_pre_mode: ReluPreMode | None,
-    scale: Any,
 ) -> bool:
     """Whether ``move`` should dispatch to ``insert`` (TINSERT).
 
     Rule A: offset given, dst is a super-block of src (fractal-transpose
     pairs compare via dst[::-1]).
     Rule B: equal-shape fractal transpose on Vec->Mat (TMOV can't convert layout).
-    Skipped when move-only kwargs are present.
     """
-    if acc_to_vec_mode is not None or relu_pre_mode is not None or scale is not None:
+    if acc_to_vec_mode is not None:
         return False
 
     out_type = out.type
@@ -647,10 +644,26 @@ def _ir_move(
     phase: STPhase | None = None,
 ) -> Expr:
     actual_span = span or _span()
+    offset_tuple = None
+    if offset is not None:
+        offset_tuple = _to_make_tuple(offset, actual_span)
+        if len(offset_tuple.elements) != 2:
+            raise InvalidArgument("move: offset must contain exactly 2 elements")
 
-    if _maybe_dispatch_to_insert(out, src, offset, acc_to_vec_mode, relu_pre_mode, scale):
-        actual_offset = offset if offset is not None else [0, 0]
-        return _ir_insert(out, src, actual_offset, span=actual_span)
+    if phase is not None and not isinstance(phase, STPhase):
+        raise InvalidArgument(f"move: invalid phase value {phase!r}, expected STPhase")
+
+    if _maybe_dispatch_to_insert(out, src, offset_tuple, acc_to_vec_mode):
+        actual_offset = offset_tuple if offset_tuple is not None else [0, 0]
+        return _ir_insert(
+            out,
+            src,
+            actual_offset,
+            span=actual_span,
+            relu_pre_mode=relu_pre_mode,
+            scale=scale,
+            phase=phase,
+        )
 
     if not isinstance(out.type, _ir_core.TileType):
         raise InvalidType(f"move: dst must be a Tile, got {type(out.type).__name__}")
@@ -661,6 +674,7 @@ def _ir_move(
     _supported_move_paths = {
         (MemorySpace.Mat, MemorySpace.Left),
         (MemorySpace.Mat, MemorySpace.Right),
+        (MemorySpace.Acc, MemorySpace.Mat),
         (MemorySpace.Acc, MemorySpace.Vec),
         (MemorySpace.Vec, MemorySpace.Vec),
         (MemorySpace.Mat, MemorySpace.Scaling),
@@ -673,26 +687,34 @@ def _ir_move(
         raise NotSupported(
             f"move: unsupported data path src({_src_mem.name})->dst({_dst_mem.name}), "
             f"supported paths: Mat->Left, Mat->Right, Mat->Scaling, Mat->Bias, Mat->ScaleLeft, "
-            f"Mat->ScaleRight, Acc->Vec, Vec->Vec, Vec->Mat"
+            f"Mat->ScaleRight, Acc->Mat, Acc->Vec, Vec->Vec, Vec->Mat"
         )
-    if phase is not None and not isinstance(phase, STPhase):
-        raise InvalidArgument(f"move: invalid phase value {phase!r}, expected STPhase")
-    if phase is not None and (_src_mem, _dst_mem) != (MemorySpace.Acc, MemorySpace.Vec):
-        raise NotSupported("move: phase is only supported for Acc->Vec path")
-    # Validate src/dst tile shape compatibility (issue #99: transpose-style mismatch)
-    _check_move_shape_compat(out, src, offset, acc_to_vec_mode, actual_span)
-    if offset is not None:
-        if isinstance(offset, _ir_core.MakeTuple):
-            _validate_offset_bounds("move", src.type.shape, offset.elements)
-        elif isinstance(offset, (list, tuple)):
-            _validate_offset_bounds("move", src.type.shape, offset)
+    if _src_mem == MemorySpace.Acc and _dst_mem == MemorySpace.Mat and acc_to_vec_mode is not None:
+        raise NotSupported("move: acc_to_vec_mode is only supported for Acc-to-Vec moves")
+    if phase is not None and (_src_mem, _dst_mem) not in {
+        (MemorySpace.Acc, MemorySpace.Vec),
+        (MemorySpace.Acc, MemorySpace.Mat),
+    }:
+        raise NotSupported("move: phase is only supported for Acc-to-Vec or Acc-to-Mat moves")
+    if phase is not None and offset_tuple is not None and _dst_mem == MemorySpace.Vec:
+        raise NotSupported("move: Acc-to-Vec phase cannot be combined with offset")
+
+    _check_move_shape_compat(out, src, offset_tuple, acc_to_vec_mode, actual_span)
+    if offset_tuple is not None:
+        _validate_offset_bounds("move", src.type.shape, offset_tuple.elements)
 
     pre_quant_scalar, fp_tile = _resolve_scale_param(scale, actual_span)
+    if fp_tile is not None and (
+        _src_mem != MemorySpace.Acc or _dst_mem not in (MemorySpace.Vec, MemorySpace.Mat)
+    ):
+        raise NotSupported("move: Scaling Tile scale only supports Acc-to-Vec or Acc-to-Mat moves")
 
     is_quant = pre_quant_scalar is not None or fp_tile is not None
-    _check_layout_dtype("move", src, out, quant=is_quant)
+    is_acc_to_mat = _src_mem == MemorySpace.Acc and _dst_mem == MemorySpace.Mat
+    transfer_kind = "extract" if is_acc_to_mat and offset_tuple is not None else "move"
+    _check_layout_dtype(transfer_kind, src, out, quant=is_quant)
 
-    if offset is not None and (fp_tile is not None or pre_quant_scalar is not None):
+    if offset_tuple is not None and is_quant and not is_acc_to_mat:
         raise NotSupported(
             "move: offset cannot be combined with scale — the fixpipe quantization "
             "paths (per-channel Tile or per-tensor scalar) do not support sub-block "
@@ -700,14 +722,12 @@ def _ir_move(
         )
 
     _dual_modes = {AccToVecMode.DualModeSplitM, AccToVecMode.DualModeSplitN}
-    if (fp_tile is not None or pre_quant_scalar is not None) and acc_to_vec_mode in _dual_modes:
+    if is_quant and acc_to_vec_mode in _dual_modes:
         raise NotSupported(
             "scale cannot be combined with dual-mode acc_to_vec_mode — the fixpipe dual-destination "
             "control word does not support quantization (hardware limit); use a single-vec mode "
             "(SingleModeVec0/SingleModeVec1) or drop the scale"
         )
-    if phase is not None and offset is not None:
-        raise NotSupported("move: phase cannot be combined with offset (TEXTRACT path does not support unit_flag)")
     kwargs: dict[str, Any] = {}
     if acc_to_vec_mode is not None:
         kwargs["acc_to_vec_mode"] = acc_to_vec_mode
@@ -716,10 +736,14 @@ def _ir_move(
     if phase is not None:
         kwargs["phase"] = phase
     if fp_tile is not None:
-        return _ir_core.create_op_call(block_ir_op("move_fp"), [out, src, fp_tile], kwargs, actual_span)
+        args = [out, src]
+        if offset_tuple is not None:
+            args.append(offset_tuple)
+        args.append(fp_tile)
+        return _ir_core.create_op_call(block_ir_op("move"), args, kwargs, actual_span)
     args = [out, src]
-    if offset is not None:
-        args.append(_to_make_tuple(offset, actual_span))
+    if offset_tuple is not None:
+        args.append(offset_tuple)
     if pre_quant_scalar is not None:
         pre_quant_operand = (
             ConstInt(pre_quant_scalar, DataType.UINT64, actual_span)
@@ -743,13 +767,41 @@ def _ir_insert(
     offset: Sequence[int | Expr] | _ir_core.MakeTuple,
     *,
     span: Span | None = None,
+    relu_pre_mode: ReluPreMode | None = None,
+    scale: Any = None,
+    phase: STPhase | None = None,
 ) -> Expr:
     actual_span = span or _span()
-    _check_layout_dtype("insert", src, out)
+    if phase is not None and not isinstance(phase, STPhase):
+        raise InvalidArgument(f"insert: invalid phase value {phase!r}, expected STPhase")
+
+    dst_mem = getattr(getattr(out.type, "memref", None), "memory_space_", None)
+    src_mem = getattr(getattr(src.type, "memref", None), "memory_space_", None)
+    if (scale is not None or relu_pre_mode is not None or phase is not None) and not (
+        src_mem == MemorySpace.Acc and dst_mem == MemorySpace.Mat
+    ):
+        raise NotSupported("insert: scale, relu_pre_mode, and phase are only supported for Acc-to-Mat inserts")
     row, col = _normalize_2d_sequence(offset, "offset", actual_span)
     # Validate offset bounds at Python frontend level
     _validate_offset_bounds("insert", out.type.shape, [row, col])
-    return _ir_core.create_op_call(block_ir_op("insert"), [out, src, row, col], {}, actual_span)
+    pre_quant_scalar, fp_tile = _resolve_scale_param(scale, actual_span)
+    _check_layout_dtype("insert", src, out, quant=pre_quant_scalar is not None or fp_tile is not None)
+
+    kwargs: dict[str, Any] = {}
+    if relu_pre_mode is not None:
+        kwargs["relu_pre_mode"] = relu_pre_mode
+    if phase is not None:
+        kwargs["phase"] = phase
+    args = [out, src, row, col]
+    if fp_tile is not None:
+        args.append(fp_tile)
+    elif pre_quant_scalar is not None:
+        args.append(
+            ConstInt(pre_quant_scalar, DataType.UINT64, actual_span)
+            if isinstance(pre_quant_scalar, int)
+            else pre_quant_scalar
+        )
+    return _ir_core.create_op_call(block_ir_op("insert"), args, kwargs, actual_span)
 
 
 def _ir_sel(out: Expr, mask: Expr, lhs: Expr, rhs: Expr, tmp: Expr, *, span: Span | None = None) -> Expr:
@@ -1092,7 +1144,6 @@ _INIT_OUTPUT_DTYPES: tuple[DataType, ...] = (
     DataType.UINT32, DataType.INT32, DataType.FP32,
     DataType.UINT64, DataType.INT64,
 )
-
 
 
 def _resolve_order(
@@ -1545,7 +1596,9 @@ def _apply_default_layout(tt: "TileType") -> None:
         allowed_layouts = {_DEFAULT_LAYOUTS_A3[MemorySpace.Left], _DEFAULT_LAYOUTS_A5[MemorySpace.Left]}
     elif tt.target_memory == MemorySpace.Mat:
         allowed_layouts.add(TensorLayout.ZN)
-        if tt.dtype in (DataType.UINT64, DataType.INT64):
+        if arch == "a5":
+            allowed_layouts.update({TensorLayout.ND, TensorLayout.DN})
+        elif tt.dtype in (DataType.UINT64, DataType.INT64):
             allowed_layouts.add(TensorLayout.ND)
         if tt.dtype == DataType.FP8E8M0:
             allowed_layouts.update({TensorLayout.ZZ, TensorLayout.NN})
@@ -1795,6 +1848,20 @@ _A5_MOVE_COMBOS = (
     ("Acc", "Vec", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.BF16),
     ("Acc", "Vec", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP32),
     ("Acc", "Vec", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.INT32),
+
+    # Acc -> Mat, non-quantized.
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP32),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.INT32),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.FP32),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.INT32, DataType.INT32),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.FP32),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.INT32, DataType.INT32),
 )
 
 
@@ -1842,6 +1909,38 @@ _A5_MOVE_QUANT_COMBOS = (
     ("Acc", "Vec", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.UINT8),
     ("Acc", "Vec", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.FP16),
     ("Acc", "Vec", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.BF16),
+
+    # Acc -> Mat, scalar/vector quantized.
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.HF8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP8E4M3FN),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.HF8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.FP32, DataType.FP8E4M3FN),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.INT32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.INT32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.INT32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.ND, DataType.INT32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.HF8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.FP32, DataType.FP8E4M3FN),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.INT32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.INT32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.INT32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.DN, DataType.INT32, DataType.BF16),
 )
 
 
@@ -2063,11 +2162,8 @@ _COMPACT_VALUES = frozenset({0, 1, 2, 3})
 # 匹配方式：把待校验的操作数解析为同构六元组，六个元素全部相等即命中——
 # 不区分同类型/跨类型/量化子表，也不做 src_dtype == dst_dtype 预判。
 #
-# 表按 op 分组（load / store），每组按 src_loc→dst_loc 与排布分类逐条罗列，
-# 每个分类前有注释说明该排布的 dtype 支持范围。
-#
-# 预留扩展：后续 op（move / insert 等）如需排布×dtype 校验，在此注册对应
-# 组合表，并在其 builder 中调用 _check_layout_dtype(...)。
+# 表按 op 分组，每组按 src_loc→dst_loc 与排布分类罗列；规则完全相同的
+# layout/dtype 组合可由公共 dtype 对生成，最终仍按完整六元组精确匹配。
 # ---------------------------------------------------------------------------
 
 
@@ -2842,13 +2938,41 @@ _A5_STORE_QUANT_COMBOS = (
     ("Acc", "GM", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.BF16),
 )
 
+
+_A5_ACC_NZ_TO_MAT_NZ_COMBOS = (
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP32),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.INT32),
+)
+
+_A5_INSERT_QUANT_COMBOS = (
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.BF16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.HF8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.FP32, DataType.FP8E4M3FN),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.INT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.UINT8),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.FP16),
+    ("Acc", "Mat", TensorLayout.NZ, TensorLayout.NZ, DataType.INT32, DataType.BF16),
+)
+
 _LAYOUT_DTYPE_COMBOS = {
     "load": {"a5": _A5_LOAD_COMBOS},
     "load_tile": {"a5": _A5_LOAD_COMBOS},
     "store": {"a5": _A5_STORE_COMBOS, "a5_quant": _A5_STORE_QUANT_COMBOS},
     "store_tile": {"a5": _A5_STORE_COMBOS, "a5_quant": _A5_STORE_QUANT_COMBOS},
-    "move": {"a5": _A5_MOVE_COMBOS, "a5_quant": _A5_MOVE_QUANT_COMBOS},
-    "insert": {"a5": _A5_INSERT_COMBOS},
+    "move": {
+        "a5": _A5_MOVE_COMBOS,
+        "a5_quant": _A5_MOVE_QUANT_COMBOS,
+    },
+    "extract": {"a5": _A5_ACC_NZ_TO_MAT_NZ_COMBOS, "a5_quant": _A5_INSERT_QUANT_COMBOS},
+    "insert": {
+        "a5": _A5_INSERT_COMBOS,
+        "a5_quant": _A5_INSERT_QUANT_COMBOS,
+    },
 }
 
 
@@ -2882,13 +3006,12 @@ def _check_layout_dtype(
     按操作对应的匹配规则与合法组合表比较，命中即合法。
 
     Args:
-        op: block op name（load / load_tile / store / store_tile / move / insert）。
+        op: data-movement kind（load / load_tile / store / store_tile / move / extract / insert）。
         src: source operand —— tile 或 tensor。
         dst: destination operand —— tile 或 tensor。
         is_transpose: load 专用——降序 order 时 GM 有效排布为 DN（仅 load 传入）；
                       为 None 时 GM 排布取 tensor 声明值（store 场景）。
-        quant: 量化路径时查 `a5_quant` 子表（store 带 scale），
-               非量化时查 `a5` 主表；量化组合仅 Acc→GM 有效，不与其他路径混检。
+        quant: 量化路径时查 `a5_quant` 子表，非量化时查 `a5` 主表。
     """
     from pypto_pro.runtime.jit import get_current_arch
 
@@ -3732,16 +3855,16 @@ def _validate_fp_shape_dtype(fp_shape_ints: list[int], scale_dtype: DataType, wh
         )
 
 
-def _auto_alloc_scaling_tile_hook(self, call: ast.Call, kwargs: dict) -> None:
+def _validate_scaling_tile_hook(self, call: ast.Call, kwargs: dict) -> None:
     """Pre-hook: validate a user-prepared Scaling tile when scale is a Tile (per-channel quantization).
 
     Per-channel quantization requires a user-prepared deqTensor tile: the user
     builds a Scaling tile (MemorySpace.Scaling, [1, N] INT64), owns the data
-    flow (load -> move -> sync MTE1->FIX before the store/move), and passes it
+    flow (load -> move -> sync MTE1->FIX before the store/move/insert), and passes it
     as ``scale``. This hook only validates it — no auto-allocation of
     Scaling/Mat tiles and no sync events are emitted. The validated tile stays
     in the ``scale`` kwarg and is resolved by ``_resolve_scale_param`` in the
-    builder to the store/move Scaling Tile operand.
+    builder to the store/move/insert Scaling Tile operand.
 
     A GM Tensor scale is rejected at parse time: the automatic per-channel path
     (auto-allocated Mat intermediate + auto sync events) has been removed; users
@@ -3780,7 +3903,7 @@ def _auto_alloc_scaling_tile_hook(self, call: ast.Call, kwargs: dict) -> None:
             "scale Tensor is not supported for per-channel quantization — pass a "
             "user-prepared Scaling Tile (MemorySpace.Scaling, shape [1, N], INT64) "
             "instead, and ensure it is ready (load -> move -> sync MTE1->FIX) before "
-            "the store/move"
+            "the store/move/insert"
         )
 
     return  # scalar / runtime bits -> handled by _resolve_scale_param
@@ -3963,8 +4086,8 @@ def _ir_expand_div(out: Expr, src: Expr, scalar: Expr, *, span: Span | None = No
 register_table(
     {
         # args + kwargs -> builder
-        "move": OpSpec(builder=_ir_move, pre_hooks=[_auto_alloc_scaling_tile_hook]),
-        "insert": OpSpec(builder=_ir_insert),
+        "move": OpSpec(builder=_ir_move, pre_hooks=[_validate_scaling_tile_hook]),
+        "insert": OpSpec(builder=_ir_insert, pre_hooks=[_validate_scaling_tile_hook]),
         "getval": OpSpec(builder=_ir_getval),
         "setval": OpSpec(builder=_ir_setval),
         "transpose": OpSpec(builder=_ir_transpose),
@@ -4007,8 +4130,8 @@ register_table(
     # args + kwargs + order hook (load) / order hook + scaling tile hook (store)
     "load": OpSpec(builder=_ir_load, pre_hooks=[_resolve_order_kwarg]),
     "load_tile": OpSpec(builder=_ir_load_tile, pre_hooks=[_resolve_order_kwarg]),
-    "store": OpSpec(builder=_ir_store, pre_hooks=[_auto_alloc_scaling_tile_hook, _resolve_order_kwarg]),
-    "store_tile": OpSpec(builder=_ir_store_tile, pre_hooks=[_auto_alloc_scaling_tile_hook, _resolve_order_kwarg]),
+    "store": OpSpec(builder=_ir_store, pre_hooks=[_validate_scaling_tile_hook, _resolve_order_kwarg]),
+    "store_tile": OpSpec(builder=_ir_store_tile, pre_hooks=[_validate_scaling_tile_hook, _resolve_order_kwarg]),
     "init_output": OpSpec(builder=_ir_init_output),
         # kwargs only
         "set_mask_count": OpSpec(builder=_ir_set_mask_count, parse_args=False),

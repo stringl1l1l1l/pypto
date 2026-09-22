@@ -1212,14 +1212,15 @@ def _block_op_pipe(
     which queue the wait/set lands on, and a section only has some of the pipes, so a guess
     can even name one that does not exist on that core.
     """
-    if op_name == "move":
+    if op_name in ("move", "insert"):
         # move(dst, src): pipe depends on src/dst memory
+        # Tile-to-tile data movement uses a pipe selected by src/dst memory.
         dst_mem = _arg_memory(call.args[0] if call.args else None, stage_slot_to_buffer, all_buffer_memory)
         src_mem = _arg_memory(call.args[1] if len(call.args) > 1 else None, stage_slot_to_buffer, all_buffer_memory)
         if src_mem is None or dst_mem is None:
             unresolved = "destination" if dst_mem is None else "source"
             raise InvalidOperation(
-                f"pipeline: cannot determine the pipe of `pl.move` at line {call.lineno}, "
+                f"pipeline: cannot determine the pipe of `pl.{op_name}` at line {call.lineno}, "
                 f"because its {unresolved} tile does not resolve to a declared tile group. "
                 f"The move touches a cross-core buffer, so its pipe decides where the sync "
                 f"goes. A tile reached through an aggregate (e.g. `tile_groups.x.next()`) is "

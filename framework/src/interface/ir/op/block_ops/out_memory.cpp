@@ -163,7 +163,7 @@ REGISTER_OP("block.store")
         return out_type;
     });
 
-// block.move: (out, src_tile, [offset]) -> TileType (out's type)
+// block.move: (out, src_tile, [offset], [scale]) -> TileType (out's type)
 REGISTER_OP("block.move")
     .set_op_category("BlockOp")
     .set_description("Block explicit-output move: transfer a tile between memory levels into a pre-allocated buffer. "
@@ -171,7 +171,7 @@ REGISTER_OP("block.move")
     .add_argument("out", "Pre-allocated destination tile (TileType)")
     .add_argument("src", "Source tile (TileType)")
     .add_argument("offset", "Optional 2D offset [offset_m, offset_k] for sub-tile extraction (TupleType)")
-    .add_argument("pre_quant_scalar", "Optional fixpipe quant scale (ScalarType, low-32-bit float bits)")
+    .add_argument("scale", "Optional fixpipe quant scale (ScalarType or Scaling Tile)")
     .set_attr<int>("acc_to_vec_mode")
     .set_attr<int>("relu_pre_mode")
     .set_attr<int>("phase")
@@ -181,52 +181,33 @@ REGISTER_OP("block.move")
             << "The operator block.move requires 2 to 4 arguments, but got " << args.size();
         auto out_type = As<TileType>(args[0]->GetType());
         PRO_IR_CHECK(ExternalError::INVALID_TYPE, out_type) << "block.move: first argument (out) must be TileType";
-        // Optional trailing operands (args[2], args[3]) are distinguished by TYPE, not position:
-        // a TupleType is the 2D sub-tile offset; a ScalarType is the pre_quant_scalar quant scale.
+        // Optional trailing operands are distinguished by type: TupleType is the 2D offset,
+        // ScalarType is a scalar scale, and TileType is a Scaling Tile.
         for (size_t i = 2; i < args.size(); ++i) {
-            PRO_IR_CHECK(ExternalError::INVALID_TYPE,
-                         As<TupleType>(args[i]->GetType()) || As<ScalarType>(args[i]->GetType()))
-                << "block.move: optional arg " << i << " must be TupleType (offset) or ScalarType (pre_quant_scalar)";
+            PRO_IR_CHECK(ExternalError::INVALID_TYPE, As<TupleType>(args[i]->GetType()) ||
+                                                          As<ScalarType>(args[i]->GetType()) ||
+                                                          As<TileType>(args[i]->GetType()))
+                << "block.move: optional arg " << i << " must be TupleType (offset), ScalarType, or TileType (scale)";
         }
         return out_type;
     });
 
-// block.move_fp: (out, src_tile, fp_tile) -> TileType (out's type)
-REGISTER_OP("block.move_fp")
+// block.insert: (out, src, row, col, [scale]) -> TileType
+REGISTER_OP("block.insert")
     .set_op_category("BlockOp")
-    .set_description("Block explicit-output move with scaling tile: convert an Acc tile into a pre-allocated Vec tile.")
-    .add_argument("out", "Pre-allocated destination tile (TileType, Vec memory)")
-    .add_argument("src", "Source tile (TileType, Acc memory)")
-    .add_argument("fp_tile", "Floating-point parameter tile (TileType, Scaling memory)")
-    .set_attr<int>("acc_to_vec_mode")
+    .set_description("Block explicit-output insert: insert a Vec or Acc source sub-tile into a Mat tile at a 2-D "
+                     "offset using the pto-isa TINSERT instruction.")
+    .add_argument("out", "Destination tile (TileType, Mat memory)")
+    .add_argument("src", "Source sub-tile (TileType, Vec or Acc memory)")
+    .add_argument("row", "Row offset where insertion begins")
+    .add_argument("col", "Column offset where insertion begins")
+    .add_argument("scale", "Optional scalar or Scaling Tile for Acc-to-Mat FixPipe quantization")
     .set_attr<int>("relu_pre_mode")
     .set_attr<int>("phase")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
-        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 3)
-            << "The operator block.move_fp requires 3 arguments, but got " << args.size();
-        auto out_type = As<TileType>(args[0]->GetType());
-        PRO_IR_CHECK(ExternalError::INVALID_TYPE, out_type) << "block.move_fp: first argument (out) must be TileType";
-        PRO_IR_CHECK(ExternalError::INVALID_TYPE, As<TileType>(args[1]->GetType()))
-            << "block.move_fp: arg 1 must be TileType";
-        PRO_IR_CHECK(ExternalError::INVALID_TYPE, As<TileType>(args[2]->GetType()))
-            << "block.move_fp: arg 2 must be TileType";
-        return out_type;
-    });
-
-// block.insert: (out, src, row, col) -> TileType
-REGISTER_OP("block.insert")
-    .set_op_category("BlockOp")
-    .set_description("Block explicit-output insert: insert source sub-tile into destination tile at a 2-D offset. "
-                     "Corresponds to pto-isa TINSERT instruction for UB→L1 transfer.")
-    .add_argument("out", "Destination tile (TileType, Mat memory)")
-    .add_argument("src", "Source sub-tile (TileType, Vec memory)")
-    .add_argument("row", "Row offset where insertion begins")
-    .add_argument("col", "Column offset where insertion begins")
-    .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
-                      [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
-        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 4)
-            << "The operator block.insert requires 4 arguments, but got " << args.size();
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 4 || args.size() == 5)
+            << "The operator block.insert requires 4 or 5 arguments, but got " << args.size();
         auto out_type = As<TileType>(args[0]->GetType());
         PRO_IR_CHECK(ExternalError::INVALID_TYPE, out_type) << "block.insert: first argument (out) must be TileType";
         return out_type;

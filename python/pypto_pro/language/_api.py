@@ -263,6 +263,7 @@ def move(
     src          dst          pipe
     ============ ============ ========
     Acc (L0C)    Vec (UB)     fix
+    Acc (L0C)    Mat (L1)     fix
     Mat (L1)     Left (L0A)   mte1
     Mat (L1)     Right (L0B)  mte1
     Mat (L1)     Vec (UB)     v
@@ -275,6 +276,7 @@ def move(
     - ``acc_to_vec_mode``: Acc→Vec conversion mode (single/dual split M/N)
     - ``relu_pre_mode``: ReLU activation before destination
     - ``scale``: fixpipe quantization scale (per-tensor or per-channel)
+    - ``phase``: FixPipe unit-flag phase for Acc→Vec or Acc→Mat moves
 
     Args:
         dst_tile: Destination Tile
@@ -298,19 +300,36 @@ def move(
             Hardware requires ``[1, N]`` (row == 1, per-column), ``N % 16 == 0`` and ``N <= 512`` —
             ``[N, 1]`` per-row scaling is NOT supported.
             ``None`` → no fixpipe quantization.
-        phase: Optional — ``pl.STPhase.Partial`` or ``pl.STPhase.Final``; only for Acc->Vec path;
-            enables hardware unit_flag handshake with matmul producer; cannot be combined with ``offset``
+        phase: Optional FixPipe unit-flag phase for Acc→Vec or Acc→Mat —
+            ``pl.STPhase.Partial`` or ``pl.STPhase.Final``. It must be paired
+            correctly with the producer's ``AccPhase`` sequence. Acc→Mat
+            supports TMOV, TEXTRACT, and TINSERT; Acc→Vec does not support an
+            ``offset`` together with phase.
     """
 
 
 @_api_decl
-def insert(dst_tile: Tile, src_tile: Tile, /, offset: List[int]) -> None:
+def insert(
+    dst_tile: Tile,
+    src_tile: Tile,
+    /,
+    offset: List[int],
+    *,
+    relu_pre_mode: Optional[ReluPreMode] = None,
+    scale: Optional[Union[float, Scalar, Tile]] = None,
+    phase: Optional[STPhase] = None,
+) -> None:
     """Insert a small Tile into a larger Tile at the given 2-D offset (TINSERT).
 
     Args:
         dst_tile: Destination (larger) Tile
         src_tile: Source (smaller) Tile
         offset: Insertion coordinates ``[row, col]`` in the destination
+        relu_pre_mode: Optional ReLU fusion for Acc→Mat
+        scale: Optional scalar or Scaling Tile for Acc→Mat FixPipe quantization
+        phase: Optional FixPipe unit-flag phase for Acc→Mat —
+            ``pl.STPhase.Partial`` or ``pl.STPhase.Final``. It must be paired
+            correctly with the producer's ``AccPhase`` sequence.
     """
 
 

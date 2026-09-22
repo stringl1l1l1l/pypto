@@ -613,7 +613,34 @@ TEST(BackendCCEBlockOutOps, Insert)
     auto tile = MakeTileType();
     auto call = MakeCall("block.insert",
                          {MakeVar("dst", tile), MakeVar("src", tile), MakeConstInt(0), MakeConstInt(0)});
-    EXPECT_CONTAINS(RunCodegen("block.insert", call), "TINSERT(dst, src, 0, 0);");
+    EXPECT_CONTAINS(RunCodegen("block.insert", call), "TINSERT<decltype(dst), decltype(src)>(dst, src, 0, 0);");
+}
+
+TEST(BackendCCEBlockOutOps, InsertWithScalarQuantAndRelu)
+{
+    auto dst = MakeTileType({32, 32}, ir::DataType::INT8);
+    auto src = MakeTileType({16, 16}, ir::DataType::FP32);
+    auto call = MakeCallWithKwargs(
+        "block.insert", {MakeVar("dst", dst), MakeVar("src", src), MakeConstInt(0), MakeConstInt(16), MakeConstInt(99)},
+        {{"relu_pre_mode", 0}, {"phase", static_cast<int>(ir::STPhase::Final)}});
+    auto code = RunCodegen("block.insert", call);
+    EXPECT_CONTAINS(code, "TINSERT<");
+    EXPECT_CONTAINS(code, "STPhase::Final");
+    EXPECT_CONTAINS(code, "ReluPreMode::NormalRelu");
+    EXPECT_CONTAINS(code, "static_cast<uint64_t>(99)");
+    EXPECT_CONTAINS(code, ", 0, 16);");
+}
+
+TEST(BackendCCEBlockOutOps, InsertWithScalingTile)
+{
+    auto scaling_memref = MakeMemRef(ir::MemorySpace::Scaling);
+    auto dst = MakeTileType({32, 32}, ir::DataType::INT8);
+    auto src = MakeTileType({16, 16}, ir::DataType::FP32);
+    auto scale = MakeTileType({1, 16}, ir::DataType::INT64, scaling_memref);
+    auto call = MakeCall("block.insert", {MakeVar("dst", dst), MakeVar("src", src), MakeConstInt(0), MakeConstInt(16),
+                                          MakeVar("scale", scale)});
+    EXPECT_CONTAINS(RunCodegen("block.insert", call),
+                    "TINSERT<decltype(dst), decltype(src), decltype(scale)>(dst, src, scale, 0, 16);");
 }
 
 TEST(BackendCCEBlockOutOps, SetValidShape)
@@ -1233,13 +1260,32 @@ TEST(BackendCCEBlockOutOps, Move)
     EXPECT_CONTAINS(code, "(dst, src);");
 }
 
+TEST(BackendCCEBlockOutOps, MoveWithPhase)
+{
+    auto tile = MakeTileType();
+    auto call = MakeCallWithKwargs("block.move", {MakeVar("dst", tile), MakeVar("src", tile)},
+                                   {{"phase", static_cast<int>(ir::STPhase::Final)}});
+    auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "TMOV<STPhase::Final,");
+}
+
 TEST(BackendCCEBlockOutOps, MoveWithOffset)
 {
     auto tile = MakeTileType();
     auto call = MakeCall("block.move", {MakeVar("dst", tile), MakeVar("src", tile), MakeOffsets(2, 4)});
     auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "TEXTRACT<decltype(dst), decltype(src)>(dst, src, 2, 4);");
+}
+
+TEST(BackendCCEBlockOutOps, MoveWithOffsetAndPreQuant)
+{
+    auto dst = MakeTileType({16, 16}, ir::DataType::INT8);
+    auto src = MakeTileType({32, 32}, ir::DataType::FP32);
+    auto call = MakeCall("block.move", {MakeVar("dst", dst), MakeVar("src", src), MakeOffsets(2, 4), MakeConstInt(99)});
+    auto code = RunCodegen("block.move", call);
     EXPECT_CONTAINS(code, "TEXTRACT<");
-    EXPECT_CONTAINS(code, "(dst, src, 2, 4);");
+    EXPECT_CONTAINS(code, "static_cast<uint64_t>(99)");
+    EXPECT_CONTAINS(code, ", 2, 4);");
 }
 
 TEST(BackendCCEBlockOutOps, MoveWithAccToVecMode)
@@ -1306,7 +1352,7 @@ TEST(BackendCCEBlockOutOps, MoveWithPreQuantInt8)
     EXPECT_CONTAINS(code, "(1ULL << 46)");
 }
 
-TEST(BackendCCEBlockOutOps, MoveFp)
+TEST(BackendCCEBlockOutOps, MoveWithScalingTile)
 {
     auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
     auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
@@ -1314,13 +1360,41 @@ TEST(BackendCCEBlockOutOps, MoveFp)
     auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
     auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
     auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
-    auto call = MakeCall("block.move_fp",
+    auto call = MakeCall("block.move",
                          {MakeVar("dst", vec_tile), MakeVar("src", acc_tile), MakeVar("fp", scaling_tile)});
-    auto code = RunCodegen("block.move_fp", call);
-    EXPECT_CONTAINS(code, "TMOV_FP(dst, src, fp);");
+    auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "TMOV<decltype(dst), decltype(src), decltype(fp)>(dst, src, fp);");
 }
 
-TEST(BackendCCEBlockOutOps, MoveFpWithAccToVecMode)
+TEST(BackendCCEBlockOutOps, MoveWithScalingTileAccToMatOffset)
+{
+    auto mat_memref = MakeMemRef(ir::MemorySpace::Mat);
+    auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
+    auto scaling_memref = MakeMemRef(ir::MemorySpace::Scaling);
+    auto mat_tile = MakeTileType({16, 16}, ir::DataType::INT8, mat_memref);
+    auto acc_tile = MakeTileType({32, 32}, ir::DataType::FP32, acc_memref);
+    auto scaling_tile = MakeTileType({1, 16}, ir::DataType::INT64, scaling_memref);
+    auto call = MakeCallWithKwargs(
+        "block.move",
+        {MakeVar("dst", mat_tile), MakeVar("src", acc_tile), MakeOffsets(2, 4), MakeVar("fp", scaling_tile)},
+        {{"phase", static_cast<int>(ir::STPhase::Final)}});
+    auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "TEXTRACT<STPhase::Final,");
+    EXPECT_CONTAINS(code, "(dst, src, fp, 2, 4);");
+}
+
+TEST(BackendCCEBlockOutOps, MoveRejectsDuplicateScaleAndNon2dOffset)
+{
+    auto tile = MakeTileType();
+    auto non_tuple = MakeCall("block.move",
+                              {MakeVar("dst", tile), MakeVar("src", tile), MakeVar("fp", tile), MakeConstInt(0)});
+    EXPECT_THROW(RunCodegen("block.move", non_tuple), npu::tile_fwk::Error);
+    auto non_2d = MakeCall("block.move",
+                           {MakeVar("dst", tile), MakeVar("src", tile), MakeOffsets({0}), MakeVar("fp", tile)});
+    EXPECT_THROW(RunCodegen("block.move", non_2d), npu::tile_fwk::Error);
+}
+
+TEST(BackendCCEBlockOutOps, MoveWithScalingTileAccToVecMode)
 {
     auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
     auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
@@ -1328,15 +1402,15 @@ TEST(BackendCCEBlockOutOps, MoveFpWithAccToVecMode)
     auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
     auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
     auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
-    auto call = MakeCallWithKwargs("block.move_fp",
+    auto call = MakeCallWithKwargs("block.move",
                                    {MakeVar("dst", vec_tile), MakeVar("src", acc_tile), MakeVar("fp", scaling_tile)},
                                    {{"acc_to_vec_mode", 0}});
-    auto code = RunCodegen("block.move_fp", call);
+    auto code = RunCodegen("block.move", call);
     EXPECT_CONTAINS(code, "TMOV<");
     EXPECT_CONTAINS(code, "AccToVecMode::SingleModeVec0");
 }
 
-TEST(BackendCCEBlockOutOps, MoveFpWithReluPreMode)
+TEST(BackendCCEBlockOutOps, MoveWithScalingTileReluPreMode)
 {
     auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
     auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
@@ -1344,15 +1418,15 @@ TEST(BackendCCEBlockOutOps, MoveFpWithReluPreMode)
     auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
     auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
     auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
-    auto call = MakeCallWithKwargs("block.move_fp",
+    auto call = MakeCallWithKwargs("block.move",
                                    {MakeVar("dst", vec_tile), MakeVar("src", acc_tile), MakeVar("fp", scaling_tile)},
                                    {{"relu_pre_mode", 0}});
-    auto code = RunCodegen("block.move_fp", call);
-    EXPECT_CONTAINS(code, "TMOV_FP<");
+    auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "TMOV<");
     EXPECT_CONTAINS(code, "ReluPreMode::NormalRelu");
 }
 
-TEST(BackendCCEBlockOutOps, MoveFpDualModeThrows)
+TEST(BackendCCEBlockOutOps, MoveWithScalingTileDualModeThrows)
 {
     auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
     auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
@@ -1360,13 +1434,13 @@ TEST(BackendCCEBlockOutOps, MoveFpDualModeThrows)
     auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
     auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
     auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
-    auto call = MakeCallWithKwargs("block.move_fp",
+    auto call = MakeCallWithKwargs("block.move",
                                    {MakeVar("dst", vec_tile), MakeVar("src", acc_tile), MakeVar("fp", scaling_tile)},
                                    {{"acc_to_vec_mode", static_cast<int>(ir::AccToVecMode::DualModeSplitM)}});
-    EXPECT_THROW(RunCodegen("block.move_fp", call), ir::ValueError);
+    EXPECT_THROW(RunCodegen("block.move", call), ir::ValueError);
 }
 
-TEST(BackendCCEBlockOutOps, MoveFpWithSingleModeVec1)
+TEST(BackendCCEBlockOutOps, MoveWithScalingTileSingleModeVec1)
 {
     auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
     auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
@@ -1374,35 +1448,15 @@ TEST(BackendCCEBlockOutOps, MoveFpWithSingleModeVec1)
     auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
     auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
     auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
-    auto call = MakeCallWithKwargs("block.move_fp",
+    auto call = MakeCallWithKwargs("block.move",
                                    {MakeVar("dst", vec_tile), MakeVar("src", acc_tile), MakeVar("fp", scaling_tile)},
                                    {{"acc_to_vec_mode", static_cast<int>(ir::AccToVecMode::SingleModeVec1)}});
-    auto code = RunCodegen("block.move_fp", call);
+    auto code = RunCodegen("block.move", call);
     EXPECT_CONTAINS(code, "TMOV<");
     EXPECT_CONTAINS(code, "AccToVecMode::SingleModeVec1");
 }
 
-TEST(BackendCCEBlockOutOps, MoveFpWrongSpace)
-{
-    auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
-    auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
-    auto scaling_memref = MakeMemRef(ir::MemorySpace::Scaling);
-    auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
-    auto call = MakeCall("block.move_fp",
-                         {MakeVar("dst", vec_tile), MakeVar("src", vec_tile), MakeVar("fp", scaling_tile)});
-    EXPECT_THROW(RunCodegen("block.move_fp", call), ir::ValueError);
-}
-
-TEST(BackendCCEBlockOutOps, MoveWithPhase)
-{
-    auto tile = MakeTileType();
-    auto call = MakeCallWithKwargs("block.move", {MakeVar("dst", tile), MakeVar("src", tile)}, {{"phase", 1}});
-    auto code = RunCodegen("block.move", call);
-    EXPECT_CONTAINS(code, "STPhase::Partial");
-    EXPECT_CONTAINS(code, "TMOV<");
-}
-
-TEST(BackendCCEBlockOutOps, MoveFpWithPhase)
+TEST(BackendCCEBlockOutOps, MoveWithScalingTileAndPhase)
 {
     auto vec_memref = MakeMemRef(ir::MemorySpace::Vec);
     auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
@@ -1410,23 +1464,23 @@ TEST(BackendCCEBlockOutOps, MoveFpWithPhase)
     auto vec_tile = MakeTileType({16, 16}, ir::DataType::FP16, vec_memref);
     auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
     auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
-    auto call = MakeCallWithKwargs("block.move_fp",
+    auto call = MakeCallWithKwargs("block.move",
                                    {MakeVar("dst", vec_tile), MakeVar("src", acc_tile), MakeVar("fp", scaling_tile)},
-                                   {{"phase", 2}});
-    auto code = RunCodegen("block.move_fp", call);
-    EXPECT_CONTAINS(code, "STPhase::Final");
+                                   {{"phase", static_cast<int>(ir::STPhase::Final)}});
+    auto code = RunCodegen("block.move", call);
+    EXPECT_CONTAINS(code, "TMOV<STPhase::Final,");
 }
 
 TEST(BackendCCEBlockOutOps, MoveWithPhaseAndAccToVecMode)
 {
     auto tile = MakeTileType();
     auto call = MakeCallWithKwargs("block.move", {MakeVar("dst", tile), MakeVar("src", tile)},
-                                   {{"phase", 1}, {"acc_to_vec_mode", 0}});
+                                   {{"phase", static_cast<int>(ir::STPhase::Partial)},
+                                    {"acc_to_vec_mode", static_cast<int>(ir::AccToVecMode::SingleModeVec0)}});
     auto code = RunCodegen("block.move", call);
     EXPECT_CONTAINS(code, "STPhase::Partial");
     EXPECT_CONTAINS(code, "AccToVecMode::SingleModeVec0");
 }
-
 TEST(BackendCCEBlockOutOps, UbCopy)
 {
     auto tile = MakeTileType();

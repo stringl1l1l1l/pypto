@@ -14,7 +14,7 @@
 
 ## 功能说明
 
-matmul / matmul_acc / matmul_mx / matmul_mx_acc的phase参数（pypto_pro.language.AccPhase）与store / store_tile / move的phase参数（pypto_pro.language.STPhase）共同控制Cube（矩阵乘）与Fixpipe（L0C→GM或L0C→UB搬运）之间的**unit_flag硬件握手**。正确使用phase可以省去两条流水在L0C Buffer上的软件同步、提升流水并行度；使用不当则会导致精度问题或设备卡死。
+matmul / matmul_acc / matmul_mx / matmul_mx_acc的phase参数（pypto_pro.language.AccPhase）与store / store_tile / move / insert的phase参数（pypto_pro.language.STPhase）共同控制Cube（矩阵乘）与Fixpipe（L0C Buffer→GM、L0C Buffer→UB或L0C Buffer→L1 Buffer搬运）之间的**unit_flag硬件握手**。正确使用phase可以省去两条流水在L0C Buffer上的软件同步、提升流水并行度；使用不当则会导致精度问题或设备卡死。
 
 本文是[AccPhase](../basic_data_structures/AccPhase.md)与[STPhase](../basic_data_structures/STPhase.md)的配合使用说明，不是独立接口文档，重点说明两个枚举之间的配对关系、硬件握手机制和典型使用方式。
 
@@ -34,7 +34,7 @@ phase=pypto_pro.language.AccPhase.Partial或phase=pypto_pro.language.AccPhase.Fi
 | Partial | 是（等待unit_flag = 0才写入） | 否（不改变unit_flag） |
 | Final | 是（等待unit_flag = 0才写入） | 是（写入后将unit_flag置为1） |
 
-### store / store_tile / move（STPhase）
+### FixPipe搬出接口（STPhase）
 
 phase=pypto_pro.language.STPhase.Partial或phase=pypto_pro.language.STPhase.Final均会使能硬件的unitFlag功能：
 
@@ -59,8 +59,8 @@ phase=pypto_pro.language.STPhase.Partial或phase=pypto_pro.language.STPhase.Fina
 
 如果phase使用不当，可能会导致精度问题或者卡死现象。使用时必须保证：
 
-1. **配对使用**：如果任一matmul系列接口使用了phase，对应的store、store_tile或move也需要使用phase。
-2. **Final收尾**：对于同一块L0C，matmul系列接口的最后一轮写操作，以及store、store_tile或move的最后一轮读操作，必须使用Final模式。
+1. **配对使用**：如果任一matmul系列接口使用了phase，对应的store、store_tile、move或insert也需要使用phase。
+2. **Final收尾**：对于同一块L0C Buffer，matmul系列接口的最后一轮写操作，以及Fixpipe搬出接口的最后一轮读操作，必须使用Final模式。
 
 ## 错误案例
 

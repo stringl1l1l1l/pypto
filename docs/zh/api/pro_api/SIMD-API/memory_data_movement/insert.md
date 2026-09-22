@@ -14,21 +14,32 @@
 
 ## 功能说明
 
-把一块较小的源Tile，按offset=[row, col]指定的行列位置嵌入到一块较大的目标Tile中。建议使用[pypto_pro.language.move](move.md)接口代替insert接口。
+将较小的源Tile搬运到较大的目标Tile中由offset=[row, col]指定的位置，并可在搬运过程中实现随路格式转换、量化和激活等操作。建议使用[pypto_pro.language.move](move.md)接口代替insert接口。
 
 ## 函数原型
 
 ```python
-pypto_pro.language.insert(dst_tile: Tile, src_tile: Tile, offset: List[int]) -> None
+pypto_pro.language.insert(
+    dst_tile: Tile,
+    src_tile: Tile,
+    offset: List[int],
+    *,
+    relu_pre_mode: Optional[ReluPreMode] = None,
+    scale: Optional[Union[float, Scalar, Tile]] = None,
+    phase: Optional[STPhase] = None,
+) -> None
 ```
 
 ## 参数说明
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| dst_tile | 输出 | 目的操作数，Tile类型，支持的数据类型和分形组合详见[约束说明](#约束说明)。 |
+| dst_tile | 输出 | 目的操作数，Tile类型；L0C Buffer → L1 Buffer路径必须使用NZ布局，首地址必须32字节对齐。支持的数据类型和分形组合详见[约束说明](#约束说明)。 |
 | src_tile | 输入 | 源操作数，Tile类型，支持的数据类型和分形组合详见[约束说明](#约束说明)。 |
-| offset | 输入 | 位置偏移，List[int]类型，长度必须为2，格式为[row, col]。源Tile的左上角对齐到目标Tile的offset位置；offset[0]为目标Tile的行偏移row，offset[1]为列偏移col。row和col必须是非负整数或运行时整数表达式，且源Tile的有效区域必须完整落入目标Tile。 |
+| offset | 输入 | 位置偏移，List[int]类型，长度必须为2，格式为[row, col]，单位为元素个数。源Tile的左上角对齐到目标Tile的offset位置；row和col必须是非负整数或运行时整数表达式，并满足row + src行数 ≤ dst行数、col + src列数 ≤ dst列数。 |
+| relu_pre_mode | 输入 | 可选；L0C Buffer → L1 Buffer搬运时是否开启随路ReLU操作，[pypto_pro.language.ReluPreMode](../basic_data_structures/ReluPreMode.md)类型。其他路径不支持。 |
+| scale | 输入 | 可选，仅用于L0C Buffer → L1 Buffer搬运，设置随路量化参数。数据在搬出L0C Buffer时由Fixpipe乘以该比例并转换到目的数据类型。不同的传入形式会影响量化粒度，支持如下类型：<br>- **float类型**：直接传入固定值（如scale = 2.0），适用于整块Tile使用同一比例。<br>- **Scalar类型**：量化比例在运行时确定，需按数据类型传值。<br>&nbsp;&nbsp;- DT_FP32：直接传原始比例值（如0.5）。<br>&nbsp;&nbsp;- DT_INT32、DT_INT64：传预编码的float32位模式转成的整数（如struct.pack("!f", 0.5)）。<br>- **Tile类型**：每列使用独立比例，需满足以下要求：<br>&nbsp;&nbsp;- 目标存储区域必须为Fixpipe Buffer。<br>&nbsp;&nbsp;- shape为[1, N]（列量化），N必须是16的倍数且N ≤ 512。<br>&nbsp;&nbsp;- dtype为DT_INT64。<br>&nbsp;&nbsp;- 目的操作数的Tile数据类型为DT_INT8时，Fixpipe Buffer中的Tile每个DT_INT64元素的bit46需置1，用于选择有符号量化；未置位时L0C Buffer中的负值会被按无符号解读。<br>&nbsp;&nbsp;- 用户需要先把比例数据从GM搬到L1 Buffer，再搬到Fixpipe Buffer，并完成MTE1→FIX同步。 |
+| phase | 输入 | 可选，L0C Buffer → L1 Buffer搬运时是否启用unit_flag同步，详见[phase使用约束](../cube_computation/phase.md)。 |
 
 ## 约束说明
 
@@ -38,8 +49,9 @@ pypto_pro.language.insert(dst_tile: Tile, src_tile: Tile, offset: List[int]) -> 
   |---|---|---|
   | UB → UB | ND → ND、NZ → NZ。 | 源与目的必须相同，支持DT_INT8、DT_INT32、DT_FP16、DT_BF16、DT_FP32、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。 |
   | UB → L1 Buffer | 源支持ND、NZ，目的不校验分形。 | 源与目的必须相同，支持DT_INT8、DT_INT32、DT_FP16、DT_BF16、DT_FP32、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。 |
-  | L0C Buffer → UB | NZ → ND，NZ → DN，NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
-  | L0C Buffer → L1 Buffer | NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
+  | L0C Buffer → UB | NZ → ND、NZ → DN、NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
+  | L0C Buffer → L1 Buffer（不配置scale） | NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
+  | L0C Buffer → L1 Buffer（配置scale） | NZ → NZ。 | 支持DT_FP32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16/DT_HF8/DT_FP8E4M3FN，以及DT_INT32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16。 |
 
 ## 返回值说明
 
@@ -139,4 +151,7 @@ pl.insert(p_mat_slot, p_f16_back_slot, [TKV // 2, TS_HALF * sub_id])
 
 # 仅沿第 0 维偏移
 pl.insert(v1_mat, tile_nz, [off, 0])
+
+# L0C FP32 NZ子块随路量化后写入L1 INT8 NZ目标窗口
+pl.insert(mat_int8, acc_fp32, [16, 32], scale=2.0, relu_pre_mode=pl.ReluPreMode.NormalRelu)
 ```

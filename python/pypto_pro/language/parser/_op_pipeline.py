@@ -73,7 +73,7 @@ def get_move_pipe(
     target_memory: MemorySpace | None,
 ) -> PipeType:
     """Determine the hardware pipe for a block ``move`` operation."""
-    if src_memory == MemorySpace.Acc and target_memory == MemorySpace.Vec:
+    if src_memory == MemorySpace.Acc and target_memory in (MemorySpace.Vec, MemorySpace.Mat):
         return PipeType.FIX
     if src_memory == MemorySpace.Mat:
         if target_memory in (MemorySpace.Left, MemorySpace.Right, MemorySpace.Bias, MemorySpace.ScaleLeft,
@@ -161,9 +161,8 @@ _BLOCK_OP_TILE_ROLES: dict[str, list] = {
     "load_tile": ["W"],
     "store": ["W", "R"],  # store(out, tile, offsets, ...)
     "store_tile": ["W", "R"],
-    "move": ["W", "R"],  # move(out, src, ...)
-    "move_fp": ["W", "R", "R"],  # move_fp(out, src, fp_tile)
-    "insert": ["W", "R"],  # insert(out, src, ...)
+    "move": ["W", "R", "R", "R"],  # move(out, src, [offset], [scale])
+    "insert": ["W", "R", None, None, "R"],  # insert(out, src, row, col, [scale])
     # ===== Matmul =====
     "matmul": ["W", "R", "R"],  # matmul(out, lhs, rhs)
     "matmul_acc": ["W", "RW", "R", "R"],  # matmul_acc(out, acc, lhs, rhs)
