@@ -1043,7 +1043,7 @@ class CallParserMixin:
         )
 
     def parse_op_call(self, call: ast.Call) -> Any:
-        """Parse operation call like pl.tensor.create_tensor() or pl.add().
+        """Parse operation call like pl.add() or pl.simt.abs().
 
         Args:
             call: Call AST node
@@ -1068,7 +1068,7 @@ class CallParserMixin:
             raise NotSupported(
                 f"Unsupported operation call: {ast.unparse(call)}",
                 span=span,
-                hint="Use pl.*, pl.tensor.*, or pl.system.* operations",
+                hint="Use pl.*, pl.simt.*, or pl.system.* operations",
                 parser_retry=True,
             )
 

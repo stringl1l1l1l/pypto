@@ -12,7 +12,7 @@ PyPTO IR module with tensor operations.
 
 This module provides:
 - Re-exports of all core IR types from pypto_pro.ir
-- Organized operation namespaces (e.g., op.tensor.create)
+- Organized operation namespaces (e.g., op.block.load)
 - IR Builder for incremental IR construction
 - Helper utilities
 - Enhanced type constructors (e.g., TensorType with integer shape support)

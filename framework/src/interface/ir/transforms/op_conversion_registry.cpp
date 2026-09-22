@@ -28,31 +28,12 @@ OpConversionRegistry& OpConversionRegistry::GetInstance()
     return instance;
 }
 
-OpConversionRegistry::OpConversionRegistry()
-{
-    // Register default simple conversions (tensor op -> block op)
-
-    // Elementwise binary ops
-    RegisterSimple("tensor.add", "block.add");
-    RegisterSimple("tensor.sub", "block.sub");
-    RegisterSimple("tensor.mul", "block.mul");
-    RegisterSimple("tensor.div", "block.div");
-    RegisterSimple("tensor.maximum", "block.maximum");
-
-    // Scalar ops
-    RegisterSimple("tensor.add_scalar", "block.adds");
-    RegisterSimple("tensor.sub_scalar", "block.subs");
-    RegisterSimple("tensor.mul_scalar", "block.muls");
-    RegisterSimple("tensor.div_scalar", "block.divs");
-
-    // Unary ops
-    RegisterSimple("tensor.exp", "block.exp");
-    RegisterSimple("tensor.cast", "block.cast");
-
-    // Transform ops
-    RegisterSimple("tensor.reshape", "block.reshape");
-    RegisterSimple("tensor.transpose", "block.transpose");
-}
+// No default conversions: the tensor.* operators these used to lower from were
+// removed (they had no backend implementation, so a kernel using one only failed
+// once it reached codegen). Conversions are registered by whoever needs them,
+// through RegisterSimple / RegisterCustom or their `register_op_conversion`
+// bindings.
+OpConversionRegistry::OpConversionRegistry() = default;
 
 void OpConversionRegistry::RegisterSimple(const std::string& from_op, const std::string& to_op)
 {

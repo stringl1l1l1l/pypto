@@ -20,7 +20,7 @@ def test_function_printed_with_subscript_types():
 
     @pl.jit(auto_mutex=False)
     def test_func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=pl.DT_FP32)
+        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.make_tensor(x, [64, 128], [128, 1], dtype=pl.DT_FP32)
         _test_result = result
 
     test_func_program, _ = test_func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -44,8 +44,8 @@ def test_parsed_function_printer_round_trip():
         x: pl.Tensor[[64], pl.DT_FP32],
         y: pl.Tensor[[64], pl.DT_FP32],
     ):
-        sum_val: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, y)
-        result: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.mul(sum_val, 2.0)
+        sum_val: pl.Tensor[[64], pl.DT_FP32] = pl.make_tensor(x, [64], [1])
+        result: pl.Tensor[[64], pl.DT_FP32] = pl.make_tensor(sum_val, [64], [1])
         _test_result = result
 
     round_trip_program, _ = round_trip.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -56,8 +56,8 @@ def test_parsed_function_printer_round_trip():
 
     assert "def round_trip" in printed
     assert "ir.Tensor[[64], ir.FP32" in printed
-    # Printer uses simplified tensor operation notation
-    assert "tensor.add" in printed or "ir.add" in printed
+    # Printer renders the op call it parsed
+    assert "ptr.make_tensor" in printed
 
 
 def test_while_loop_natural_syntax():
@@ -92,10 +92,11 @@ def test_while_with_tensor_operations_round_trip():
     @pl.jit(auto_mutex=False)
     def while_tensors(n: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
         i: pl.DT_INT64 = 0
-        acc: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.create_tensor([64], dtype=pl.DT_FP32)
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        acc = pl.make_tile(tile_type, addr=0)
         while i < n:
             i = i + 1
-            acc = pl.tensor.add(acc, x)
+            pl.add(acc, acc, acc)
         _test_result = acc
 
     while_tensors_program, _ = while_tensors.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -104,6 +105,6 @@ def test_while_with_tensor_operations_round_trip():
     # Print the function
     printed = pypto_pro.ir.python_print(while_tensors)
 
-    # Should have while loop and tensor operations
+    # Should have the while loop and the op in its body
     assert "while" in printed
-    assert "ir.add" in printed or "tensor.add" in printed
+    assert "block.add" in printed

@@ -80,7 +80,7 @@ public:
      * Creates a ConversionFunc that calls OpRegistry::Create with the target name.
      * Re-registering the same from_op replaces the previous rule.
      *
-     * \param from_op Source op name (e.g., "tensor.add")
+     * \param from_op Source op name (e.g., "block.add")
      * \param to_op Target op name (e.g., "block.add")
      */
     void RegisterSimple(const std::string& from_op, const std::string& to_op);
@@ -90,7 +90,7 @@ public:
      *
      * Re-registering the same from_op replaces the previous rule.
      *
-     * \param from_op Source op name (e.g., "tensor.matmul")
+     * \param from_op Source op name (e.g., "block.matmul")
      * \param func Custom conversion function
      */
     void RegisterCustom(const std::string& from_op, ConversionFunc func);

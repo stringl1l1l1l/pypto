@@ -22,7 +22,7 @@ def _tensor_var(name: str, dtype=DataType.FP16):
 
 @pytest.mark.parametrize(
     "op_name",
-    ["tensor.add", "tensor.matmul", "tensor.cast", "tensor.row_max", "block.load", "block.store"],
+    ["block.add", "block.cast", "block.move", "block.quant", "block.load", "block.store"],
 )
 def test_block_visible_ops_are_registered(op_name):
     assert ir.is_op_registered(op_name)
@@ -32,10 +32,10 @@ def test_block_visible_ops_are_registered(op_name):
 @pytest.mark.parametrize(
     "op_name, attrs",
     [
-        ("tensor.matmul", {"out_dtype", "a_trans", "b_trans", "c_matrix_nz"}),
-        ("tensor.cast", {"target_type", "mode"}),
-        ("tensor.row_max", {"axis", "keep_dim"}),
-        ("tensor.row_sum", {"axis", "keep_dim"}),
+        ("block.cast", {"target_type", "mode"}),
+        ("block.load", {"is_transpose", "tile_dims"}),
+        ("block.store", {"atomic", "phase", "relu_pre_mode"}),
+        ("block.move", {"acc_to_vec_mode", "phase", "relu_pre_mode"}),
     ],
 )
 def test_block_op_kwarg_schema_is_exposed(op_name, attrs):
@@ -46,13 +46,15 @@ def test_block_op_kwarg_schema_is_exposed(op_name, attrs):
 
 
 def test_create_op_call_accepts_registered_kwargs():
-    lhs = _tensor_var("lhs")
-    rhs = _tensor_var("rhs")
+    src = _tensor_var("src")
+    span = ir.Span.unknown()
+    shape = ir.MakeTuple([ir.ConstInt(64, DataType.INDEX, span)], span)
+    stride = ir.MakeTuple([ir.ConstInt(1, DataType.INDEX, span)], span)
     call = ir.create_op_call(
-        "tensor.matmul",
-        [lhs, rhs],
-        {"out_dtype": DataType.FP32, "a_trans": False, "b_trans": False},
-        ir.Span.unknown(),
+        "ptr.make_tensor",
+        [src, shape, stride],
+        {"dtype": DataType.FP32},
+        span,
     )
 
     assert isinstance(call.type, ir.TensorType)
@@ -63,15 +65,17 @@ def test_create_op_call_accepts_registered_kwargs():
     "kwargs",
     [
         {"unknown_param": 123},
-        {"a_trans": "true"},
+        {"atomic": "true"},
     ],
 )
 def test_create_op_call_rejects_invalid_kwargs(kwargs):
-    lhs = _tensor_var("lhs")
-    rhs = _tensor_var("rhs")
+    dst = _tensor_var("dst")
+    src = _tensor_var("src")
+    span = ir.Span.unknown()
+    offsets = ir.MakeTuple([ir.ConstInt(0, DataType.INDEX, span)], span)
 
     with pytest.raises(Exception):
-        ir.create_op_call("tensor.matmul", [lhs, rhs], kwargs, ir.Span.unknown())
+        ir.create_op_call("block.store", [dst, src, offsets], kwargs, span)
 
 
 # ===================================================================

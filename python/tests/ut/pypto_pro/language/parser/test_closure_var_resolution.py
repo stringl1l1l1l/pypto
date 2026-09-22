@@ -43,11 +43,12 @@ def test_list_closure_var_as_positional_arg():
 
 def test_int_closure_var_as_positional_arg():
     """Int closure variable resolves to ConstInt in function body."""
-    axis_value = 1
+    addr_value = 512
 
     @pl.jit(auto_mutex=False)
-    def func(x: pl.Tensor[[64, 128], pl.DT_FP32]):
-        result: pl.Tensor[[128, 64], pl.DT_FP32] = pl.tensor.transpose(x, axis1=0, axis2=axis_value)
+    def func(x: pl.Tensor[[1, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=addr_value)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -61,9 +62,12 @@ def test_float_closure_var_as_positional_arg():
     scale_value = 2.0
 
     @pl.jit(auto_mutex=False)
-    def func(x: pl.Tensor[[64], pl.DT_FP32]):
-        result: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.mul(x, scale_value)
-        _test_result = result
+    def func(x: pl.Tensor[[1, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        o = pl.make_tile(tile_type, addr=0)
+        s = pl.make_tile(tile_type, addr=512)
+        pl.axpy(o, s, scale_value)
+        _test_result = o
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     func = func_program.get_function(func.__name__)
@@ -76,9 +80,9 @@ def test_bool_closure_var_as_positional_arg():
     flag_value = True
 
     @pl.jit(auto_mutex=False)
-    def func(x: pl.Tensor[[64], pl.DT_FP32]):
-        result: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.mul(x, flag_value)
-        _test_result = result
+    def func(x: pl.Tensor[[1, 64], pl.DT_FP32]):
+        pl.printf("closure bool", loc=flag_value)
+        _test_result = x
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     func = func_program.get_function(func.__name__)
@@ -149,10 +153,13 @@ def test_dynamic_tensor_shape_value():
     """A DYNAMIC parameter dimension is read through tensor.shape."""
     @pl.jit(auto_mutex=False)
     def func(
-        x: pl.Tensor[[pl.DYNAMIC], pl.DT_FP32],
+        x: pl.Tensor[[pl.DYNAMIC, 64], pl.DT_FP32],
     ):
-        result = pl.tensor.mul(x, x.shape[0])
-        _test_result = result
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        o = pl.make_tile(tile_type, addr=0)
+        s = pl.make_tile(tile_type, addr=512)
+        pl.axpy(o, s, x.shape[0])
+        _test_result = o
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     func = func_program.get_function(func.__name__)
@@ -165,9 +172,11 @@ def test_dsl_scope_shadows_closure():
     x_scale = 999.0  # noqa: F841 -deliberately shadowed by DSL assignment
 
     @pl.jit(auto_mutex=False)
-    def func(x: pl.Tensor[[64], pl.DT_FP32]):
-        x_scale: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, x)
-        result: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.mul(x_scale, x)
+    def func(x: pl.Tensor[[1, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        x_scale = pl.make_tile(tile_type, addr=0)
+        result = pl.make_tile(tile_type, addr=512)
+        pl.add(result, x_scale, x_scale)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -181,9 +190,11 @@ def test_undefined_variable_still_raises():
     with pytest.raises(NameNotFound, match="Use of potentially undefined variable"):
 
         @pl.jit(auto_mutex=False)
-        def func(x: pl.Tensor[[64], pl.DT_FP32]):
-            result: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, totally_undefined)  # noqa: F821 # type: ignore
-            _test_result = result
+        def func(x: pl.Tensor[[1, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            o = pl.make_tile(tile_type, addr=0)
+            s = pl.make_tile(tile_type, addr=512)
+            pl.axpy(o, s, totally_undefined)  # noqa: F821 # type: ignore
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -195,8 +206,10 @@ def test_unsupported_closure_type_raises():
     with pytest.raises(InvalidType, match="Unsupported closure variable type: str"):
 
         @pl.jit(auto_mutex=False)
-        def func(x: pl.Tensor[[64], pl.DT_FP32]):
-            result: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, bad_value)  # type: ignore[arg-type]
-            _test_result = result
+        def func(x: pl.Tensor[[1, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            o = pl.make_tile(tile_type, addr=0)
+            s = pl.make_tile(tile_type, addr=512)
+            pl.axpy(o, s, bad_value)  # type: ignore[arg-type]
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)

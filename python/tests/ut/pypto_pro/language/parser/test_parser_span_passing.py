@@ -22,14 +22,18 @@ def _call_spans(func):
     return spans
 
 
-def test_parser_passes_valid_spans_to_tensor_operations():
+def test_parser_passes_valid_spans_to_operations():
     @pl.jit(auto_mutex=False)
     def parsed_ops(
-        x: pl.Tensor[[64], pl.DT_FP32],
-        y: pl.Tensor[[64], pl.DT_FP32],
+        x: pl.Tensor[[1, 64], pl.DT_FP32],
+        y: pl.Tensor[[1, 64], pl.DT_FP32],
     ):
-        a: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, y)
-        b: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.mul(a, 2.0)
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        a = pl.make_tile(tile_type, addr=0)
+        b = pl.make_tile(tile_type, addr=256)
+        pl.load(a, x, [0, 0])
+        pl.load(b, y, [0, 0])
+        pl.add(b, a, b)
         _test_result = b
 
     parsed_ops_program, _ = parsed_ops.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -37,7 +41,9 @@ def test_parser_passes_valid_spans_to_tensor_operations():
 
     spans = _call_spans(parsed_ops)
 
-    assert [name for name, _ in spans] == ["tensor.add", "tensor.mul_scalar"]
+    # Two separate op calls on two source lines: the assertions below are about the
+    # spans the parser attached, not about which op each line happens to build.
+    assert [name for name, _ in spans] == ["block.make_tile", "block.make_tile"]
     for _, span in spans:
         assert span.is_valid()
         assert span.begin_line > 0

@@ -11,7 +11,7 @@
 
 """How a compile-time error renders, across the shapes the framework raises them in.
 
-Every error carries a first line -- ``[file:line][MODULE]:ErrCode: FXXXXX! Enum: NAME. reason``
+Every error carries a first line -- ``[file:line][MODULE]:ErrCode: FXXXXX! Enum: CLASS::NAME. reason``
 -- and, when the framework can place it, a location block quoting the user's kernel.
 The cases below sample the raising shapes: a builder check with no location, a
 parser check pointing at one keyword, one pointing at a positional argument, a
@@ -39,7 +39,7 @@ import pytest
 
 from pypto.pypto_impl import ir
 
-# [file:line][MODULE]:ErrCode: FXXXXX! Enum: NAME. reason
+# [file:line][MODULE]:ErrCode: FXXXXX! Enum: CLASS::NAME. reason
 _FIRST_LINE = re.compile(
     r"^\[(?P<origin>[^\[\]]+:\d+)\]\[(?P<module>PRO_[A-Z]+)\]:"
     r"ErrCode: F(?P<code>[0-9A-F]{5})! Enum: (?P<enum>[A-Za-z_:]+)\. (?P<reason>.+)$"
@@ -106,7 +106,7 @@ def test_first_line_names_the_framework_source_the_module_and_the_code():
     assert rendered.head["origin"].startswith("block_ops.py:")
     assert rendered.head["module"] == "PRO_IR"
     assert rendered.head["code"] == "0000E"
-    assert rendered.head["enum"] == "INVALID_ARGUMENT"
+    assert rendered.head["enum"] == "ExternalError::INVALID_ARGUMENT"
     assert isinstance(rendered.error, InvalidArgument)
 
 
@@ -131,7 +131,7 @@ def test_only_one_first_line_is_rendered():
         tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
         pl.load(tile, x, [0, 0])
-        pl.tensor.add(tile, x)
+        pl.cast(tile, x)
 
     rendered = _render(kernel)
     assert rendered.text.count("ErrCode:") == 1, rendered.text
@@ -245,13 +245,12 @@ def test_a_cpp_check_keeps_its_own_first_line_code_and_location():
         tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
         pl.load(tile, x, [0, 0])
-        pl.tensor.add(tile, x)
+        pl.cast(tile, x)
 
     rendered = _render(kernel)
     assert rendered.head, rendered.lines[0]
     assert rendered.head["origin"].endswith(".cpp:" + rendered.head["origin"].split(":")[-1])
     assert rendered.head["module"] == "PRO_IR"
-    # The C++ side spells the enum qualified; the code still names the class.
     assert rendered.head["enum"] == "ExternalError::INVALID_TYPE"
     assert isinstance(rendered.error, InvalidType)
     assert rendered.loc, "the dispatch gate should have published the DSL location"
@@ -349,7 +348,7 @@ def test_every_check_renders_a_first_line_whatever_the_shape():
         tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
         pl.load(tile, x, [0, 0])
-        pl.tensor.matmul(tile, tile)
+        pl.abs(x, tile)
 
     for kernel in (missing_rank, bad_dtype_argument, wrong_operand):
         rendered = _render(kernel)
@@ -441,18 +440,18 @@ def test_more_cpp_checks_carry_their_own_source_and_the_qualified_enum():
     """Sampled across C++ files, since each macro call site renders its own head."""
 
     @pl.jit
-    def add_on_a_tile(x: pl.Tensor[[64, 64], pl.DT_FP16]):
+    def cast_from_a_tensor(x: pl.Tensor[[64, 64], pl.DT_FP16]):
         tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
         pl.load(tile, x, [0, 0])
-        pl.tensor.add(tile, x)
+        pl.cast(tile, x)
 
     @pl.jit
-    def matmul_on_a_tile(x: pl.Tensor[[64, 64], pl.DT_FP16]):
+    def abs_into_a_tensor(x: pl.Tensor[[64, 64], pl.DT_FP16]):
         tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
         pl.load(tile, x, [0, 0])
-        pl.tensor.matmul(tile, tile)
+        pl.abs(x, tile)
 
     @pl.jit
     def rank_one_tile(x: pl.Tensor[[64, 64], pl.DT_FP16]):
@@ -460,11 +459,16 @@ def test_more_cpp_checks_carry_their_own_source_and_the_qualified_enum():
         pl.load(pl.make_tile(tile_type, addr=0), x, [0, 0])
 
     seen = set()
-    for kernel in (add_on_a_tile, matmul_on_a_tile, rank_one_tile):
+    for kernel in (cast_from_a_tensor, abs_into_a_tensor, rank_one_tile):
         rendered = _render(kernel)
         origin = rendered.head["origin"]
         assert origin.split(":")[0].endswith(".cpp"), f"{kernel.__name__}: {origin}"
-        assert rendered.head["enum"].startswith(("ExternalError::", "InternalError::"))
+        enum_field = rendered.head["enum"]
+        # One level of qualification, on both sides: error.cpp keeps only the
+        # member name and puts the class back from the code, so a call site
+        # that spells `npu::tile_fwk::InternalError::X` still renders short.
+        assert enum_field.startswith(("ExternalError::", "InternalError::")), enum_field
+        assert enum_field.count("::") == 1, enum_field
         assert rendered.head["module"].startswith("PRO_")
         assert rendered.loc, f"{kernel.__name__} lost its DSL location"
         seen.add(origin.split(":")[0])
@@ -494,7 +498,7 @@ def test_the_caret_lines_up_in_every_shape():
         tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
         pl.load(tile, x, [0, 0])
-        pl.tensor.add(tile, x)
+        pl.cast(tile, x)
 
     for kernel, section in (
         (keyword_value, ir.SectionKind.Cube),

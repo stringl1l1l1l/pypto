@@ -78,7 +78,6 @@ def test_plain_helper_does_not_create_a_vf_scope():
     "value: pl.DT_INT64 = pl.get_block_num()",
     "value = vf.arange(pl.get_block_idx(), dtype=pl.DT_INT32)",
     "value = pl.struct(field=1)",
-    "value = pl.tensor.add(missing_lhs, missing_rhs)",
     "for i in pl.range(pl.get_block_num()):\n    value = i",
 ])
 def test_pl_operations_are_rejected_in_vf_scope(statement):

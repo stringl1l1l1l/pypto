@@ -309,7 +309,7 @@ def build_graph(info, schedule: list) -> SyncGraph:
     # One gate for every check that needs the graph (see _validate), run here so the checks
     # see exactly what the emission will. The cycle walk is graph work and is done here; the
     # verdict on what a cycle's total distance means is a check.
-    validate_sync(graph, info, find_cycles(graph))
+    validate_sync(graph, info, find_cycles(graph), schedule)
     return graph
 
 

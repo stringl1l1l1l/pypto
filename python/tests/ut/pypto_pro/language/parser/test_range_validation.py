@@ -36,7 +36,7 @@ def test_non_vf_accepts_int64_stop(stop):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(stop):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -46,7 +46,7 @@ def test_non_vf_accepts_negative_start(start):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(start, 10):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -57,7 +57,7 @@ def test_non_vf_rejects_folded_stop_beyond_int64():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(INT64_MAX + 1):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(OutOfRange, match=r"integer constant must be representable in int64"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -71,7 +71,7 @@ def test_non_vf_rejects_stop_beyond_storage_band(stop):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(stop):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(OutOfRange, match=r"integer constant must be in"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -81,7 +81,7 @@ def test_non_vf_rejects_start_below_storage_band():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(INT64_MIN - 1, 10):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(OutOfRange, match=r"integer constant must be representable in int64"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -140,7 +140,7 @@ def test_rejects_float_literal_stop(stop):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(stop):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer, got float"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -151,7 +151,7 @@ def test_rejects_bool_literal_stop(stop):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(stop):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer, got bool"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -161,7 +161,7 @@ def test_rejects_float_start():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0.0, 10):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): start must be an integer, got float"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -171,7 +171,7 @@ def test_rejects_float_scalar_param_stop():
     @pl.jit(auto_mutex=False)
     def kernel(n: pl.DT_FP32, x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(n):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer, got float"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -181,7 +181,7 @@ def test_rejects_bool_scalar_param_stop():
     @pl.jit(auto_mutex=False)
     def kernel(flag: pl.DT_BOOL, x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(flag):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer, got bool"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -194,7 +194,7 @@ def test_rejects_tuple_stop():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range((0, 10)):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer scalar"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -204,7 +204,7 @@ def test_rejects_list_stop():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range([0, 10]):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer scalar"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -214,7 +214,7 @@ def test_rejects_string_stop():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range("10"):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer scalar"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -224,7 +224,7 @@ def test_rejects_dtype_stop():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(pl.DT_INT32):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): stop must be an integer scalar"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -238,7 +238,7 @@ def test_accepts_positive_step(step):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0, 10, step):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -248,7 +248,7 @@ def test_rejects_non_positive_step(step):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0, 10, step):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(OutOfRange, match=r"pl\.range\(\) step must be in \[1,"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -259,7 +259,7 @@ def test_rejects_non_integer_step(step):
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0, 10, step):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal, match=r"pl\.range\(\): step must be an integer"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -269,7 +269,7 @@ def test_accepts_runtime_step():
     @pl.jit(auto_mutex=False)
     def kernel(s: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0, 10, s):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -308,7 +308,7 @@ def test_non_vf_rejects_final_step_overflow():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0, INT64_MAX, INT64_MAX - 5):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(OutOfRange, match=r"loop variable reaches .* on the final step"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -331,7 +331,7 @@ def test_runtime_bound_skips_overflow_check():
     @pl.jit(auto_mutex=False)
     def kernel(n: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0, n, 10):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -343,7 +343,7 @@ def test_accepts_integer_scalar_param():
     @pl.jit(auto_mutex=False)
     def kernel(n: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(0, n):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -352,7 +352,7 @@ def test_accepts_integer_expression():
     @pl.jit(auto_mutex=False)
     def kernel(n: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(n * 2 + 1):  # type: ignore[operator]
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
@@ -364,7 +364,7 @@ def test_rejection_is_final():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(1.5):
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidVal):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -377,7 +377,7 @@ def test_no_args_still_rejected():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range():  # type: ignore[call-arg]
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidArgument, match=r"requires at least 1 argument"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -387,7 +387,7 @@ def test_keyword_args_still_rejected():
     @pl.jit(auto_mutex=False)
     def kernel(x: pl.Tensor[[64], pl.DT_FP32]):
         for _ in pl.range(stop=10):  # type: ignore[call-arg]
-            _y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
 
     with pytest.raises(InvalidArgument, match=r"does not support keyword arguments"):
         kernel.to_kernel_def().parse_target_program(ir.SectionKind.Vector)

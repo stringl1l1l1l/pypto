@@ -38,18 +38,6 @@ protected:
     ExprPtr Int(int64_t value) { return std::make_shared<ConstInt>(value, DataType::INT32, Sp()); }
 };
 
-TEST_F(OpConversionRegistryTest, TestDefaultConversionsContainRepresentativeOps)
-{
-    const std::vector<std::string> ops{
-        "tensor.add", "tensor.add_scalar", "tensor.exp", "tensor.reshape", "tensor.transpose",
-    };
-
-    for (const auto& op : ops) {
-        EXPECT_TRUE(Registry().HasConversion(op)) << op;
-        EXPECT_NE(Registry().Lookup(op), nullptr) << op;
-    }
-}
-
 TEST_F(OpConversionRegistryTest, TestLookupUnknownReturnsNull)
 {
     const std::string unknown = "nonexistent.op";

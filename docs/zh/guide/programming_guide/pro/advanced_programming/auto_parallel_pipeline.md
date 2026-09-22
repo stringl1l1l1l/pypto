@@ -38,7 +38,7 @@ def stage1(ki, a, b_l1, a_l1_db, left_db, right_db, acc_db, mm1_vec_db):
 
 ### 声明跨核共享Buffer
 
-跨核共享Buffer使用make_tile_group接口进行声明，tile数目由用户自主分配，通过fwd_ids和bwd_ids参数配置核间正反向同步id，若未配置，则不会插入对应的核间同步。
+跨核共享Buffer使用make_tile_group接口进行声明，通过fwd_ids和bwd_ids参数配置核间正反向同步id，若未配置，则不会插入对应的核间同步。
 
 其中fwd_ids为正向同步（生产者写完通知消费者），生产者stage之后插入set、消费者stage之前插入wait；bwd_ids为反向同步（消费者用完通知生产者可以覆写），消费者stage之后插入set、生产者stage之前插入wait。只配置fwd_ids时，仅保证消费者读到的是生产者写完的数据，不保证生产者下一轮覆写时消费者已经读完。每次迭代实际使用的id按`ids[迭代序号 % len(ids)]`轮转取用。
 
@@ -53,6 +53,8 @@ mm1_vec_db = pl.make_tile_group(
     bwd_ids=[2, 3],
 )
 ```
+
+Tile数不能随意取，与上游核提前迭代计算的次数相关，且直接影响流水性能，具体规则参见[使用约束](#使用约束)。
 
 ### 编写主循环
 
@@ -101,7 +103,7 @@ for kj in pl.range(0, M_ITER):        # 第二条流水
 | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | preload | 表示上游核提前迭代计算的次数，类型为int或list[int]。传入单个整数时，kernel内所有流水循环共用该值；传入列表时，按源码顺序为每个流水循环单独配置。取值为0的循环不做流水改写，只在原串行循环中插入核间同步。 |
 
-**建议流程**：先配置**preload=0**执行，确认串行版本精度正确，再逐步调大preload开启流水。多个流水循环时可以只把其中一条配成0（如preload=[0, 2]），单独验证这条流水的串行精度。
+**建议流程**：先配置**preload=0**执行，确认串行版本精度正确，再逐步调大preload开启流水。调大preload的同时，需按[使用约束](#使用约束)检查各跨核Buffer的Tile数是否够用。多个流水循环时可以只把其中一条配成0（如preload=[0, 2]），单独验证这条流水的串行精度。
 
 ```python
 import pypto_pro.language as pl
@@ -153,6 +155,9 @@ def pipeline_demo_kernel(...):
 - 允许跨核Buffer之间、跨核Buffer与核内Buffer之间进行地址复用，但最多允许两块Buffer复用，且复用双方的Tile数需要一致。
 - 地址复用的Buffer之间必须声明相同的mutex_ids。mutex锁的是地址，不同的id等于没有互斥。
 - 一个跨核Buffer（通过fwd_ids/bwd_ids标记）需要恰好被两个stage使用，且这两个stage分别在cube和vector上，构成一对一的生产者/消费者关系。
+- 跨核Buffer的生产者stage与消费者stage必须是主循环中相邻的两个stage，即消费者紧跟在生产者之后，不允许跨过中间的stage直接交接（如stage1写、stage4读）。需要把数据送到更后面的stage时，请逐级交接。
+- 跨核Buffer的Tile数由preload决定，不能随意取：按stage在主循环中的书写顺序编号（1、2、3……，与第一个stage在cube还是vector上无关），写这块Buffer的stage编号为奇数时至少需要2个Tile，为偶数时至少需要preload个Tile。以本文的[调用示例](#调用示例)（stage1 Cube → stage2 Vector → stage3 Cube → stage4 Vector）为例：mm1_vec_db（stage1写）与out_vec_db（stage3写）始终为2个Tile，与preload无关；p_mat_db（stage2写）至少需要preload个Tile，即preload=3时至少3个、preload=4时至少4个。Tile数不足时编译期报错，并给出该Buffer所需的最小Tile数。
+- 上述规则给出的是Tile数的下限。在Buffer空间充足时，可以分配多于该下限的Tile，用于进一步提升性能。增加Tile数时，mutex_ids的长度、fwd_ids/bwd_ids的长度（配成单个共用id的情况除外）以及Buffer占用的地址空间都需要同步调整。
 - 跨核Buffer的Tiles必须随迭代顺序轮转。
 - stage函数如果有结构体参数，请使用pypto_pro.language.struct()声明，不支持pypto_pro.language.struct_array()。
 - 跨核Buffer仅支持UB和L1 Buffer。

@@ -299,11 +299,12 @@ def test_let_with_tensor_expr():
     with ib.function("tensor_test") as f:
         f.return_type(ir.ScalarType(DataType.INT64))
 
-        # Create a tensor operation
-        tensor_create = ir.op.tensor.create([4, 8], DataType.FP32)
+        # Create an op whose result carries a TensorType
+        src = ir.Var("src", ir.TensorType([4, 8], DataType.FP32), ir.Span.unknown())
+        tensor_view = ir.op.ptr.make_tensor(src, [4, 8], [8, 1], dtype=DataType.FP32)
 
-        # let() should infer TensorType from the create operation
-        t = ib.let("t", tensor_create)
+        # let() should infer TensorType from the op's result type
+        t = ib.let("t", tensor_view)
 
         assert t.name == "t_0"
         assert isinstance(t.type, ir.TensorType)

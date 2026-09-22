@@ -1,160 +1,207 @@
-# Operator Implementations
+# 算子实现
 
-This directory contains the implementations for all PyPTO IR operators, organized by category.
+本目录存放所有 PyPTO IR 算子的**前端注册**：算子名、kwarg schema、类型推导。这些算子的
+CCE 产码是分开的，在 `src/interface/pypto_pro/backend/` 下。
 
-## Directory Structure
+## 目录结构
 
 ```text
 src/ir/op/
-├── README.md                    # This file
-├── type_inference.cpp           # Type inference utilities implementation
-├── tensor_ops/                  # Tensor operator implementations
-│   └── elementwise.cpp          # Element-wise ops (Add, Sub, Mul, Div)
-└── block_ops/                   # Block operator implementations
-    ├── memory.cpp               # Memory operations (get_block_idx, load, store)
-    ├── elementwise.cpp          # Element-wise ops (Add, Mul, Div)
-    ├── reduction.cpp            # Reduction ops (Sum with keepdim)
-    └── unary.cpp                # Unary ops (Sqrt)
+├── README.md                    # 本文件
+├── README_en.md                 # 本文件的英文版
+├── type_inference.cpp           # 下列文件共用的类型推导工具
+├── ptr_ops.cpp                  # ptr.*    - 指针与张量视图算子
+├── simt_ops.cpp                 # simt.*   - SIMT 算子
+├── vf_ops.cpp                   # vf.*     - VF（vector-function）算子
+├── debug_ops.cpp                # debug.*  - 调试算子
+├── sync_ops/
+│   └── sync.cpp                 # system.* - 同步与屏障算子
+└── block_ops/
+    ├── memory.cpp               # block 作用域查询与 SPR 访问（无 block. 前缀）
+    ├── out_memory.cpp           # block.*  - 数据搬运（load、store、move、insert）
+    ├── out_elementwise.cpp      # block.*  - 逐元素与 gather 算子
+    ├── out_matmul.cpp           # block.*  - matmul 系列
+    ├── out_reduction.cpp        # block.*  - 行/列归约与 expand
+    ├── sort.cpp                 # block.*  - 排序、归并排序、直方图
+    └── struct_ops.cpp           # struct.* - 结构体创建 / 字段写入
 ```
 
-## Organization Principles
+`out_` 前缀表示**显式输出**约定：目标 tile 是算子的第一个参数，而不是返回值。
 
-### By Operation Type
+## 组织原则
 
-- `tensor_ops/` - Operations on N-dimensional tensors
-- `block_ops/` - Block-level operations for hardware-optimized programming
+### 按命名空间
 
-### By Operation Category (within each type)
+每个文件独占一个算子命名空间，命名空间就是算子名的前缀：
 
-- `elementwise.cpp` - Element-wise binary operations (Add, Sub, Mul, Div)
-- `reduction.cpp` - Reduction operations (Sum, Max, Min, etc.)
-- `unary.cpp` - Unary operations (Sqrt, etc.)
-- `memory.cpp` - Memory operations (load/store, block index) - *block_ops only*
-- `matmul.cpp` - Matrix multiplication operations - *to be added*
-- `transform.cpp` - Shape transformation operations (Reshape, Transpose, etc.) - *to be added*
+| 命名空间    | 文件                              | 算子数 |
+|-------------|-----------------------------------|-------:|
+| `vf.`       | `vf_ops.cpp`                      |     83 |
+| `simt.`     | `simt_ops.cpp`                    |     30 |
+| `system.`   | `sync_ops/sync.cpp`               |     21 |
+| `block.`    | `block_ops/out_*.cpp`、`sort.cpp` |     66 |
+| （顶层）    | `block_ops/memory.cpp`            |     15 |
+| `debug.`    | `debug_ops.cpp`                   |      5 |
+| `ptr.`      | `ptr_ops.cpp`                     |      3 |
+| `struct.`   | `block_ops/struct_ops.cpp`        |      2 |
 
-## Adding a New Operator
+### 按类别（在 `block_ops/` 内部）
 
-### 1. Choose or create a category file
+- `out_memory.cpp` —— 张量与 tile 之间的数据搬运
+- `out_elementwise.cpp` —— 逐元素算术、比较、选择、gather
+- `out_matmul.cpp` —— matmul 及其 accumulate / bias / mx 变体
+- `out_reduction.cpp` —— 行列归约，以及配套的 expand
+- `sort.cpp` —— 排序与直方图
+- `memory.cpp` —— block 作用域查询（`get_block_idx`、`get_block_num`）与 SPR 访问
+- `struct_ops.cpp` —— 结构体算子
 
-Select the appropriate category file under `tensor_ops/` or `block_ops/`, or create a new one:
+## 新增一个算子
 
-- Element-wise ops: `elementwise.cpp`
-- Matrix ops: `matmul.cpp` (create if needed)
-- Reduction ops: `reduction.cpp` (create if needed)
+### 1. 选择或新建类别文件
 
-### 2. Register the operator using the fluent API
+按算子的命名空间和类别挑文件，或在 `block_ops/` 下新建一个。**新建文件不需要改构建脚本**：
+`framework/src/interface/CMakeLists.txt` 用 `file(GLOB ... ir/op/*.cpp ir/op/*/*.cpp)` 收集源文件，
+重跑 CMake 即可。
 
-Add the operator registration to the category file:
+### 2. 用流式 API 注册算子
 
 ```cpp
-// Example: in tensor_ops/matmul.cpp (new file)
-#include "pypto/core/logging.h"
-#include "pypto/ir/op_registry.h"
-#include "pypto/ir/type.h"
-#include "pypto/ir/type_inference.h"
+// 示例：在 block_ops/out_matmul.cpp 中
+#include "ir/op_registry.h"
+#include "ir/type.h"
+#include "ir/type_inference.h"
+#include "pypto_pro/error.h"
 
 namespace pypto {
 namespace ir {
+namespace {
 
-// Helper function for type deduction (optional, for code reuse)
-TypePtr DeduceTensorMatMulType(const std::vector<ExprPtr>& args, const std::string& op_name) {
-  CHECK(args.size() == 2) << op_name << " requires exactly 2 arguments";
-
-  auto tensor1 = std::dynamic_pointer_cast<const TensorType>(args[0]->GetType());
-  auto tensor2 = std::dynamic_pointer_cast<const TensorType>(args[1]->GetType());
-  CHECK(tensor1 && tensor2) << op_name << " requires TensorType arguments";
-
-  // Matrix multiplication type inference logic
-  // ...
-
-  return result_type;
+// 类型推导辅助函数（可选，便于相关算子间复用）
+// args 和 kwargs 都会传进来：kwargs 承载算子的属性
+TypePtr DeduceBlockMatMulType(const std::vector<ExprPtr>& args,
+                              const std::vector<std::pair<std::string, std::any>>& kwargs,
+                              const std::string& op_name)
+{
+    PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+        << op_name << " requires 3 arguments (out, lhs, rhs)";
+    // ... 由 args[0] 的类型推导；当某个属性会改变结果时，再看 kwargs ...
+    return args[0]->GetType();
 }
 
-// Register the operator
-REGISTER_OP("tensor.matmul")
-    .set_op_category("TensorOp")
-    .set_description("Matrix multiplication of two tensors")
-    .add_argument("lhs", "Left-hand side tensor")
-    .add_argument("rhs", "Right-hand side tensor")
-    .f_deduce_type([](const std::vector<ExprPtr>& args) {
-      return DeduceTensorMatMulType(args, "tensor.matmul");
+} // namespace
+
+REGISTER_OP("block.matmul_example")
+    .set_op_category("BlockOp")
+    .set_description("Matrix multiplication of two tiles into a pre-allocated output tile")
+    .add_argument("out", "Pre-allocated output tile (TileType)")
+    .add_argument("lhs", "Left-hand side tile (TileType)")
+    .add_argument("rhs", "Right-hand side tile (TileType)")
+    .set_attr<bool>("a_trans")
+    .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
+                      [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        return DeduceBlockMatMulType(args, kwargs, "block.matmul_example");
     });
 
-}  // namespace ir
-}  // namespace pypto
+} // namespace ir
+} // namespace pypto
 ```
 
-The `REGISTER_OP` macro uses static initialization, so the operator is automatically registered when the library loads. No manual registration function calls are needed.
+`REGISTER_OP` 依赖静态初始化，所以库加载时算子会自行注册，没有需要手动调用的注册函数。
 
-### 3. Update CMakeLists.txt
+关于这几个流式调用，有两点要注意：
 
-Add the new source file if you created one:
+- `set_op_category` 用于工具侧分组。取该命名空间已在用的值：
+  `BlockOp`、`VFOp`、`SimtOp`、`SyncOp`、`PtrOp`、`StructOp`、`DebugOp`、`LanguageOp`。
+- `set_attr<T>("name")` 声明一个关键字参数。它同时是 `ValidateKwargs` 的**白名单**，所以
+  一个属性都不声明的算子会**不加拦阻地接受任何关键字**。`add_argument` 只是文档——
+  没有任何代码会读回它。
 
-```cmake
-set(PYPTO_SOURCES
-    # ... existing files ...
-    src/ir/op/tensor_ops/matmul.cpp  # Add this
-    # ... rest of files ...
-)
-```
+### 3. 实现后端
 
-### 4. Write tests
+只做前端注册的算子能被构造，但不能被编译：kernel 用了没有后端的算子，会在 CCE 产码阶段失败，
+报 `Unknown call '<op>' reached CCE codegen`。产码实现放在 `src/interface/pypto_pro/backend/` 下，
+用 `REGISTER_BACKEND_OP(BackendCCE, "<算子名>")` 注册。
 
-Add tests in `tests/ut/ir/test_op_registry.py` to verify the operator works correctly.
+### 4. 编写测试
 
-## Benefits of This Structure
+- C++ 注册契约：`framework/tests/ut/interface/src/ir/`
+- Python 侧可见的行为：`python/tests/ut/pypto_pro/ir/op/test_registry.py`
+- 后端产出：`framework/tests/ut/interface/src/pypto_pro/backend/`
 
-1. **Modularity**: Each operator category is in its own file
-2. **Maintainability**: Easy to find and modify specific operator implementations
-3. **Scalability**: Adding new operators doesn't bloat existing files
-4. **Build Performance**: Changes to one category don't trigger recompilation of others
-5. **Clear Organization**: Operators grouped by type (tensor/tile) and category (elementwise/reduction/etc.)
+## 这种结构的好处
 
-## Current Operators
+1. **模块化**：每个命名空间、每个类别独占一个文件
+2. **可维护**：便于定位和修改特定算子
+3. **可扩展**：新增算子不会让已有文件膨胀
+4. **构建性能**：改动一个类别不会触发其他类别重新编译
+5. **组织清晰**：算子该放哪个文件，由它的名字直接决定
 
-### Tensor Operations
+## 现有算子
 
-- **Element-wise** (`tensor_ops/elementwise.cpp`):
-  - `tensor.add` - Element-wise addition with broadcasting
-  - `tensor.sub` - Element-wise subtraction with broadcasting
-  - `tensor.mul` - Element-wise multiplication with broadcasting
-  - `tensor.div` - Element-wise division with broadcasting
+共 225 个算子。下面按文件列出代表性的一批，完整清单请看对应文件。
 
-### Block Operations
+### 指针与张量视图（`ptr_ops.cpp`）
 
-Block operations are designed for hardware-optimized block-level programming,
-working with tiles and supporting scalar broadcasting.
+- `ptr.make_ptr` —— 从张量取出裸指针，或重解释指针的 dtype
+- `ptr.make_tensor` —— 基于指针或已有张量构造张量视图
+- `ptr.addptr` —— 按元素语义偏移裸指针
 
-- **Memory** (`block_ops/memory.cpp`):
-  - `block.get_block_idx` - Get the current block index (returns INT32 scalar)
-  - `block.load` - Copy data from tensor to unified buffer (tile)
-  - `block.store` - Copy data from unified buffer (tile) to tensor
+### Block 算子
 
-- **Element-wise** (`block_ops/elementwise.cpp`):
-  - Tile-Tile operations (with broadcasting):
-    - `block.add` - Element-wise addition (tile + tile)
-    - `block.sub` - Element-wise subtraction (tile - tile)
-    - `block.mul` - Element-wise multiplication (tile * tile)
-    - `block.div` - Element-wise division (tile / tile)
-  - Tile-Scalar operations:
-    - `block.adds` - Element-wise addition (tile + scalar)
-    - `block.subs` - Element-wise subtraction (tile - scalar)
-    - `block.muls` - Element-wise multiplication (tile * scalar)
-    - `block.divs` - Element-wise division (tile / scalar)
+Block 算子面向硬件优化的 block 级编程，作用于 tile，并遵循**显式输出**约定：目标 tile 是第一个参数。
 
-- **Reduction** (`block_ops/reduction.cpp`):
-  - `block.sum` - Sum reduction along specified axis
-    - Arguments: `(tile, axis, keepdim?)`
-    - When `keepdim=True`, reduced axis is kept as dimension 1
-    - When `keepdim=False` (default), reduced axis is removed
+- **block 作用域查询与 SPR**（`block_ops/memory.cpp`，无命名空间前缀）：
+  `get_block_idx`、`get_block_num`、`get_subblock_idx`、`get_subblock_num`、`get_spr`、
+  `set_saturation_flag`
+- **数据搬运**（`block_ops/out_memory.cpp`）：
+  `block.load`、`block.store`、`block.move`、`block.move_fp`、`block.insert`、`block.ub_copy`
+- **逐元素与 gather**（`block_ops/out_elementwise.cpp`）：
+  `block.add`、`block.sub`、`block.mul`、`block.div`（tile-tile）；
+  `block.adds`、`block.subs`、`block.muls`、`block.divs`（tile-scalar）；
+  `block.cmp`、`block.sel`、`block.gather`、`block.gatherb`、`block.gathermask`
+- **Matmul**（`block_ops/out_matmul.cpp`）：
+  `block.matmul`、`block.matmul_acc`、`block.matmul_bias`、`block.matmul_mx`、`block.gemv`
+- **归约与 expand**（`block_ops/out_reduction.cpp`）：
+  `block.row_sum`、`block.row_max`、`block.row_min`、`block.col_sum`、`block.col_max`、
+  `block.col_min`、`block.row_reduce`、`block.col_reduce`、`block.row_expand`、
+  `block.col_expand`
+- **排序**（`block_ops/sort.cpp`）：
+  `block.sort32`、`block.mrgsort`、`block.mrgsort2`、`block.histogram`
+- **结构体**（`block_ops/struct_ops.cpp`）：
+  `struct.create`、`struct.set`
 
-- **Unary** (`block_ops/unary.cpp`):
-  - `block.sqrt` - Element-wise square root
+### VF 算子（`vf_ops.cpp`）
 
-## See Also
+vector-function 算子，在 VF section 内发射。寄存器由赋值形式（`dst = vf.xxx(...)`）隐式声明。
 
-- [Type Inference Header](../../../../include/ir/type_inference.h)
-- [Type Inference Implementation](type_inference.cpp)
-- [Operator Registry Header](../../../../include/ir/op_registry.h)
-- [Operator Registry Implementation](../op_registry.cpp)
+- `vf.reg_tensor`、`vf.mask_reg` —— 寄存器声明（不可直接调用）
+- `vf.create_mask`、`vf.update_mask` —— 谓词寄存器
+- `vf.load_align`、`vf.store_align` —— 对齐的加载 / 存储
+- `vf.full`、`vf.add`、`vf.max`、`vf.reduce_sum` —— 广播与计算
+
+### SIMT 算子（`simt_ops.cpp`）
+
+- `simt.thread_idx`、`simt.block_idx`、`simt.block_dim`、`simt.grid_dim`、
+  `simt.linear_thread_idx` —— 上下文查询
+- `simt.exp`、`simt.sqrt`、`simt.abs`、`simt.fma` —— 标量数学
+- `simt.atomic_add`、`simt.atomic_cas` —— 原子操作
+- `simt.syncthreads`、`simt.threadfence` —— 同步
+
+### 同步（`sync_ops/sync.cpp`）
+
+- `system.sync_src_dyn`、`system.sync_dst_dyn` —— pipe 事件的 set / wait
+- `system.bar_m`、`system.bar_mte1`、`system.bar_mte2`、`system.bar_mte3`、`system.bar_all` —— 屏障
+- `system.set_cross_core`、`system.wait_cross_core` —— 跨核同步
+
+### 调试（`debug_ops.cpp`）
+
+- `debug.dump_tensor`、`debug.dump_tile` —— dump 数据
+- `debug.printf`、`debug.assert`、`debug.trap`
+
+## 另见
+
+- [类型推导头文件](../../../../include/ir/type_inference.h)
+- [类型推导实现](type_inference.cpp)
+- [算子注册表头文件](../../../../include/ir/op_registry.h)
+- [算子注册表实现](../op_registry.cpp)
+- [CCE 后端实现](../../pypto_pro/backend/)

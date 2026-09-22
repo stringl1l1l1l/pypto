@@ -20,14 +20,15 @@ def test_loop_without_iter_args():
     """Test loop without iter_args."""
 
     @pl.jit(auto_mutex=False)
-    def loop_without_iter_args(x: pl.Tensor[[64], pl.DT_FP32]):
-        result: pl.Tensor[[64], pl.DT_FP32] = x
+    def loop_without_iter_args(x: pl.Tensor[[1, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         for i in pl.range(3):
             if i > 0:
-                temp = pl.tensor.mul(result, 2.0)
+                temp = pl.make_tile(tile_type, addr=512)
                 result = temp
             else:
-                temp = pl.tensor.add(result, 1.0)
+                temp = pl.make_tile(tile_type, addr=1024)
                 result = temp
         _test_result = result
 
@@ -885,7 +886,7 @@ def test_scalar_param_as_stop():
     def scalar_stop(n: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
         y = x
         for _ in pl.range(n):
-            y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
         _test_result = y
 
     scalar_stop_program, _ = scalar_stop.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -908,7 +909,7 @@ def test_scalar_param_as_start_stop():
     ):
         y = x
         for _ in pl.range(0, n):
-            y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
         _test_result = y
 
     scalar_start_stop_program, _ = scalar_start_stop.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -953,7 +954,7 @@ def test_scalar_expression_as_stop():
     def scalar_expr_stop(n: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
         y = x
         for _ in pl.range(n * 2):  # type: ignore[operator]
-            y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
         _test_result = y
 
     scalar_expr_stop_program, _ = scalar_expr_stop.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -972,7 +973,7 @@ def test_scalar_complex_expression_as_stop():
     ):
         y = x
         for _ in pl.range(n * 2 + 1):  # type: ignore[operator]
-            y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
         _test_result = y
 
     scalar_complex_expr_program, _ = scalar_complex_expr.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -991,7 +992,7 @@ def test_scalar_floordiv_expression_as_stop():
     ):
         y = x
         for _ in pl.range(n // 4):  # type: ignore[operator]
-            y: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.add(x, 1.0)
+            pl.system.bar_all()
         _test_result = y
 
     scalar_floordiv_expr_program, _ = scalar_floordiv_expr.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -1169,12 +1170,13 @@ def test_while_loop_with_tensors():
     """Test while loop with tensor operations."""
 
     @pl.jit(auto_mutex=False)
-    def while_tensors(n: pl.DT_INT64, x: pl.Tensor[[64], pl.DT_FP32]):
+    def while_tensors(n: pl.DT_INT64, x: pl.Tensor[[1, 64], pl.DT_FP32]):
         i: pl.DT_INT64 = 0
-        acc: pl.Tensor[[64], pl.DT_FP32] = pl.tensor.create_tensor([64], dtype=pl.DT_FP32)
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        acc = pl.make_tile(tile_type, addr=0)
         while i < n:
             i = i + 1
-            acc = pl.tensor.add(acc, x)
+            pl.add(acc, acc, acc)
         _test_result = acc
 
     while_tensors_program, _ = while_tensors.to_kernel_def().parse_target_program(ir.SectionKind.Vector)

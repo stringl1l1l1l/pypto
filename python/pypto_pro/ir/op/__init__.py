@@ -19,7 +19,6 @@ __all__ = [
     "block",
     "debug",
     "system",
-    "tensor",
     "ptr",
     "scalar",
     "simt",
@@ -32,4 +31,3 @@ from . import ptr_ops as ptr
 from . import scalar_ops as scalar
 from . import simt_ops as simt
 from . import system_ops as system
-from . import tensor_ops as tensor

@@ -15,6 +15,7 @@
 
 #include "pypto_pro/error.h"
 
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 
@@ -32,6 +33,31 @@ thread_local ir::Span g_currentSpan;
 
 constexpr unsigned CODE_MASK = 0xFFFFFU;
 constexpr int CODE_WIDTH = 5;
+constexpr unsigned CLASS_MASK = 0xF0000U;
+
+/**
+ * \brief The enum member name, without the qualification the call site wrote.
+ *
+ * PRO_ERR_ stringifies whatever the call site typed, so the depth varies: most
+ * sites write `ExternalError::X`, the internal checks write
+ * `npu::tile_fwk::InternalError::X`. Keep only the member so the printed form
+ * stops depending on how the call site spelled it.
+ */
+const char* BareEnumName(const char* codeName)
+{
+    const char* lastColon = std::strrchr(codeName, ':');
+    return lastColon != nullptr ? lastColon + 1 : codeName;
+}
+
+/**
+ * \brief The enum class a code belongs to, from the code itself.
+ *
+ * Every InternalError member sits above the low 16 bits (0x1FFFF and up); every
+ * ExternalError member stays inside them. The Python side derives the same
+ * prefix from the same bits (`_errors.py` spec_first_line), so both sides
+ * render one format.
+ */
+const char* EnumClassName(unsigned code) { return (code & CLASS_MASK) == 0U ? "ExternalError" : "InternalError"; }
 
 } // namespace
 
@@ -53,7 +79,8 @@ std::string ErrHead(const char* file, int line, const char* module, unsigned cod
     std::ostringstream oss;
     oss << "[" << file << ":" << line << "][" << module << "]:"
         << "ErrCode: F" << std::uppercase << std::hex << std::setw(CODE_WIDTH) << std::setfill('0')
-        << (code & CODE_MASK) << std::dec << "! Enum: " << codeName << ". ";
+        << (code & CODE_MASK) << std::dec << "! Enum: " << EnumClassName(code & CODE_MASK)
+        << "::" << BareEnumName(codeName) << ". ";
     return oss.str();
 }
 

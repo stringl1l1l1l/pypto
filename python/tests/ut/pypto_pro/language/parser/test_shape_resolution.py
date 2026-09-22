@@ -453,7 +453,7 @@ def test_different_dtypes_per_param():
         x: pl.Tensor[[128, 64], dtype_in],
         out: pl.Tensor[[128, 64], dtype_out],
     ):
-        _test_result = pl.tensor.cast(x, target_type=dtype_out)
+        _test_result = pl.make_tensor(x, [128, 64], [64, 1], dtype=dtype_out)
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     func = func_program.get_function(func.__name__)
@@ -535,13 +535,14 @@ def test_shapes_kwarg_from_variable():
 
 def test_int_kwarg_from_closure():
     """User passes an int kwarg (like axis) from closure."""
-    swap_axis = 1
+    addr_from_closure = 512
 
     @pl.jit(auto_mutex=False)
     def func(
         x: pl.Tensor[[64, 128], pl.DT_FP32],
     ):
-        result: pl.Tensor[[128, 64], pl.DT_FP32] = pl.tensor.transpose(x, axis1=0, axis2=swap_axis)
+        tile_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=addr_from_closure)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -556,7 +557,7 @@ def test_dtype_kwarg_from_closure():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 64], pl.DT_FP32]):
-        result: pl.Tensor[[64, 64], pl.DT_FP16] = pl.tensor.cast(x, target_type=out_dtype)
+        result: pl.Tensor[[64, 64], pl.DT_FP16] = pl.make_tensor(x, [64, 64], [64, 1], dtype=out_dtype)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)

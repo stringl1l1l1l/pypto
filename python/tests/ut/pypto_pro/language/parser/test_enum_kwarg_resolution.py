@@ -40,7 +40,8 @@ def test_dtype_kwarg_enum_literal():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=pl.DT_FP32)
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -55,9 +56,11 @@ def test_mode_kwarg_enum_literal():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(
-            x, target_type=pl.DT_FP32, mode=pl.RoundMode.CAST_ROUND
-        )
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
+        src = pl.make_tile(tile_type, addr=0)
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=16384)
+        pl.cast(result, src, mode=pl.RoundMode.CAST_ROUND)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -76,7 +79,8 @@ def test_dtype_kwarg_closure_enum_var():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=dt)
+        tile_type = pl.TileType(shape=[64, 128], dtype=dt, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -92,9 +96,11 @@ def test_mode_kwarg_closure_enum_var():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(
-            x, target_type=pl.DT_FP32, mode=rounding
-        )
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
+        src = pl.make_tile(tile_type, addr=0)
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=16384)
+        pl.cast(result, src, mode=rounding)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -114,7 +120,8 @@ def test_dtype_kwarg_multilevel_closure_assignment():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=dt_b)
+        tile_type = pl.TileType(shape=[64, 128], dtype=dt_b, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -133,7 +140,8 @@ def test_kernel_factory_closure_dtype():
     def make_kernel(dtype):
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-            result: pl.Tensor[[64, 128], dtype] = pl.tensor.cast(x, target_type=dtype)
+            tile_type = pl.TileType(shape=[64, 128], dtype=dtype, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -155,7 +163,8 @@ def test_dtype_kwarg_int_literal_rejected():
 
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-            result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=1)
+            tile_type = pl.TileType(shape=[64, 128], dtype=1, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -168,9 +177,11 @@ def test_mode_kwarg_int_literal_rejected():
 
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-            result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(
-                x, target_type=pl.DT_FP32, mode=1
-            )
+            tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
+            src = pl.make_tile(tile_type, addr=0)
+            tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=16384)
+            pl.cast(result, src, mode=1)
             _test_result = result
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -191,7 +202,8 @@ def test_dtype_kwarg_int_closure_var_rejected():
 
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-            result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=iv)
+            tile_type = pl.TileType(shape=[64, 128], dtype=iv, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -208,7 +220,8 @@ def test_target_memory_enum_literal():
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
         tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         a = pl.make_tile(tile_type, addr=0)  # noqa: F841
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=pl.DT_FP32)
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -225,49 +238,11 @@ def test_target_memory_int_rejected():
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
             tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=1)  # noqa: F841
-            result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=pl.DT_FP32)
+            tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
-
-
-# ---------------------------------------------------------------------------
-# dtype as a POSITIONAL arg (goes through builder args, not resolve_single_kwarg)
-# ---------------------------------------------------------------------------
-@pytest.mark.soc("950")
-def test_dtype_positional_enum_literal():
-    """A dtype enum passed positionally (cast(x, pl.DT_FP32)) is accepted."""
-
-    @pl.jit(auto_mutex=False)
-    def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, pl.DT_FP32)
-        _test_result = result
-
-    func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
-    func = func_program.get_function(func.__name__)
-
-    assert isinstance(func, ir.Function)
-
-
-@pytest.mark.soc("950")
-def test_dtype_positional_int_not_guarded():
-    """A positional int is NOT caught by the enum-kwarg guard.
-
-    The guard only applies to keyword arguments (via ``resolve_single_kwarg``);
-    positional args are parsed straight into the op's arg list. This documents
-    that ``cast(x, 1)`` is not rejected by the enum guard (an int positional
-    dtype is validated later at the C++ boundary, not here).
-    """
-
-    @pl.jit(auto_mutex=False)
-    def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, 1)
-        _test_result = result
-
-    func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
-    func = func_program.get_function(func.__name__)
-
-    assert isinstance(func, ir.Function)
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +269,8 @@ def test_fractal_int_kwarg_still_allowed():
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
         tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Acc, fractal=1024)
         a = pl.make_tile(tile_type, addr=0)  # noqa: F841
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=pl.DT_FP32)
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -599,7 +575,8 @@ def test_dtype_kwarg_enum_ternary_const_condition():
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
         target = pl.DT_FP32 if data_type == 0 else pl.DT_INT32
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=target)
+        tile_type = pl.TileType(shape=[64, 128], dtype=target, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -614,9 +591,10 @@ def test_dtype_kwarg_enum_ternary_inline():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(
-            x, target_type=pl.DT_FP32 if True else pl.DT_INT32
+        tile_type = pl.TileType(
+            shape=[64, 128], dtype=pl.DT_FP32 if True else pl.DT_INT32, target_memory=pl.MemorySpace.Vec
         )
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -637,7 +615,8 @@ def test_enum_ternary_condition_is_an_enum_comparison():
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
             acc = pl.DT_FP32 if in_dtype == pl.DT_FP16 else pl.DT_INT32
-            result = pl.tensor.cast(x, target_type=acc)
+            tile_type = pl.TileType(shape=[64, 128], dtype=acc, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -664,7 +643,8 @@ def test_non_dtype_enum_ternary():
         space = pl.MemorySpace.Vec if use_vec else pl.MemorySpace.Acc
         tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=space)
         a = pl.make_tile(tile_type, addr=0)  # noqa: F841
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=pl.DT_FP32)
+        tile_type = pl.TileType(shape=[64, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -686,7 +666,8 @@ def test_enum_ternary_unselected_branch_not_parsed():
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
         target = pl.DT_FP32 if True else undefined_name_in_dead_branch  # noqa: F821
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=target)
+        tile_type = pl.TileType(shape=[64, 128], dtype=target, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -754,9 +735,8 @@ def test_int_via_ternary_still_rejected_by_enum_kwarg_guard():
 
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-            result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(
-                x, target_type=1 if True else 2
-            )
+            tile_type = pl.TileType(shape=[64, 128], dtype=1 if True else 2, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -773,7 +753,8 @@ def test_mixed_enum_int_branches_follow_the_selected_branch():
     @pl.jit(auto_mutex=False)
     def picks_enum(x: pl.Tensor[[64, 128], pl.DT_FP16]):
         target = pl.DT_FP32 if True else 1
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=target)
+        tile_type = pl.TileType(shape=[64, 128], dtype=target, target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     picks_enum_program, _ = picks_enum.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -786,7 +767,8 @@ def test_mixed_enum_int_branches_follow_the_selected_branch():
         @pl.jit(auto_mutex=False)
         def picks_int(x: pl.Tensor[[64, 128], pl.DT_FP16]):
             target = pl.DT_FP32 if False else 1
-            result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=target)
+            tile_type = pl.TileType(shape=[64, 128], dtype=target, target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         picks_int.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -813,14 +795,15 @@ def test_dtype_kwarg_from_closure_enum_list():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=_DTYPE_TABLE[1])
+        tile_type = pl.TileType(shape=[64, 128], dtype=_DTYPE_TABLE[1], target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     func = func_program.get_function(func.__name__)
 
     assert isinstance(func, ir.Function)
-    assert "target_type=float" in str(func)
+    assert "dtype=float" in str(func)
 
 
 @pytest.mark.soc("950")
@@ -829,14 +812,15 @@ def test_dtype_kwarg_from_helper_returning_enum():
 
     @pl.jit(auto_mutex=False)
     def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-        result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=_pick_dtype(True))
+        tile_type = pl.TileType(shape=[64, 128], dtype=_pick_dtype(True), target_memory=pl.MemorySpace.Vec)
+        result = pl.make_tile(tile_type, addr=0)
         _test_result = result
 
     func_program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     func = func_program.get_function(func.__name__)
 
     assert isinstance(func, ir.Function)
-    assert "target_type=float" in str(func)
+    assert "dtype=float" in str(func)
 
 
 @pytest.mark.soc("950")
@@ -854,7 +838,8 @@ def test_helper_returning_int_still_rejected_for_enum_kwarg():
 
         @pl.jit(auto_mutex=False)
         def func(x: pl.Tensor[[64, 128], pl.DT_FP16]):
-            result: pl.Tensor[[64, 128], pl.DT_FP32] = pl.tensor.cast(x, target_type=_pick_int(True))
+            tile_type = pl.TileType(shape=[64, 128], dtype=_pick_int(True), target_memory=pl.MemorySpace.Vec)
+            result = pl.make_tile(tile_type, addr=0)
             _test_result = result
 
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
@@ -873,8 +858,6 @@ if __name__ == "__main__":
         test_dtype_kwarg_int_closure_var_rejected,
         test_target_memory_enum_literal,
         test_target_memory_int_rejected,
-        test_dtype_positional_enum_literal,
-        test_dtype_positional_int_not_guarded,
         test_cmp_mode_is_not_an_enum_kwarg,
         test_fractal_int_kwarg_still_allowed,
         test_vf_enum_kwarg_literal,

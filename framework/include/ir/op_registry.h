@@ -58,7 +58,7 @@ using CallPtr = std::shared_ptr<const Call>;
  * Example usage:
  * @code
  * OpRegistryEntry entry;
- * entry.set_name("tensor.add")
+ * entry.set_name("block.add")
  *      .set_description("Element-wise addition of two tensors")
  *      .add_argument("lhs", "Left-hand side tensor")
  *      .add_argument("rhs", "Right-hand side tensor")
@@ -276,7 +276,7 @@ public:
      *
      * Example usage:
      * @code
-     * REGISTER_OP("tensor.matmul")
+     * REGISTER_OP("block.matmul")
      *     .set_attr<DataType>("out_dtype")       // OK: DataType is allowed
      *     .set_attr<bool>("a_trans")             // OK: bool is allowed
      *     .set_attr<MemorySpace>("target_memory") // OK: MemorySpace is allowed
@@ -319,9 +319,9 @@ private:
      * \brief Set the operator name
      *
      * The name is used as the unique identifier for the operator in the registry.
-     * Convention: use dotted notation like "tensor.add" or "tile.matmul".
+     * Convention: use dotted notation like "block.add" or "vf.add".
      *
-     * \param name The operator name (e.g., "tensor.add", "tile.conv2d")
+     * \param name The operator name (e.g., "block.add", "ptr.make_tensor")
      * \return Reference to this entry for method chaining
      */
     inline OpRegistryEntry& set_name(std::string name)
@@ -373,7 +373,7 @@ public:
      * Creates a new operator registry entry that can be configured using
      * the fluent API (set_description, add_argument, f_deduce_type, etc.).
      *
-     * \param op_name Name of the operator (e.g., "tensor.add", "block.mul")
+     * \param op_name Name of the operator (e.g., "block.add", "block.mul")
      * \throws ValueError if operator is already registered
      */
     OpRegistryEntry& Register(const std::string& op_name);

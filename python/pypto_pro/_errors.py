@@ -345,7 +345,13 @@ def _first_line(code: ErrorCode, module: str, origin: str, message: str) -> str:
     if carries_spec_head(message):
         return message
     head = f"[{origin}][{module}]" if origin else f"[{module}]"
-    return f"{head}:ErrCode: F{int(code) & 0xFFFFF:05X}! Enum: {code.name}. {message}"
+    masked = int(code) & 0xFFFFF
+    # Every InternalError member sits above the low 16 bits (0x1FFFF and up);
+    # every ExternalError member stays inside them. The C++ side derives the same
+    # prefix from the same bits (error.cpp EnumClassName), so both sides render
+    # one format.
+    enum_class = "ExternalError" if masked & 0xF0000 == 0 else "InternalError"
+    return f"{head}:ErrCode: F{masked:05X}! Enum: {enum_class}::{code.name}. {message}"
 
 
 # Lines of context shown around a span. pypto's diagnostics show 2 and 4; the

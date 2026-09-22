@@ -23,7 +23,9 @@ def test_parse_tensor_with_memref():
 
     @pl.jit(auto_mutex=False)
     def test_fn(x: pl.Tensor[[64], pl.DT_FP32]):
-        y: pl.Tensor[[64], pl.DT_FP32, pl.MemRef(pl.MemorySpace.DDR, 0, 256, 1)] = pl.tensor.add(x, 1.0)  # noqa: F841
+        y: pl.Tensor[[64], pl.DT_FP32, pl.MemRef(pl.MemorySpace.DDR, 0, 256, 1)] = pl.make_tensor(  # noqa: F841
+            x, [64], [1]
+        )
 
     test_fn_program, _ = test_fn.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     test_fn = test_fn_program.get_function(test_fn.__name__)
@@ -39,7 +41,7 @@ def test_backwards_compat_three_args_layout():
 
     @pl.jit(auto_mutex=False)
     def test_fn(x: pl.Tensor[[64], pl.DT_FP32]):
-        y: pl.Tensor[[64], pl.DT_FP32, pl.NZ] = pl.tensor.add(x, 1.0)  # noqa: F841
+        y: pl.Tensor[[64], pl.DT_FP32, pl.NZ] = pl.make_tensor(x, [64], [1])  # noqa: F841
 
     test_fn_program, _ = test_fn.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
     test_fn = test_fn_program.get_function(test_fn.__name__)

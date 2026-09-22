@@ -14,7 +14,7 @@ import inspect
 
 from pypto_pro import DataType, ir
 from pypto_pro.ir._utils import _get_span_or_capture
-from pypto_pro.ir.op import tensor as tensor_ops
+from pypto_pro.ir.op import ptr as ptr_ops
 
 
 def _current_line():
@@ -30,10 +30,9 @@ def _tensor_var(name: str):
 
 def test_tensor_op_helper_captures_caller_span():
     x = _tensor_var("x")
-    y = _tensor_var("y")
 
     line_before = _current_line()
-    result = tensor_ops.add(x, y)
+    result = ptr_ops.make_tensor(x, [64], [1])
 
     assert result.span.filename.endswith("test_operation_span_capture.py")
     assert result.span.is_valid()
@@ -42,10 +41,9 @@ def test_tensor_op_helper_captures_caller_span():
 
 def test_explicit_span_overrides_auto_capture():
     x = _tensor_var("x")
-    y = _tensor_var("y")
     explicit = ir.Span("custom.py", 100, 20)
 
-    result = tensor_ops.add(x, y, span=explicit)
+    result = ptr_ops.make_tensor(x, [64], [1], span=explicit)
 
     assert result.span.filename == "custom.py"
     assert result.span.begin_line == 100

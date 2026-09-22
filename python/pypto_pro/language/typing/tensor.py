@@ -36,7 +36,7 @@ class Tensor:
         y: pl.Tensor[[64, 128], pl.DT_FP16, pl.NZ]
 
     Runtime mode (wraps IR expressions):
-        tensor = pl.tensor.create_tensor([64, 128], dtype=pl.DT_FP32)
+        tensor = pl.make_tensor(src, [64, 128], [128, 1], dtype=pl.DT_FP32)
         # Returns Tensor wrapping the Call expression
 
     Examples:

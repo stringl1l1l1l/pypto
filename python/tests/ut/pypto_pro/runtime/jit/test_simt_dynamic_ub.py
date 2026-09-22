@@ -39,7 +39,7 @@ def test_dynamic_ub_inference_rejects_tile_beyond_a5_user_ub():
     with pytest.raises(OutOfRange) as exc_info:
         jit._infer_dynamic_ub_size(True, 216 * 1024 + 32)
     message = str(exc_info.value)
-    assert "ErrCode: F00008! Enum: OUT_OF_RANGE." in message
+    assert "ErrCode: F00008! Enum: ExternalError::OUT_OF_RANGE." in message
     assert "allows at most" in message
 
 

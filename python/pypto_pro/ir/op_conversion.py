@@ -63,7 +63,7 @@ def register_op_conversion(from_op: str, to_op: str) -> None:
     """Register a simple op name mapping.
 
     Args:
-        from_op: Source op name (e.g., 'tensor.add')
+        from_op: Source op name (e.g., 'block.add')
         to_op: Target op name (e.g., 'block.add')
     """
     _register_simple(from_op, to_op)
@@ -82,7 +82,7 @@ def op_conversion(from_op: str) -> Callable:
 
     Example::
 
-        @op_conversion("tensor.add")
+        @op_conversion("block.adds")
         def convert_add(ctx, args, kwargs, span):
             return ir.create_op_call("block.add", args, kwargs, span)
     """

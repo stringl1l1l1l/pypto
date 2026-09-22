@@ -13,7 +13,7 @@
 
 Kept in ir/op/ so that ir/op/*.py can use relative imports, avoiding the
 circular-import cycle:
-  ir/op/__init__.py -> tensor_ops.py -> language/parser/op_registry.py
+  ir/op/__init__.py -> block_ops.py -> language/parser/op_registry.py
     -> language/__init__.py -> pypto_pro.ir (partially initialized)
 """
 

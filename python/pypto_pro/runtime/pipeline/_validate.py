@@ -72,19 +72,58 @@ def validate_kernel_buffers(sync, used: set) -> None:
             )
 
 
-def validate_sync(graph, info, cycles) -> None:
+def validate_sync(graph, info, cycles, schedule) -> None:
     """Checks that need the sync graph: regions, op-level accesses, users, edges.
 
     Called from _sync_graph once the graph is built. ``cycles`` is what ``find_cycles(graph)``
     returned, passed in because walking the graph is the graph's job while deciding what a
     cycle's total distance MEANS is a check.
+
+    ``_check_slot_counts`` runs before the two edge checks on purpose: too few tiles shows up
+    there as an unstable distance or a non-positive cycle, and those messages describe the
+    symptom rather than the tile count that caused it.
     """
     users = buffer_users(graph)
     _check_cross_core_users(info, users)
     _check_event_id_counts(graph, info)
     _check_reuse_mutex_ids(graph, info)
+    _check_slot_counts(graph, info, users, schedule)
     _check_stable_distances(graph)
     _check_no_deadlock_cycle(cycles)
+
+
+def _check_slot_counts(graph, info, users: dict, schedule: list) -> None:
+    """A cross-core buffer needs one tile per beat its two stages sit apart, plus one.
+
+    While the producer works on task t its consumer is still on task ``t - dist``, so tasks
+    ``t - dist .. t`` are all live at once: the one being written, the one being read, and
+    every one in between that is written but not yet read. One tile short and the producer
+    lands on the tile the consumer is reading.
+
+    ``dist`` is read from the schedule rather than from the graph's edges: once the tiles run
+    out the edges themselves are distorted (the producer laps the consumer, and the lane scan
+    then pairs a read with a write from a later task), so the edge no longer states the
+    distance the schedule asked for.
+    """
+    for buf_name, buf in info.sync.buffers.items():
+        if buf.fwd_ids_node is None and buf.bwd_ids_node is None:
+            continue  # not a cross-core buffer: a local group's rotation is the user's own
+        region = graph.regions.get(buf_name)
+        entries = users.get(buf_name, [])
+        if region is None or len(entries) != 2:
+            continue  # unused here, or already reported by _check_cross_core_users
+        producer, consumer = entries[0], entries[1]
+        needed = schedule[consumer[0]] - schedule[producer[0]] + 1
+        have = graph.slots[region]
+        if have >= needed:
+            continue
+        raise InvalidArgument(
+            f"pipeline: cross-core buffer '{buf_name}' has {have} tile(s), but at this "
+            f"preload its producer '{producer[1]}' runs {needed - 1} iteration(s) ahead of "
+            f"its consumer '{consumer[1]}', so {needed} tiles are live at once. Give it "
+            f"{needed} tiles (the length of mutex_ids, and of fwd_ids/bwd_ids unless those "
+            f"are a single shared id), or lower `preload`."
+        )
 
 
 def _check_stable_distances(graph) -> None:
@@ -158,6 +197,9 @@ def _check_cross_core_users(info, users: dict) -> None:
                     and the hardware faults once an id is set more than 15 times unmatched.
                     A handover reaching across two loops has this shape and is not supported.
       same core     both users on cube, or both on vector — no core boundary is crossed.
+      not adjacent  the two stages have others between them. The handover then has to
+                    survive those stages' whole span, which costs one more tile per stage
+                    crossed and is not a shape any kernel needs.
       3+ users      one variable standing in for several producer/consumer pairs IN ONE LOOP.
                     Ids are resolved per buffer, so two pairs would share one id group and
                     their differently-skewed edges would interleave. Declare a separate
@@ -191,6 +233,16 @@ def _check_cross_core_users(info, users: dict) -> None:
                 f"pipeline: cross-core buffer '{buf_name}' is used only by "
                 f"'{sections.pop()}' stages {names}. Cross-core sync orders work across the "
                 f"cube/vector boundary; same-core ordering comes from auto_mutex instead."
+            )
+        producer, consumer = entries[0], entries[1]
+        if consumer[0] != producer[0] + 1:
+            between = consumer[0] - producer[0] - 1
+            raise InvalidOperation(
+                f"pipeline: cross-core buffer '{buf_name}' is handed from stage "
+                f"'{producer[1]}' to stage '{consumer[1]}', with {between} stage(s) in "
+                f"between. A cross-core buffer must be handed to the stage that follows "
+                f"its producer directly. Hand the data over through the stages in between, "
+                f"or move the two stages next to each other."
             )
 
 
