@@ -2322,7 +2322,7 @@ TEST(BackendCCEVFOpsTest, HighPrecisionDivEmitsTempRegsAndInstructions)
     EXPECT_EQ(emitted.find("0x007FFFFF"), std::string::npos) << emitted;
 }
 
-TEST(BackendCCEVFOpsTest, HighPrecisionDivRejectsFp16)
+TEST(BackendCCEVFOpsTest, HighPrecisionDivFp16EmitsIeee754HalfImpl)
 {
     CapturingCCECodegen codegen(ir::SectionKind::Vector);
     auto dst = MakeVar("dst", ir::DataType::FP16);
@@ -2330,9 +2330,14 @@ TEST(BackendCCEVFOpsTest, HighPrecisionDivRejectsFp16)
     auto src1 = MakeVar("src1", ir::DataType::FP16);
     auto mask = MakeVar("mask", ir::DataType::UINT32);
 
-    // AscendC restricts div precision mode to float (DivPrecisionImpl static_assert);
-    // half 1ULP uses a different algorithm (DivIEEE754HalfImpl).
-    EXPECT_ANY_THROW(Invoke(codegen, "vf.div", {dst, src0, src1, mask}, {{"precision", true}}));
+    // FP16 high-precision mirrors AscendC DivIEEE754HalfImpl: subnormal
+    // normalization (threshold 0x03FF, scale 2^10), exponent standardization
+    // (0x83FF mask, 0x3C00 bias), raw vdiv on normalized operands, compensation
+    // and overflow/underflow clamping on the exponent difference.
+    auto emitted = Invoke(codegen, "vf.div", {dst, src0, src1, mask}, {{"precision", true}});
+    ExpectContains(emitted, {"union { uint16_t i; half f; }", "0x03FF", "0x83FF", "0x3C00", "RegTensor<half>",
+                             "RegTensor<int16_t>", "vcmps_lt(", "vcmp_le(", "vdiv(", "vmuls(", "vshr("});
+    EXPECT_EQ(emitted.find("0x007FFFFF"), std::string::npos) << "FP16 should use 0x03FF, not 0x007FFFFF: " << emitted;
 }
 
 TEST(BackendCCEVFOpsTest, HighPrecisionDivRejectsNonFloat)

@@ -1501,7 +1501,11 @@ class CallParserMixin:
                 ast.fix_missing_locations(func_def)
 
             locked_vf_refs: list = []
-            if template.is_vector_function and self._auto_mutex:
+            if template.is_vector_function and self._auto_mutex and self.inline_vf_depth == 0:
+                # Only the OUTERMOST VF call acquires the buffer tokens: its
+                # lock spans the whole inlined body (every nesting level), and
+                # VF bodies cannot create buf-ids (the pl.* whitelist rejects
+                # make_tile/make_tile_group), so nested calls never re-acquire.
                 arg_nodes = [bound[param.arg][1] for param in params]
                 locked_vf_refs = self._emit_vf_func_mutex_lock(
                     [param.arg for param in params],

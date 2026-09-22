@@ -356,6 +356,29 @@ class ExpressionParserMixin:
                 parser_retry=True,
             )
 
+    def _check_vf_scalar_division(self, op: ast.operator, left: ir.Expr, right: ir.Expr,
+                                  span: ir.Span) -> None:
+        """Reject scalar division-family ops inside a vector function.
+
+        '/' always promotes to a scalar FloatDiv, and float '//', '%' emit
+        float math; neither can be lowered inside the VF vector scope.
+        """
+        if self.inline_vf_depth == 0:
+            return
+        if not (isinstance(left.type, ir.ScalarType) and isinstance(right.type, ir.ScalarType)):
+            return
+        if isinstance(op, ast.Div) or (
+            isinstance(op, (ast.FloorDiv, ast.Mod))
+            and (left.type.dtype.is_float() or right.type.dtype.is_float())
+        ):
+            raise NotSupported(
+                "Scalar division ('/', or float '//', '%') is not supported "
+                "inside a vector function",
+                span=span,
+                hint="Use '//' on integer scalars for integer division, or "
+                "hoist the division to the kernel level.",
+            )
+
     def parse_binop(self, binop: ast.BinOp) -> ir.Expr:
         """Parse binary operation.
 
@@ -368,6 +391,7 @@ class ExpressionParserMixin:
         span = self.span_tracker.get_span(binop)
         left = self.parse_expression(binop.left)
         right = self.parse_expression(binop.right)
+        self._check_vf_scalar_division(binop.op, left, right, span)
 
         # Tile + offset: only supported in VF section as pointer arithmetic.
         # Non-VF sections require slice syntax (tile[r:r+h, c:c+w]) for sub-views.
@@ -655,6 +679,14 @@ class ExpressionParserMixin:
         )
 
     def parse_ifexp(self, expr: ast.IfExp) -> ir.Expr:
+        if self.inline_vf_depth > 0:
+            raise NotSupported(
+                "Ternary conditional expressions are not supported inside a "
+                "vector function",
+                span=self.span_tracker.get_span(expr),
+                hint="Use an if/else statement instead, or compute the scalar "
+                "arithmetically (pl.min/pl.max on comparisons).",
+            )
         condition = self.parse_expression(expr.test)
 
         if isinstance(condition, (ir.ConstBool, ir.ConstInt)):

@@ -45,7 +45,7 @@ class SaturationFlagMode(enum.Enum):
 import pypto_pro.language as pl
 
 @pl.jit()
-def kernel(...):
+def kernel():
     # 在VF计算前设置CAST类别的饱和模式为全局开启
     pl.set_saturation_flag(mode=pl.SaturationFlagMode.CAST, enable=True)
     # ... 执行VF计算 ...

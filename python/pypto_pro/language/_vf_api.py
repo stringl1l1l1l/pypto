@@ -134,10 +134,10 @@ class Vf:
 
     @staticmethod
     @_api_decl
-    def load_align(tile, offset=None, dtype: Optional[DType] = None,
-                   dist: Optional[LoadDist] = None,
-                   data_copy_mode: Optional[DataCopyMode] = None,
-                   block_stride=None, post_update: bool = False):
+    def load_align(tile, offset=None, dist: Optional[LoadDist] = None,
+                   dtype: Optional[DType] = None, post_update: bool = False,
+                   block_stride=None, repeat_stride=None,
+                   data_copy_mode: Optional[DataCopyMode] = None):
         """Load aligned data from a UB Tile into a VF register (vlds instruction).
 
         Loads contiguous data from the source UB Tile at the given element
@@ -155,22 +155,24 @@ class Vf:
             dst = vf.load_align(src, [i, j + k])      # expression offsets
 
         Args:
-            src: Source UB Tile pointer
+            tile: Source UB Tile pointer
             offset: Element offset into the tile, an AddrReg, or ``[row, col]``
                 list/tuple (linear offset = ``row * shape[1] + col``)
 
         Kwargs:
+            dist: ``pl.LoadDist`` value selecting load distribution pattern
+                (e.g. ``pl.LoadDist.BRC``, ``pl.LoadDist.US``, ``pl.LoadDist.BRC_B32``)
             dtype: Data type for type-specific variants (e.g. ``pl.DT_UINT32``).
                 Supports all b8 types including FP8 (``DT_FP8E4M3FN``/``DT_FP8E5M2``/
                 ``DT_FP8E8M0``/``DT_HF8``) and b4-packed FP4 (``DT_FP4E2M1``/
                 ``DT_FP4E1M2``).
-            dist: ``pl.LoadDist`` value selecting load distribution pattern
-                (e.g. ``pl.LoadDist.BRC``, ``pl.LoadDist.US``, ``pl.LoadDist.BRC_B32``)
+            post_update: ``True`` for post-increment addressing
+            block_stride: Datablock stride in DataBlocks (32B) for the datablock-copy mode
+            repeat_stride: Datablock stride in DataBlocks (32B) for post-update
+                address advance in the datablock-copy mode (requires ``post_update=True``)
             data_copy_mode: ``pl.DataCopyMode.DATA_BLOCK_COPY`` (AscendC's name for
                 the non-contiguous datablock load) selects the vsldb instruction.
                 ``DATA_BLOCK_LOAD`` is accepted as an equivalent legacy alias.
-            block_stride: Datablock stride in bytes for the datablock-copy mode
-            post_update: ``True`` for post-increment addressing
 
         Returns:
             Destination register (``RegTensor``) with loaded data.
@@ -450,8 +452,8 @@ class Vf:
             mode: ``pl.MergeMode.ZEROING`` (default). MERGING mode is not supported on current device.
             precision: When ``True``, enables high-precision mode using the
                 error-compensation algorithm (0-ulp precision error). Only
-                effective for ``DT_FP32`` source type. Default ``False``
-                (standard mode).
+                effective for ``DT_FP16`` and ``DT_FP32`` source types. Default
+                ``False`` (standard mode).
 
         Returns:
             Destination register (``RegTensor``) holding the element-wise
@@ -1554,8 +1556,8 @@ class Vf:
 
     @staticmethod
     @_api_decl
-    def unpack(src, dtype: Optional[DType] = None,
-               part: Optional[PackPart] = None):
+    def unpack(src, part: Optional[PackPart] = None,
+               dtype: Optional[DType] = None):
         """Unpack/widen data type (e.g. u8->u16, u16->u32).
 
         Zero-extends or sign-extends narrower elements into wider type.
@@ -1564,8 +1566,8 @@ class Vf:
             src: Source register (narrower type)
 
         Kwargs:
-            dtype: Destination data type (e.g. ``pl.DT_UINT32``)
             part: ``pl.PackPart.LOWER`` (default) or ``pl.PackPart.UPPER`` --- which half of src to unpack
+            dtype: Destination data type (e.g. ``pl.DT_UINT32``)
 
         Returns:
             Destination register (``RegTensor``) holding the widened elements
@@ -1686,16 +1688,19 @@ class Vf:
 
     @staticmethod
     @_api_decl
-    def load_unalign(tile, align_reg, stride=None, post_update: bool = False):
+    def load_unalign(align_reg, tile, stride, post_update: bool = False):
         """Unaligned load from UB to register (vldus instruction).
 
         Loads data from an unaligned UB address. Supports optional stride
         for POST_UPDATE mode.
 
         Args:
-            ureg: UnalignRegForLoad register
-            src_ptr: Source UB pointer
+            align_reg: UnalignRegForLoad register
+            tile: Source UB pointer
             stride: Optional post-update stride in bytes
+
+        Kwargs:
+            post_update: ``True`` to auto-advance destination address
 
         Returns:
             Destination register (``RegTensor``) holding the data loaded from

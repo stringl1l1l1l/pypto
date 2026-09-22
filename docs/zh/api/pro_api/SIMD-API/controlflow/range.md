@@ -20,10 +20,6 @@
 
 ```python
 pypto_pro.language.range(
-    stop: Union[int, Scalar],
-) -> RangeIterator
-
-pypto_pro.language.range(
     start: Union[int, Scalar],
     stop: Union[int, Scalar],
     step: Union[int, Scalar] = 1,

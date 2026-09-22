@@ -517,6 +517,7 @@ class ASTParser(
 
     @_dispatch_statement.register
     def _parse_while_statement(self, stmt: ast.While) -> None:
+        self._reject_while_in_vf(stmt)
         self.parse_while_loop(stmt)
 
     @_dispatch_statement.register

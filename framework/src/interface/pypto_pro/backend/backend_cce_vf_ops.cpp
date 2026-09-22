@@ -2237,6 +2237,11 @@ static std::string EmitVFDiv(const ir::CallPtr& op, codegen::CodegenBase& codege
     PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, s0_dt == vf_div_dst_dt && s1_dt == vf_div_dst_dt)
         << "vf.div requires dst, src0, src1 to have the same type, got dst=" << DTypeStr(vf_div_dst_dt)
         << " src0=" << DTypeStr(s0_dt) << " src1=" << DTypeStr(s1_dt);
+    const bool use_precision = op->HasKwarg("precision") && op->GetKwarg<bool>("precision");
+    // High-precision mode supports FP16/FP32 only; validated up front before
+    // any emission (B64 division and integer types take the standard path).
+    PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, !use_precision || s0_dt == DataType::FP16 || s0_dt == DataType::FP32)
+        << "vf.div high-precision mode only supports FP16/FP32, got " << DTypeStr(s0_dt);
     std::string dst = codegen.GetExprAsCode(op->args_[0]);
     std::string src0 = codegen.GetExprAsCode(op->args_[1]);
     std::string src1 = codegen.GetExprAsCode(op->args_[2]);
@@ -2245,19 +2250,161 @@ static std::string EmitVFDiv(const ir::CallPtr& op, codegen::CodegenBase& codege
     if (s0_dt.GetBit() == 64) {
         // B64 division (INT64/UINT64): Newton-Raphson reciprocal refinement
         // mirroring AscendC DivS64Impl / DivU64Impl. No native b64 vdiv.
-        PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, !(op->HasKwarg("precision") && op->GetKwarg<bool>("precision")))
-            << "vf.div precision mode only supports FP16/FP32";
         EmitB64Div(codegen, dst, src0, src1, mask, s0_dt == DataType::INT64);
         return "";
     }
-    if (op->HasKwarg("precision") && op->GetKwarg<bool>("precision")) {
-        // Mirrors AscendC DivPrecisionImpl (vec_binary_impl.h:868-976): error-
-        // complementation quotient correction with inf/nan/zero bypass and
-        // subnormal-input scaling. AscendC restricts precision mode to float
-        // (static_assert); half 1ULP uses a different algorithm
-        // (DivIEEE754HalfImpl), so it is rejected here.
-        PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, s0_dt == DataType::FP32)
-            << "vf.div high-precision mode only supports FP32, got " << DTypeStr(s0_dt);
+    if (use_precision) {
+        // Mirrors AscendC high-precision division: error-complementation
+        // quotient correction with inf/nan/zero bypass and subnormal-input
+        // scaling. FP32 follows DivPrecisionImpl (vec_binary_impl.h:868-976);
+        // FP16 follows DivIEEE754HalfImpl (vec_binary_impl.h:1199-1413).
+        if (s0_dt == DataType::FP16) {
+            // IEEE754 manual half division: normalize subnormal inputs by 2^10,
+            // standardize exponents, divide, then compensate, clamp overflow/
+            // underflow and bypass inf/zero/nan lanes.
+            const std::string h = dst + "_h_";
+            const std::string t0 = h + "t0", t1 = h + "t1", t2 = h + "t2", z1 = h + "z1", z2 = h + "z2";
+            const std::string a0abs = h + "a0abs", a0sub = h + "a0sub", a0nrm = h + "a0nrm";
+            const std::string a0all = h + "a0all", a0abn = h + "a0abn", a0exp = h + "a0exp";
+            const std::string b1abs = h + "b1abs", b1sub = h + "b1sub", b1nrm = h + "b1nrm";
+            const std::string b1all = h + "b1all", b1abn = h + "b1abn", b1exp = h + "b1exp";
+            const std::string dsgn = h + "dsgn", scl = h + "scl";
+            const std::string m0 = h + "m0", ms0n = h + "ms0n", ms0s = h + "ms0s", ms1n = h + "ms1n";
+            const std::string ms1s = h + "ms1s", mt = h + "mt", mnan = h + "mnan", minf = h + "minf";
+            const std::string mz0 = h + "mz0", mz1 = h + "mz1", mv = h + "mv", mn = h + "mn";
+            codegen.Emit("union { uint16_t i; half f; } " + h + "thr_ = {0x03FF};");
+            codegen.Emit("union { uint16_t i; half f; } " + h + "enl_ = {0x6400};");
+            codegen.Emit("union { uint16_t i; half f; } " + h + "erd_ = {0x1400};");
+            codegen.Emit("RegTensor<half> " + a0abs + ", " + a0sub + ", " + a0nrm + ", " + a0all + ", " + a0abn + ";");
+            codegen.Emit("RegTensor<half> " + b1abs + ", " + b1sub + ", " + b1nrm + ", " + b1all + ", " + b1abn + ";");
+            codegen.Emit("RegTensor<half> " + z1 + ", " + z2 + ";");
+            codegen.Emit("RegTensor<uint16_t> " + t0 + ", " + t2 + ", " + a0exp + ", " + b1exp + ", " + dsgn + ";");
+            codegen.Emit("RegTensor<int16_t> " + t1 + ", " + scl + ";");
+            codegen.Emit("MaskReg " + m0 + ", " + ms0n + ", " + ms0s + ", " + ms1n + ", " + ms1s + ", " + mt + ";");
+            codegen.Emit("MaskReg " + mnan + ", " + minf + ", " + mz0 + ", " + mz1 + ", " + mv + ", " + mn + ";");
+            // Acquire valid numbers (no inf, no 0): DivIEEE754HalfImpl:1259-1281
+            codegen.Emit("vabs(" + a0abs + ", " + src0 + ", " + mask + ", " + mode + ");");
+            codegen.Emit("vabs(" + b1abs + ", " + src1 + ", " + mask + ", " + mode + ");");
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x7C00, " + mask + ", " + mode + ");");
+            codegen.Emit("vcmp_eq(" + minf + ", (RegTensor<uint16_t>&)" + a0abs + ", " + t0 + ", " + mask + ");");
+            codegen.Emit("vcmp_eq(" + mt + ", (RegTensor<uint16_t>&)" + b1abs + ", " + t0 + ", " + mask + ");");
+            codegen.Emit("por(" + mv + ", " + minf + ", " + mt + ", " + mask + ");");
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x0, " + mask + ", " + mode + ");");
+            codegen.Emit("vcmp_eq(" + mz0 + ", (RegTensor<uint16_t>&)" + a0abs + ", " + t0 + ", " + mask + ");");
+            codegen.Emit("por(" + mv + ", " + mv + ", " + mz0 + ", " + mask + ");");
+            codegen.Emit("vcmp_eq(" + mz1 + ", (RegTensor<uint16_t>&)" + b1abs + ", " + t0 + ", " + mask + ");");
+            codegen.Emit("por(" + mv + ", " + mv + ", " + mz1 + ", " + mask + ");");
+            codegen.Emit("pnot(" + mv + ", " + mv + ", " + mask + ");");
+            // Normalize subnormal elements of src0/src1 (1284-1298)
+            codegen.Emit("vcmps_lt(" + ms0s + ", " + a0abs + ", " + h + "thr_.f, " + mask + ");");
+            codegen.Emit("pnot(" + ms0n + ", " + ms0s + ", " + mask + ");");
+            codegen.Emit("vmuls(" + a0sub + ", " + src0 + ", " + h + "enl_.f, " + ms0s + ", " + mode + ");");
+            codegen.Emit("vcmps_lt(" + ms1s + ", " + b1abs + ", " + h + "thr_.f, " + mask + ");");
+            codegen.Emit("pnot(" + ms1n + ", " + ms1s + ", " + mask + ");");
+            codegen.Emit("vmuls(" + b1sub + ", " + src1 + ", " + h + "enl_.f, " + ms1s + ", " + mode + ");");
+            codegen.Emit("vsel(" + a0all + ", " + src0 + ", " + a0sub + ", " + ms0n + ");");
+            codegen.Emit("vsel(" + b1all + ", " + src1 + ", " + b1sub + ", " + ms1n + ");");
+            // Standardize the exponent bits of src0 and src1 (1301-1317).
+            // Both steps are u16 bit-pattern ops (mask the exponent field away,
+            // then integer-add the 1.0h exponent bits back in), so dst and the
+            // recursive src0 are taken through the u16 register view as well:
+            // vand/vadd require all three data operands to share one type.
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x83FF, " + mask + ", " + mode + ");");
+            codegen.Emit("vand((RegTensor<uint16_t>&)" + a0nrm + ", (RegTensor<uint16_t>&)" + a0all + ", " + t0 + ", " +
+                         mv + ", " + mode + ");");
+            codegen.Emit("vand((RegTensor<uint16_t>&)" + b1nrm + ", (RegTensor<uint16_t>&)" + b1all + ", " + t0 + ", " +
+                         mv + ", " + mode + ");");
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x3C00, " + mask + ", " + mode + ");");
+            codegen.Emit("vadd((RegTensor<uint16_t>&)" + a0nrm + ", (RegTensor<uint16_t>&)" + a0nrm + ", " + t0 + ", " +
+                         mv + ", " + mode + ");");
+            codegen.Emit("vadd((RegTensor<uint16_t>&)" + b1nrm + ", (RegTensor<uint16_t>&)" + b1nrm + ", " + t0 + ", " +
+                         mv + ", " + mode + ");");
+            codegen.Emit("vsel(" + a0nrm + ", " + a0nrm + ", " + a0all + ", " + mv + ");");
+            codegen.Emit("vsel(" + b1nrm + ", " + b1nrm + ", " + b1all + ", " + mv + ");");
+            codegen.Emit("vabs(" + a0abn + ", " + a0nrm + ", " + mv + ", " + mode + ");");
+            codegen.Emit("vabs(" + b1abn + ", " + b1nrm + ", " + mv + ", " + mode + ");");
+            codegen.Emit("vcmp_le(" + mn + ", " + a0abn + ", " + b1abn + ", " + mv + ");");
+            codegen.Emit("vdiv(" + dst + ", " + a0nrm + ", " + b1nrm + ", " + mask + ", " + mode + ");");
+            // Normalization compensation for subnormal operands (1324-1334)
+            codegen.Emit("pand(" + m0 + ", " + ms0s + ", " + ms1n + ", " + mask + ");");
+            codegen.Emit("vmuls(" + z1 + ", " + dst + ", " + h + "erd_.f, " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            codegen.Emit("pand(" + m0 + ", " + ms0n + ", " + ms1s + ", " + mask + ");");
+            codegen.Emit("vmuls(" + z1 + ", " + dst + ", " + h + "enl_.f, " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            // Preserve sign for the exception handling below (1337-1339)
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x8000, " + mask + ", " + mode + ");");
+            codegen.Emit("vand(" + dsgn + ", (RegTensor<uint16_t>&)" + dst + ", " + t0 + ", " + mask + ", " + mode +
+                         ");");
+            // Exponent subtraction (effectively fp number division) (1342-1356)
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x7C00, " + mask + ", " + mode + ");");
+            codegen.Emit("vand(" + a0exp + ", (RegTensor<uint16_t>&)" + a0all + ", " + t0 + ", " + mask + ", " + mode +
+                         ");");
+            codegen.Emit("vand(" + b1exp + ", (RegTensor<uint16_t>&)" + b1all + ", " + t0 + ", " + mask + ", " + mode +
+                         ");");
+            codegen.Emit("vshrs(" + a0exp + ", " + a0exp + ", (int16_t)10, " + mask + ", " + mode + ");");
+            codegen.Emit("vshrs(" + b1exp + ", " + b1exp + ", (int16_t)10, " + mask + ", " + mode + ");");
+            codegen.Emit("vsub(" + scl + ", (RegTensor<int16_t>&)" + a0exp + ", (RegTensor<int16_t>&)" + b1exp + ", " +
+                         mask + ", " + mode + ");");
+            codegen.Emit("vadds(" + scl + ", " + scl + ", (int16_t)15, " + mask + ", " + mode + ");");
+            // scale == -9: clamp to signed min denormal (1360-1368)
+            codegen.Emit("vdup(" + t1 + ", (int16_t)-9, " + mask + ", " + mode + ");");
+            codegen.Emit("vcmp_eq(" + m0 + ", " + scl + ", " + t1 + ", " + mask + ");");
+            codegen.Emit("pand(" + m0 + ", " + m0 + ", " + mv + ", " + mask + ");");
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x1, " + m0 + ", " + mode + ");");
+            codegen.Emit("vadd((RegTensor<uint16_t>&)" + z1 + ", " + dsgn + ", " + t0 + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vdup(" + t2 + ", (uint16_t)0x0, " + m0 + ", " + mode + ");");
+            codegen.Emit("vadd((RegTensor<uint16_t>&)" + z2 + ", " + dsgn + ", " + t2 + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + z1 + ", " + z2 + ", " + z1 + ", " + mn + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            codegen.Emit("pnot(" + m0 + ", " + m0 + ", " + mask + ");");
+            codegen.Emit("pand(" + mv + ", " + m0 + ", " + mv + ", " + mask + ");");
+            // scale < -9: underflow to signed zero (1370-1375)
+            codegen.Emit("vcmp_lt(" + m0 + ", " + scl + ", " + t1 + ", " + mask + ");");
+            codegen.Emit("pand(" + m0 + ", " + m0 + ", " + mv + ", " + mask + ");");
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x0, " + mask + ", " + mode + ");");
+            codegen.Emit("vadd((RegTensor<uint16_t>&)" + z1 + ", " + dsgn + ", " + t0 + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            codegen.Emit("pnot(" + m0 + ", " + m0 + ", " + mask + ");");
+            codegen.Emit("pand(" + mv + ", " + m0 + ", " + mv + ", " + mask + ");");
+            // scale == 31: double the result and fix the exponent (1377-1384)
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x1F, " + mask + ", " + mode + ");");
+            codegen.Emit("vcmp_eq(" + m0 + ", " + scl + ", (RegTensor<int16_t>&)" + t0 + ", " + mask + ");");
+            codegen.Emit("pand(" + m0 + ", " + m0 + ", " + mv + ", " + mask + ");");
+            codegen.Emit("vdup(" + t1 + ", (int16_t)0x1, " + m0 + ", " + mode + ");");
+            codegen.Emit("vsub(" + t1 + ", " + scl + ", " + t1 + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + scl + ", " + t1 + ", " + scl + ", " + m0 + ");");
+            codegen.Emit("vmuls(" + z1 + ", " + dst + ", 2.0f, " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            // scale > 31: overflow to signed infinity (1386-1394)
+            codegen.Emit("vcmp_gt(" + m0 + ", " + scl + ", (RegTensor<int16_t>&)" + t0 + ", " + mask + ");");
+            codegen.Emit("pand(" + m0 + ", " + m0 + ", " + mv + ", " + mask + ");");
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x7C00, " + mask + ", " + mode + ");");
+            codegen.Emit("vadd((RegTensor<uint16_t>&)" + z1 + ", " + dsgn + ", " + t0 + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            codegen.Emit("pnot(" + m0 + ", " + m0 + ", " + mask + ");");
+            codegen.Emit("pand(" + mv + ", " + m0 + ", " + mv + ", " + mask + ");");
+            // scale > 0: rescale by 2^(10*scale) (1396-1403)
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x0, " + mv + ", " + mode + ");");
+            codegen.Emit("vcmp_gt(" + m0 + ", " + scl + ", (RegTensor<int16_t>&)" + t0 + ", " + mv + ");");
+            codegen.Emit("vshls(" + t1 + ", " + scl + ", (int16_t)10, " + m0 + ", " + mode + ");");
+            codegen.Emit("vmul(" + z1 + ", " + dst + ", (RegTensor<half>&)" + t1 + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            // scale <= 0: subnormal result, scale by half(512 >> |scale|) (1405-1416)
+            codegen.Emit("pnot(" + m0 + ", " + m0 + ", " + mv + ");");
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x200, " + m0 + ", " + mode + ");");
+            codegen.Emit("vabs(" + scl + ", " + scl + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vshr(" + scl + ", (RegTensor<int16_t>&)" + t0 + ", " + scl + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vmul(" + z1 + ", " + dst + ", (RegTensor<half>&)" + scl + ", " + m0 + ", " + mode + ");");
+            codegen.Emit("vsel(" + dst + ", " + z1 + ", " + dst + ", " + m0 + ");");
+            // Set output with nan input to nan (1418-1424)
+            codegen.Emit("vdup(" + t0 + ", (uint16_t)0x7E00, " + mask + ", " + mode + ");");
+            codegen.Emit("vcmp_ne(" + mnan + ", " + a0abs + ", " + a0abs + ", " + mask + ");");
+            codegen.Emit("vcmp_ne(" + mt + ", " + b1abs + ", " + b1abs + ", " + mask + ");");
+            codegen.Emit("por(" + mnan + ", " + mnan + ", " + mt + ", " + mask + ");");
+            codegen.Emit("vsel(" + dst + ", (RegTensor<half>&)" + t0 + ", " + dst + ", " + mnan + ");");
+            return "";
+        }
         const std::string p = dst + "_p_";
         const std::string pall = p + "all", nz = p + "nz", infnan = p + "infn", z = p + "z", q0 = p + "q0";
         const std::string m_inf = p + "minf", m_zero = p + "mzero", m_scale = p + "mscale";

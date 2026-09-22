@@ -13,6 +13,7 @@
 from pypto_pro import ir
 from pypto_pro._errors import InvalidVal, NameNotFound, NotSupported
 import pypto_pro.language as pl
+from pypto_pro.language import Vf as vf  # noqa: N813
 import pytest
 
 
@@ -1392,3 +1393,250 @@ def test_enum_in_tuple_folds_to_selected_branch():
 def test_enum_not_in_tuple_folds_to_selected_branch():
     assert "memref_addr=4096" in _tile_group_addr_ir(pl.DT_FP16, _addr_for_not_in)
     assert "memref_addr=8192" in _tile_group_addr_ir(pl.DT_FP32, _addr_for_not_in)
+
+
+def test_for_rejects_runtime_step_inside_vector_function():
+    with pytest.raises(NotSupported, match="step must be a compile-time constant"):
+
+        @pl.vector_function
+        def probe_vf(src, dst, count, step):
+            for offset in pl.range(0, count, step):
+                active = pl.max(0, pl.min(count - offset, 64))
+                mask = vf.update_mask(active, dtype=pl.DT_FP32)
+                reg = vf.load_align(src, offset)
+                reg = vf.adds(reg, pl.const(1.0, pl.DT_FP32), mask)
+                vf.store_align(dst, reg, mask, offset)
+
+        @pl.jit(auto_mutex=True)
+        def func(
+            x: pl.Tensor[[1, 128], pl.DT_FP32],
+            y: pl.Tensor[[1, 128], pl.DT_FP32],
+            count: pl.DT_INT64,
+            step: pl.DT_INT64,
+        ):
+            tile_type = pl.TileType(shape=[1, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            inputs = pl.make_tile_group(type=tile_type, addrs=[0], mutex_ids=[0])
+            outputs = pl.make_tile_group(type=tile_type, addrs=[512], mutex_ids=[1])
+            with pl.section_vector():
+                probe_vf(inputs.next(), outputs.next(), count, step)
+
+        func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_for_allows_unused_loop_variable_with_runtime_bound():
+    """A runtime-bound loop may use its variable purely as a trip counter.
+
+    The device behavior (such loops must not mis-trip to a single iteration)
+    is pinned by the ST test test_carried_value_across_loops; this UT pins
+    that the parser accepts the pattern.
+    """
+
+    @pl.vector_function
+    def probe_vf(src, dst, count, reps):
+        for rep in pl.range(reps):
+            active = pl.max(0, pl.min(count, 64))
+            mask = vf.update_mask(active, dtype=pl.DT_FP32)
+            reg = vf.load_align(src, 0)
+            reg = vf.adds(reg, pl.const(1.0, pl.DT_FP32), mask)
+            vf.store_align(dst, reg, mask, 0)
+
+    @pl.jit(auto_mutex=True)
+    def func(
+        x: pl.Tensor[[1, 128], pl.DT_FP32],
+        y: pl.Tensor[[1, 128], pl.DT_FP32],
+        count: pl.DT_INT64,
+        reps: pl.DT_INT64,
+    ):
+        tile_type = pl.TileType(shape=[1, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        inputs = pl.make_tile_group(type=tile_type, addrs=[0], mutex_ids=[0])
+        outputs = pl.make_tile_group(type=tile_type, addrs=[512], mutex_ids=[1])
+        with pl.section_vector():
+            probe_vf(inputs.next(), outputs.next(), count, reps)
+
+    func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_for_allows_used_loop_variable_with_runtime_bound():
+    @pl.vector_function
+    def probe_vf(src, dst, count):
+        for offset in pl.range(0, count, 64):
+            active = pl.max(0, pl.min(count - offset, 64))
+            mask = vf.update_mask(active, dtype=pl.DT_FP32)
+            reg = vf.load_align(src, offset)
+            reg = vf.adds(reg, pl.const(1.0, pl.DT_FP32), mask)
+            vf.store_align(dst, reg, mask, offset)
+
+    @pl.jit(auto_mutex=True)
+    def func(
+        x: pl.Tensor[[1, 128], pl.DT_FP32],
+        y: pl.Tensor[[1, 128], pl.DT_FP32],
+        count: pl.DT_INT64,
+    ):
+        tile_type = pl.TileType(shape=[1, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        inputs = pl.make_tile_group(type=tile_type, addrs=[0], mutex_ids=[0])
+        outputs = pl.make_tile_group(type=tile_type, addrs=[512], mutex_ids=[1])
+        with pl.section_vector():
+            probe_vf(inputs.next(), outputs.next(), count)
+
+        func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_chained_comparison_is_rejected():
+    with pytest.raises(NotSupported, match="Only simple comparisons supported"):
+
+        @pl.jit(auto_mutex=False)
+        def func(lo: pl.DT_INT64, mid: pl.DT_INT64, hi: pl.DT_INT64):
+            if lo < mid < hi:
+                _test_result = 1
+
+        func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_boolop_condition_keeps_and_lowering_path():
+    @pl.jit(auto_mutex=False)
+    def func(flag: pl.DT_BOOL, count: pl.DT_INT64):
+        if flag and count > 0:
+            _test_result = 1
+
+    program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    body = program.get_function(func.__name__).body.stmts
+    if_stmt = next(stmt for stmt in body if isinstance(stmt, ir.IfStmt))
+    condition = if_stmt.condition
+    if isinstance(condition, ir.Var):
+        # The SSA refactor materializes the if condition into a variable; the
+        # && lowering path survives as that variable's definition.
+        condition = next(
+            stmt.value
+            for stmt in body
+            if isinstance(stmt, ir.AssignStmt) and stmt.var.name == condition.name
+        )
+    assert isinstance(condition, ir.And), "condition must stay on the C++ && lowering path"
+
+
+def test_while_true_header_keeps_constant_outside_vector_function():
+    @pl.jit(auto_mutex=False)
+    def func(flag: pl.DT_BOOL):
+        value = 0
+        while True:
+            value = value + 1
+            if flag:
+                break
+        _test_result = value
+
+    program, _ = func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    body = program.get_function(func.__name__).body.stmts
+    while_stmt = next(stmt for stmt in body if isinstance(stmt, ir.WhileStmt))
+    assert isinstance(while_stmt.condition, ir.ConstBool), (
+        "kernel-level guard form must stay unchanged"
+    )
+
+
+def test_vf_rejects_runtime_scalar_ternary():
+    with pytest.raises(NotSupported, match="Ternary conditional expressions"):
+
+        @pl.vector_function
+        def probe_vf(src, dst, count):
+            for offset in pl.range(0, count, 64):
+                active = pl.max(0, pl.min(count - offset, 64))
+                guarded = active if offset == 0 else active - 16
+                mask = vf.update_mask(guarded, dtype=pl.DT_FP32)
+                reg = vf.load_align(src, offset)
+                reg = vf.adds(reg, pl.const(1.0, pl.DT_FP32), mask)
+                vf.store_align(dst, reg, mask, offset)
+
+        @pl.jit(auto_mutex=True)
+        def func(
+            x: pl.Tensor[[1, 128], pl.DT_FP32],
+            y: pl.Tensor[[1, 128], pl.DT_FP32],
+            count: pl.DT_INT64,
+        ):
+            tile_type = pl.TileType(shape=[1, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            inputs = pl.make_tile_group(type=tile_type, addrs=[0], mutex_ids=[0])
+            outputs = pl.make_tile_group(type=tile_type, addrs=[512], mutex_ids=[1])
+            with pl.section_vector():
+                probe_vf(inputs.next(), outputs.next(), count)
+
+        func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_vf_rejects_constant_branch_ternary():
+    with pytest.raises(NotSupported, match="Ternary conditional expressions"):
+
+        @pl.vector_function
+        def probe_vf(src, dst, count):
+            for offset in pl.range(0, count, 64):
+                width = 64 if offset == 0 else 32
+                mask = vf.update_mask(width, dtype=pl.DT_FP32)
+                reg = vf.load_align(src, offset)
+                reg = vf.adds(reg, pl.const(1.0, pl.DT_FP32), mask)
+                vf.store_align(dst, reg, mask, offset)
+
+        @pl.jit(auto_mutex=True)
+        def func(
+            x: pl.Tensor[[1, 128], pl.DT_FP32],
+            y: pl.Tensor[[1, 128], pl.DT_FP32],
+            count: pl.DT_INT64,
+        ):
+            tile_type = pl.TileType(shape=[1, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            inputs = pl.make_tile_group(type=tile_type, addrs=[0], mutex_ids=[0])
+            outputs = pl.make_tile_group(type=tile_type, addrs=[512], mutex_ids=[1])
+            with pl.section_vector():
+                probe_vf(inputs.next(), outputs.next(), count)
+
+        func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_vf_rejects_while_loop():
+    """Every while shape is rejected inside a vector function: the header form
+    needs a pure condition re-evaluated every iteration, and the ``while
+    True`` + break-guard fallback is a provably-infinite loop 鈥?bisheng's
+    ``.vector.thread`` constraints leave no viable lowering."""
+
+    @pl.vector_function
+    def constant_true_vf(src, dst, count):
+        offset = 0
+        while True:
+            mask = vf.update_mask(64, dtype=pl.DT_FP32)
+            reg = vf.load_align(src, offset)
+            reg = vf.adds(reg, pl.const(2.0, pl.DT_FP32), mask)
+            vf.store_align(dst, reg, mask, offset)
+            offset = offset + 64
+            if offset >= count:
+                break
+
+    @pl.vector_function
+    def runtime_condition_vf(src, dst, count):
+        offset = 0
+        while offset < count:
+            mask = vf.update_mask(64, dtype=pl.DT_FP32)
+            reg = vf.load_align(src, offset)
+            reg = vf.adds(reg, pl.const(2.0, pl.DT_FP32), mask)
+            vf.store_align(dst, reg, mask, offset)
+            offset = offset + 64
+
+    @pl.vector_function
+    def stateful_header_vf(src, dst, count):
+        offset = 0
+        while pl.min(offset, count) > 0:
+            mask = vf.update_mask(64, dtype=pl.DT_FP32)
+            reg = vf.load_align(src, offset)
+            reg = vf.adds(reg, pl.const(2.0, pl.DT_FP32), mask)
+            vf.store_align(dst, reg, mask, offset)
+            offset = offset + 64
+
+    for probe_vf in (constant_true_vf, runtime_condition_vf, stateful_header_vf):
+
+        @pl.jit(auto_mutex=True)
+        def func(
+            x: pl.Tensor[[1, 128], pl.DT_FP32],
+            y: pl.Tensor[[1, 128], pl.DT_FP32],
+            count: pl.DT_INT64,
+        ):
+            tile_type = pl.TileType(shape=[1, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            inputs = pl.make_tile_group(type=tile_type, addrs=[0], mutex_ids=[0])
+            outputs = pl.make_tile_group(type=tile_type, addrs=[512], mutex_ids=[1])
+            with pl.section_vector():
+                probe_vf(inputs.next(), outputs.next(), count)
+
+        with pytest.raises(NotSupported, match="while loops are not supported inside a vector function"):
+            func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)

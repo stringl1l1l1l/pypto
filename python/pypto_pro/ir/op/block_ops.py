@@ -3830,10 +3830,15 @@ _COL_MAX_MIN_DTYPES = (
 _COL_SUM_DTYPES = (
     DataType.FP16,
     DataType.FP32,
+    DataType.INT8,
+    DataType.UINT8,
     DataType.INT16,
+    DataType.UINT16,
     DataType.INT32,
+    DataType.UINT32,
     DataType.INT64,
-    DataType.UINT64
+    DataType.UINT64,
+    DataType.BF16,
 )
 _DIM_REDUCE_DTYPES: dict[str, tuple[tuple[DataType, ...], tuple[DataType, ...]]] = {
     "max": (_ROW_MAX_MIN_DTYPES, _COL_MAX_MIN_DTYPES),

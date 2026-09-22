@@ -664,6 +664,39 @@ class ControlFlowParserMixin:
             self.scope_manager.define_var(name, return_var, allow_redef=True, span=span)
             self._update_phi_constant(return_var, state)
 
+    def _reject_while_in_vf(self, stmt: ast.While) -> None:
+        """Reject every ``while`` loop inside a vector function.
+
+        No while shape survives bisheng's ``.vector.thread`` constraints: the
+        header form needs a pure condition re-evaluated every iteration (which
+        rules out subscripts and calls), and the ``while True`` + break-guard
+        fallback is a provably-infinite loop the toolchain rejects. With no
+        viable lowering, all while loops are rejected up front. Kernel-level
+        while loops keep both lowerings.
+        """
+        if self.inline_vf_depth == 0:
+            return
+        raise NotSupported(
+            "while loops are not supported inside a vector function",
+            span=self.span_tracker.get_span(stmt),
+            hint="Use `for offset in pl.range(start, stop, step)` and carry the "
+            "induction scalar through the for loop, or hoist the loop to the "
+            "kernel level.",
+        )
+
+    def _reject_vf_runtime_step(self, node) -> None:
+        """Reject a runtime pl.range() step inside a vector function.
+
+        The toolchain rejects runtime-step loops under -Werror because the
+        trip count is not provably divisible.
+        """
+        raise NotSupported(
+            "pl.range() step must be a compile-time constant inside a vector function",
+            span=self.span_tracker.get_span(node),
+            hint="The toolchain rejects runtime-step loops under -Werror because the "
+            "trip count is not provably divisible; use a constant step.",
+        )
+
     def parse_while_loop(self, stmt: ast.While) -> None:
         """Lower a natural while to ``while True`` with an SSA-carrying break guard."""
         self._validate_loop_orelse(stmt)
@@ -1057,6 +1090,8 @@ class ControlFlowParserMixin:
 
         found, value = ExprEvaluator.ir_to_python_value(expr)
         if not found:
+            if is_step and self.inline_vf_depth > 0:
+                self._reject_vf_runtime_step(node)
             return
         value = from_storage_int(expr.value, expr.type.dtype)
 

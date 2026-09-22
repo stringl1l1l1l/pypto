@@ -32,7 +32,7 @@ div(src0, src1, preg, mode: Optional[MergeMode] = None, precision: Optional[bool
 | src1 | 输入 | 源操作数1，[reg_tensor](../reg_tensor.md)，支持的数据类型和src0中的说明一致。 |
 | preg | 输入 | [mask_reg](../mask_reg.md)。 |
 | mode | 输入 | 可选，对应[MergeMode](../types/MergeMode.md)类型。<br>- pypto_pro.language.MergeMode.ZEROING（默认），preg未筛选的元素在dst中置0。<br>- pypto_pro.language.MergeMode.MERGING当前不支持。 |
-| precision | 输入 | 可选，高精度模式开关。True启用高精度模式；False（默认）为标准模式。 |
+| precision | 输入 | 可选，高精度模式开关。True启用高精度模式；False（默认）为标准模式。高精度模式下支持的数据类型为：DT_FP16、DT_FP32。 |
 
 ## 约束说明
 
@@ -142,11 +142,64 @@ def test_example():
     example_kernel[None, core_nums](a, b, out)
     torch.npu.synchronize()
     ref = (a.cpu().double() / b.cpu().double()).float().to(device)
-    torch.testing.assert_close(out, ref, rtol=1e-6, atol=0)
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
 
 if __name__ == "__main__":
     test_example()
     print("PASSED")
+```
+
+### FP16数据类型高精度示例
+
+```python
+import os
+import pypto_pro.language as pl
+import torch
+import torch_npu
+
+@pl.vector_function
+def example_vf_fp16(src_a, src_b, dst_tile):
+    preg = vf.create_mask(pattern=pl.MaskPattern.ALL, dtype=pl.DT_FP16)
+    reg_a = vf.load_align(src_a, 0)
+    reg_b = vf.load_align(src_b, 0)
+    reg_out = vf.div(reg_a, reg_b, preg, precision=True)
+    vf.store_align(dst_tile, reg_out, preg)
+
+@pl.jit()
+def example_kernel_fp16(
+    a: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
+    b: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
+    out: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
+):
+    tf = pl.TileType(shape=[1, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
+    in_a_grp = pl.make_tile_group(type=tf, addrs=0x0, mutex_ids=[0])
+    in_a = in_a_grp.current()
+    in_b_grp = pl.make_tile_group(type=tf, addrs=0x100, mutex_ids=[1])
+    in_b = in_b_grp.current()
+    t_out_grp = pl.make_tile_group(type=tf, addrs=0x200, mutex_ids=[2])
+    t_out = t_out_grp.current()
+    with pl.section_vector():
+        pl.load(in_a, a, [0, 0])
+        pl.load(in_b, b, [0, 0])
+        example_vf_fp16(in_a, in_b, t_out)
+        pl.store(out, t_out, [0, 0])
+
+def test_example_fp16():
+    device_id = int(os.environ.get('TILE_FWK_DEVICE_ID', 0))
+    device = f'npu:{device_id}'
+    core_nums = 1
+    torch.npu.set_device(device)
+    a = torch.rand([1, 128], device=device, dtype=torch.float16) + 0.5
+    b = torch.rand([1, 128], device=device, dtype=torch.float16) + 0.5
+    out = torch.empty([1, 128], device=device, dtype=torch.float16)
+    example_kernel_fp16[None, core_nums](a, b, out)
+    torch.npu.synchronize()
+    ref = (a.cpu().double() / b.cpu().double()).half().to(device)
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+if __name__ == '__main__':
+    test_example_fp16()
+    print('PASSED')
 ```
 
 ### INT64数据类型示例
