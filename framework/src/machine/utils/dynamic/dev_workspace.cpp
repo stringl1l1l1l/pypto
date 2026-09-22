@@ -548,16 +548,16 @@ npu::tile_fwk::DrcoLocalReadyQueue* DeviceWorkspaceAllocator::AllocateDrcoLocalR
 npu::tile_fwk::DrcoLocalReadyMatrix* DeviceWorkspaceAllocator::AllocateDrcoLocalReadyMatrix(uint64_t size)
 {
     WsAllocation allocation = ControlFlowAllocateSlab(devProg_, size,
-                                                      SlabAlloc(size, WsAicpuSlabMemType::LOCAL_READY_QUE));
+                                                      SlabAlloc(size, WsAicpuSlabMemType::LOCAL_READY_MATRIX));
     return allocation.As<npu::tile_fwk::DrcoLocalReadyMatrix>();
 }
 
-// 共享 stitch 节点矩阵分配（单实例，与 localReadyMatrix 共用 LOCAL_READY_QUE 池）：
-// 数量预算见 CalcStitchWorkspace 的 objUsedNum（DRCO_QUEUE_MAX × NUM_LOCAL_GROUPS + 1）
+// 共享 stitch 节点矩阵分配（单实例，与 localReadyMatrix 共用 LOCAL_READY_MATRIX 池），
+// 数量预算见 CalcStitchWorkspace 的 objUsedNum
 npu::tile_fwk::DrcoGlobalStitchNodeMatrix* DeviceWorkspaceAllocator::AllocateDrcoStitchNodeMatrix(uint64_t size)
 {
     WsAllocation allocation = ControlFlowAllocateSlab(devProg_, size,
-                                                      SlabAlloc(size, WsAicpuSlabMemType::LOCAL_READY_QUE));
+                                                      SlabAlloc(size, WsAicpuSlabMemType::LOCAL_READY_MATRIX));
     return allocation.As<npu::tile_fwk::DrcoGlobalStitchNodeMatrix>();
 }
 
@@ -1072,13 +1072,16 @@ uint32_t DeviceWorkspaceAllocator::PerCorePendingQueSlabMemObjSize()
 
 uint32_t DeviceWorkspaceAllocator::LocalReadyQueSlabMemObjSize()
 {
-    // LOCAL_READY_QUE slab 同时承载 local ready queue / local ready matrix / 全局 stitch 节点矩阵，
-    // 单对象最大尺寸取三者最大值：queue 带柔性容量（stitchFunctionsize 项）、matrix 含 N×N 槽位
-    // 数组（随 LOCAL_GROUP_SIZE 增大，8×8 时 320B）、stitch 矩阵为固定尺寸
-    uint32_t queueSize = sizeof(npu::tile_fwk::DrcoLocalReadyQueue) + devProg_->stitchFunctionsize * sizeof(uint32_t);
+    return sizeof(npu::tile_fwk::DrcoLocalReadyQueue) + devProg_->stitchFunctionsize * sizeof(uint32_t);
+}
+
+uint32_t DeviceWorkspaceAllocator::LocalReadyMatrixSlabMemObjSize()
+{
+    // LOCAL_READY_MATRIX 池承载 local ready matrix（N×N 槽位数组，随 LOCAL_GROUP_SIZE 增大）
+    // 与全局共享 stitch 节点矩阵（108 行 × 64B cacheline 对齐行），注册 objSize 取两者最大值
     uint32_t localMatrixSize = sizeof(npu::tile_fwk::DrcoLocalReadyMatrix);
     uint32_t stitchMatrixSize = sizeof(npu::tile_fwk::DrcoGlobalStitchNodeMatrix);
-    return std::max({queueSize, localMatrixSize, stitchMatrixSize});
+    return std::max(localMatrixSize, stitchMatrixSize);
 }
 
 uint32_t DeviceWorkspaceAllocator::PredCountSlabMemObjSize()

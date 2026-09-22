@@ -227,17 +227,17 @@ uint64_t CalcGeneralMetadataSlabWorkspace(DevAscendProgram* devProg)
     return (generalMetadataSlabSize + SLAB_ALIGN_GRANULARITY) * devProg->GetParallelism();
 }
 
-uint64_t CalcStitchWorkspace(DevAscendProgram& devProg)
+uint64_t CalcStitchWorkspace(DevAscendProgram& devProg, bool aicoreResolve)
 {
     DeviceWorkspaceAllocator workspace(&devProg);
     uint32_t slabCapacity[CALC_STITCH_NUM] = {0};
-    // LOCAL_READY_QUE 池（下标 4）承载三类对象，数量与分配侧（InitDrcoRootFuncList 双循环）一致：
-    // localReadyQueue ×（DRCO_QUEUE_MAX × NUM_LOCAL_GROUPS）+ localReadyMatrix ×（DRCO_QUEUE_MAX ×
-    // NUM_LOCAL_GROUPS，MIX 类型亦分配）+ 共享 stitch 节点矩阵 × 1（单实例）——
-    // 计入精确数量，不依赖 <<2 的 4 倍安全余量隐式覆盖
-    uint32_t objUsedNum[CALC_STITCH_NUM] = {
-        READY_QUEUE_SIZE,         DIE_READY_QUEUE_SIZE * DIE_NUM,    1,
-        MAX_AICORE_NUM_FOR_QUEUE, DRCO_QUEUE_MAX * NUM_LOCAL_GROUPS, MAX_STITCH_FUNC_NUM};
+    uint32_t objUsedNum[CALC_STITCH_NUM] = {READY_QUEUE_SIZE,
+                                            DIE_READY_QUEUE_SIZE * DIE_NUM,
+                                            1,
+                                            aicoreResolve ? MAX_AICORE_NUM_FOR_QUEUE : 0,
+                                            aicoreResolve ? DRCO_QUEUE_MAX * NUM_LOCAL_GROUPS : 0,
+                                            aicoreResolve ? DRCO_QUEUE_MAX * NUM_LOCAL_GROUPS + 1 : 0,
+                                            aicoreResolve ? static_cast<uint32_t>(MAX_STITCH_FUNC_NUM) : 0};
     uint32_t slabSize = workspace.CalcStitchSlabMemObjmaxSize(slabCapacity);
     uint64_t stitchPoolSize = slabSize << 4;
 

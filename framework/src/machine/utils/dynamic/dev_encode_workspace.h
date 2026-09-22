@@ -48,7 +48,7 @@ void LogWorkspaceEncodeSummary(int kMin, const DevAscendProgram& devProg, const 
 
 uint64_t CalcGeneralMetadataSlotWorkspace(DevAscendProgram* devProg);
 uint64_t CalcGeneralMetadataSlabWorkspace(DevAscendProgram* devProg);
-uint64_t CalcStitchWorkspace(DevAscendProgram& devProg);
+uint64_t CalcStitchWorkspace(DevAscendProgram& devProg, bool aicoreResolve);
 uint64_t DumpTensorWorkspace();
 uint64_t LeafDumpWorkspace();
 uint64_t CalcStitchCacheSize(DevAscendProgram* devProg);

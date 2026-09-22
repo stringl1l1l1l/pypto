@@ -425,6 +425,8 @@ private:
 
     uint32_t LocalReadyQueSlabMemObjSize();
 
+    uint32_t LocalReadyMatrixSlabMemObjSize();
+
     uint32_t PredCountSlabMemObjSize();
 
     uint32_t (DeviceWorkspaceAllocator::*slabMemObjSizeFunc[ToUnderlying(WsAicpuSlabMemType::SLAB_MEM_TYPE_BUTT)])() = {
@@ -439,6 +441,7 @@ private:
         &DeviceWorkspaceAllocator::WrapQueSlabMemObjSize,
         &DeviceWorkspaceAllocator::PerCorePendingQueSlabMemObjSize,
         &DeviceWorkspaceAllocator::LocalReadyQueSlabMemObjSize,
+        &DeviceWorkspaceAllocator::LocalReadyMatrixSlabMemObjSize,
         &DeviceWorkspaceAllocator::PredCountSlabMemObjSize,
         &DeviceWorkspaceAllocator::DuppedStitchSlabMemObjSize,
     };

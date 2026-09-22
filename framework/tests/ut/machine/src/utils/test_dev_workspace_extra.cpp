@@ -322,12 +322,22 @@ TEST_F(DevWorkspaceTest, CalcStitchSlabMemObjmaxSize_ReturnsValue)
     EXPECT_GT(size, 0u);
 }
 
-TEST_F(DevWorkspaceTest, CalcStitchWorkspace_ReturnsPositiveSize)
+TEST_F(DevWorkspaceTest, CalcStitchWorkspace_AicpuResolve_OnlySharedTypes)
 {
     DevAscendProgram prog{};
     prog.stitchFunctionsize = 100;
-    uint64_t size = CalcStitchWorkspace(prog);
+    uint64_t size = CalcStitchWorkspace(prog, false);
     EXPECT_GT(size, 0u);
+}
+
+TEST_F(DevWorkspaceTest, CalcStitchWorkspace_AicoreResolve_LargerThanAicpu)
+{
+    DevAscendProgram prog{};
+    prog.stitchFunctionsize = 100;
+    uint64_t sizeAicpu = CalcStitchWorkspace(prog, false);
+    uint64_t sizeAicore = CalcStitchWorkspace(prog, true);
+    // DRCO 场景额外预留 PER_CORE/LOCAL_READY_QUE/LOCAL_READY_MATRIX/PRED_COUNT 池内存
+    EXPECT_GT(sizeAicore, sizeAicpu);
 }
 
 TEST_F(DevWorkspaceTest, CalculateSlabCapacityPerType_NullSlabCapacity)

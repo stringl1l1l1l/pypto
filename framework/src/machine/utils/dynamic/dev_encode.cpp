@@ -3290,7 +3290,9 @@ static void EncodeProgramMetadataWorkspace(DevAscendProgram* base)
     base->memBudget.metadata.general += CalcGeneralMetadataSlabWorkspace(base);
     base->memBudget.metadata.stitchCacheSize = CalcStitchCacheSize(base);
     base->memBudget.metadata.general += base->memBudget.metadata.stitchCacheSize;
-    base->memBudget.metadata.stitchPool = CalcStitchWorkspace(*base);
+    const bool aicoreResolve = IsAicoreResolveEnabled() &&
+                               config::GetRuntimeOption<int64_t>(CFG_RUN_MODE) != CFG_RUN_MODE_SIM;
+    base->memBudget.metadata.stitchPool = CalcStitchWorkspace(*base, aicoreResolve);
 }
 
 static void FinalizeEncodedDevAscendProgram(Function* func, DevAscendProgram* base, uint64_t& offset,
