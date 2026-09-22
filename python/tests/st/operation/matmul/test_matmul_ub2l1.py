@@ -11,6 +11,7 @@
 """
 Cast+Matmul 融合算子 ST 测试脚本。
 场景：先 Cast 输入到目标 dtype，再执行 Matmul；另含 Cast+ScaledMM(MX) 的 UB2L1 场景。
+支持 2D/3D/4D 输入，3D/4D 为 BatchMatmul 场景（batch 维切片 + 逐 batch Cast）。
 支持 pytest 参数化执行和直接执行两种模式。
 """
 
@@ -18,6 +19,8 @@ import os
 
 import pytest
 from testcase.matmul_ub2l1_test_case import (
+    CAST_3D_MATMUL_TESTS,
+    CAST_4D_MATMUL_TESTS,
     CAST_BOTH_MATMUL_TESTS,
     CAST_LEFT_MATMUL_TESTS,
     CAST_RIGHT_MATMUL_TESTS,
@@ -44,7 +47,7 @@ def cast_matmul_pto_kernel(
     m, k, n = config.shape
     m_view, n_view = config.view_shape
 
-    pypto.set_cube_tile_shapes(*config.cube_tile_shape)
+    pypto.set_cube_tile_shapes(*config.cube_tile_shape, config.enable_ksplit)
 
     m_loop = (m + m_view - 1) // m_view
     n_loop = (n + n_view - 1) // n_view
@@ -55,10 +58,16 @@ def cast_matmul_pto_kernel(
             mode = pypto.CastMode.CAST_NONE
             if config.matmul_pto_dtype == pypto.DT_INT8:
                 mode = pypto.CastMode.CAST_TRUNC
+            m_offset = m_idx * m_view
+            n_offset = n_idx * n_view
             if config.a_trans:
-                a_tile = a_tensor[:, m_idx * m_view:m_idx * m_view + m_view]
+                a_tile = pypto.view(
+                    a_tensor, [k, m_view], [0, m_offset], valid_shape=[k, (m - m_offset).min(m_view)]
+                )
             else:
-                a_tile = a_tensor[m_idx * m_view:m_idx * m_view + m_view, :]
+                a_tile = pypto.view(
+                    a_tensor, [m_view, k], [m_offset, 0], valid_shape=[(m - m_offset).min(m_view), k]
+                )
 
             if config.a_cast:
                 pypto.set_vec_tile_shapes(*config.a_vec_tile_shape)
@@ -67,9 +76,13 @@ def cast_matmul_pto_kernel(
                 a_compute = a_tile
 
             if config.b_trans:
-                b_tile = b_tensor[n_idx * n_view:n_idx * n_view + n_view, :]
+                b_tile = pypto.view(
+                    b_tensor, [n_view, k], [n_offset, 0], valid_shape=[(n - n_offset).min(n_view), k]
+                )
             else:
-                b_tile = b_tensor[:, n_idx * n_view:n_idx * n_view + n_view]
+                b_tile = pypto.view(
+                    b_tensor, [k, n_view], [0, n_offset], valid_shape=[k, (n - n_offset).min(n_view)]
+                )
 
             if config.b_cast:
                 pypto.set_vec_tile_shapes(*config.b_vec_tile_shape)
@@ -86,9 +99,207 @@ def cast_matmul_pto_kernel(
             )
 
             out_tensor[
-                m_idx * m_view:m_idx * m_view + m_view,
-                n_idx * n_view:n_idx * n_view + n_view,
+                m_offset:m_offset + m_view,
+                n_offset:n_offset + n_view,
             ] = out_view
+    # 运行完后设置回-1，关闭mix
+    pypto.set_pass_options(sg_set_scope=-1)
+
+
+@pypto.frontend.jit(debug_options={"runtime_debug_mode": 0, "compile_debug_mode": 0})
+def cast_matmul_pto_kernel_3d(
+    a_tensor: pypto.Tensor([pypto.DYNAMIC, pypto.STATIC, pypto.STATIC]),
+    b_tensor: pypto.Tensor([pypto.DYNAMIC, pypto.STATIC, pypto.STATIC]),
+    out_tensor: pypto.Tensor([pypto.DYNAMIC, pypto.STATIC, pypto.STATIC]),
+    config: CastMatmulConfig,
+):
+    b_size = config.batch_shape[0]
+    m, k, n = config.shape
+    b_view = config.batch_view_shape[0]
+    m_view, n_view = config.view_shape
+
+    pypto.set_cube_tile_shapes(*config.cube_tile_shape, config.enable_ksplit)
+
+    b_loop = (b_size + b_view - 1) // b_view
+    m_loop = (m + m_view - 1) // m_view
+    n_loop = (n + n_view - 1) // n_view
+    # 当设置scope大于5000，即5001以上时，开启mix场景，走入UB2L1
+    pypto.set_pass_options(sg_set_scope=10000)
+    for b_idx in pypto.loop(0, b_loop, 1, name="LOOP_L0_bIdx", idx_name="b_idx"):
+        for m_idx in pypto.loop(0, m_loop, 1, name="LOOP_L0_mIdx", idx_name="m_idx"):
+            for n_idx in pypto.loop(0, n_loop, 1, name="LOOP_L1_nIdx", idx_name="n_idx"):
+                mode = pypto.CastMode.CAST_NONE
+                if config.matmul_pto_dtype == pypto.DT_INT8:
+                    mode = pypto.CastMode.CAST_TRUNC
+                b_offset = b_idx * b_view
+                m_offset = m_idx * m_view
+                n_offset = n_idx * n_view
+                if config.a_trans:
+                    a_tile = pypto.view(
+                        a_tensor,
+                        [b_view, k, m_view],
+                        [b_offset, 0, m_offset],
+                        valid_shape=[(b_size - b_offset).min(b_view), k, (m - m_offset).min(m_view)],
+                    )
+                else:
+                    a_tile = pypto.view(
+                        a_tensor,
+                        [b_view, m_view, k],
+                        [b_offset, m_offset, 0],
+                        valid_shape=[(b_size - b_offset).min(b_view), (m - m_offset).min(m_view), k],
+                    )
+
+                if config.a_cast:
+                    pypto.set_vec_tile_shapes(*config.a_vec_tile_shape)
+                    a_compute = pypto.cast(a_tile, config.matmul_pto_dtype, mode)
+                else:
+                    a_compute = a_tile
+
+                if config.b_trans:
+                    b_tile = pypto.view(
+                        b_tensor,
+                        [b_view, n_view, k],
+                        [b_offset, n_offset, 0],
+                        valid_shape=[(b_size - b_offset).min(b_view), (n - n_offset).min(n_view), k],
+                    )
+                else:
+                    b_tile = pypto.view(
+                        b_tensor,
+                        [b_view, k, n_view],
+                        [b_offset, 0, n_offset],
+                        valid_shape=[(b_size - b_offset).min(b_view), k, (n - n_offset).min(n_view)],
+                    )
+
+                if config.b_cast:
+                    pypto.set_vec_tile_shapes(*config.b_vec_tile_shape)
+                    b_compute = pypto.cast(b_tile, config.matmul_pto_dtype, mode)
+                else:
+                    b_compute = b_tile
+
+                out_view = pypto.matmul(
+                    a_compute,
+                    b_compute,
+                    out_dtype=config.out_pto_dtype,
+                    a_trans=config.a_trans,
+                    b_trans=config.b_trans,
+                )
+
+                out_tensor[
+                    b_offset:b_offset + b_view,
+                    m_offset:m_offset + m_view,
+                    n_offset:n_offset + n_view,
+                ] = out_view
+    # 运行完后设置回-1，关闭mix
+    pypto.set_pass_options(sg_set_scope=-1)
+
+
+@pypto.frontend.jit(debug_options={"runtime_debug_mode": 0, "compile_debug_mode": 0})
+def cast_matmul_pto_kernel_4d(
+    a_tensor: pypto.Tensor([pypto.DYNAMIC, pypto.STATIC, pypto.STATIC, pypto.STATIC]),
+    b_tensor: pypto.Tensor([pypto.DYNAMIC, pypto.STATIC, pypto.STATIC, pypto.STATIC]),
+    out_tensor: pypto.Tensor([pypto.DYNAMIC, pypto.STATIC, pypto.STATIC, pypto.STATIC]),
+    config: CastMatmulConfig,
+):
+    b0_size, b1_size = config.batch_shape
+    m, k, n = config.shape
+    b0_view, b1_view = config.batch_view_shape
+    m_view, n_view = config.view_shape
+
+    pypto.set_cube_tile_shapes(*config.cube_tile_shape, config.enable_ksplit)
+
+    b0_loop = (b0_size + b0_view - 1) // b0_view
+    b1_loop = (b1_size + b1_view - 1) // b1_view
+    m_loop = (m + m_view - 1) // m_view
+    n_loop = (n + n_view - 1) // n_view
+    # 当设置scope大于5000，即5001以上时，开启mix场景，走入UB2L1
+    pypto.set_pass_options(sg_set_scope=10000)
+    for b0_idx in pypto.loop(0, b0_loop, 1, name="LOOP_L0_b0Idx", idx_name="b0_idx"):
+        for b1_idx in pypto.loop(0, b1_loop, 1, name="LOOP_L0_b1Idx", idx_name="b1_idx"):
+            for m_idx in pypto.loop(0, m_loop, 1, name="LOOP_L0_mIdx", idx_name="m_idx"):
+                for n_idx in pypto.loop(0, n_loop, 1, name="LOOP_L1_nIdx", idx_name="n_idx"):
+                    mode = pypto.CastMode.CAST_NONE
+                    if config.matmul_pto_dtype == pypto.DT_INT8:
+                        mode = pypto.CastMode.CAST_TRUNC
+                    b0_offset = b0_idx * b0_view
+                    b1_offset = b1_idx * b1_view
+                    m_offset = m_idx * m_view
+                    n_offset = n_idx * n_view
+                    if config.a_trans:
+                        a_tile = pypto.view(
+                            a_tensor,
+                            [b0_view, b1_view, k, m_view],
+                            [b0_offset, b1_offset, 0, m_offset],
+                            valid_shape=[
+                                (b0_size - b0_offset).min(b0_view),
+                                (b1_size - b1_offset).min(b1_view),
+                                k,
+                                (m - m_offset).min(m_view),
+                            ],
+                        )
+                    else:
+                        a_tile = pypto.view(
+                            a_tensor,
+                            [b0_view, b1_view, m_view, k],
+                            [b0_offset, b1_offset, m_offset, 0],
+                            valid_shape=[
+                                (b0_size - b0_offset).min(b0_view),
+                                (b1_size - b1_offset).min(b1_view),
+                                (m - m_offset).min(m_view),
+                                k,
+                            ],
+                        )
+
+                    if config.a_cast:
+                        pypto.set_vec_tile_shapes(*config.a_vec_tile_shape)
+                        a_compute = pypto.cast(a_tile, config.matmul_pto_dtype, mode)
+                    else:
+                        a_compute = a_tile
+
+                    if config.b_trans:
+                        b_tile = pypto.view(
+                            b_tensor,
+                            [b0_view, b1_view, n_view, k],
+                            [b0_offset, b1_offset, n_offset, 0],
+                            valid_shape=[
+                                (b0_size - b0_offset).min(b0_view),
+                                (b1_size - b1_offset).min(b1_view),
+                                (n - n_offset).min(n_view),
+                                k,
+                            ],
+                        )
+                    else:
+                        b_tile = pypto.view(
+                            b_tensor,
+                            [b0_view, b1_view, k, n_view],
+                            [b0_offset, b1_offset, 0, n_offset],
+                            valid_shape=[
+                                (b0_size - b0_offset).min(b0_view),
+                                (b1_size - b1_offset).min(b1_view),
+                                k,
+                                (n - n_offset).min(n_view),
+                            ],
+                        )
+
+                    if config.b_cast:
+                        pypto.set_vec_tile_shapes(*config.b_vec_tile_shape)
+                        b_compute = pypto.cast(b_tile, config.matmul_pto_dtype, mode)
+                    else:
+                        b_compute = b_tile
+
+                    out_view = pypto.matmul(
+                        a_compute,
+                        b_compute,
+                        out_dtype=config.out_pto_dtype,
+                        a_trans=config.a_trans,
+                        b_trans=config.b_trans,
+                    )
+
+                    out_tensor[
+                        b0_offset:b0_offset + b0_view,
+                        b1_offset:b1_offset + b1_view,
+                        m_offset:m_offset + m_view,
+                        n_offset:n_offset + n_view,
+                    ] = out_view
     # 运行完后设置回-1，关闭mix
     pypto.set_pass_options(sg_set_scope=-1)
 
@@ -251,6 +462,65 @@ def run_cast_scaled_mm_ub2l1_test(case: dict):
     )
 
 
+def run_cast_matmul_nd_test(case: dict):
+    """3D/4D batch cast+matmul 测试入口，按 batch 维个数分发到对应 kernel。"""
+    device_id = int(os.environ.get("TILE_FWK_DEVICE_ID", 0))
+    torch.npu.set_device(device_id)
+
+    config = CastMatmulConfig.from_test_case(case)
+
+    m, k, n = config.shape
+    batch_shape = list(config.batch_shape)
+    if config.a_trans:
+        a_shape = batch_shape + [k, m]
+    else:
+        a_shape = batch_shape + [m, k]
+    if config.b_trans:
+        b_shape = batch_shape + [n, k]
+    else:
+        b_shape = batch_shape + [k, n]
+    c_shape = batch_shape + [m, n]
+
+    a_input_torch_dtype = CastMatmulConfig.get_torch_dtype(case["a_input_dtype"])
+    b_input_torch_dtype = CastMatmulConfig.get_torch_dtype(case["b_input_dtype"])
+    c_torch_dtype = CastMatmulConfig.get_torch_dtype(case["out_dtype"])
+    matmul_dtype = CastMatmulConfig.get_torch_dtype(case["matmul_dtype"])
+
+    # 对齐用例表 -5_5 datarange：cast 目标为 int8 时浮点源数据取 [-5, 5)，保证截断结果非平凡
+    def gen_input(shape, dtype):
+        if dtype == torch.int8:
+            return torch.randint(-5, 6, shape, dtype=dtype)
+        if matmul_dtype == torch.int8:
+            return torch.rand(shape, dtype=dtype) * 10 - 5
+        return torch.rand(shape, dtype=dtype)
+
+    a_tensor_cpu = gen_input(a_shape, a_input_torch_dtype)
+    b_tensor_cpu = gen_input(b_shape, b_input_torch_dtype)
+
+    a_cpu = a_tensor_cpu.to(matmul_dtype).transpose(-2, -1) if config.a_trans else a_tensor_cpu.to(matmul_dtype)
+    b_cpu = b_tensor_cpu.to(matmul_dtype).transpose(-2, -1) if config.b_trans else b_tensor_cpu.to(matmul_dtype)
+
+    if matmul_dtype == torch.int8:
+        golden = torch.matmul(a_cpu.to(torch.int32), b_cpu.to(torch.int32)).to(c_torch_dtype)
+    else:
+        golden = torch.matmul(a_cpu.to(torch.float32), b_cpu.to(torch.float32)).to(c_torch_dtype)
+
+    a_tensor = a_tensor_cpu.to(f"npu:{device_id}")
+    b_tensor = b_tensor_cpu.to(f"npu:{device_id}")
+    c_tensor = torch.zeros(c_shape, dtype=c_torch_dtype, device=f"npu:{device_id}")
+
+    if len(batch_shape) == 1:
+        cast_matmul_pto_kernel_3d(a_tensor, b_tensor, c_tensor, config)
+    else:
+        cast_matmul_pto_kernel_4d(a_tensor, b_tensor, c_tensor, config)
+
+    atol, rtol = CastMatmulConfig.get_tolerance(case["out_dtype"])
+
+    assert torch.allclose(c_tensor.cpu(), golden.cpu(), atol=atol, rtol=rtol), (
+        f"Test case {case['id']} ({case['name']}) failed"
+    )
+
+
 @pytest.mark.parametrize(
     "case", [pytest.param(case, marks=pytest.mark.soc(*case["products"])) for case in SCALED_MM_UB2L1_TESTS]
 )
@@ -265,6 +535,22 @@ def test_cast_scaled_mm_ub2l1(case: dict):
 @pypto.options(pass_options={"enable_slice": True})
 def test_cast_matmul(case: dict):
     run_cast_matmul_test(case)
+
+
+@pytest.mark.parametrize(
+    "case", [pytest.param(case, marks=pytest.mark.soc(*case["products"])) for case in CAST_3D_MATMUL_TESTS]
+)
+@pypto.options(pass_options={"enable_slice": True})
+def test_cast_matmul_3d(case: dict):
+    run_cast_matmul_nd_test(case)
+
+
+@pytest.mark.parametrize(
+    "case", [pytest.param(case, marks=pytest.mark.soc(*case["products"])) for case in CAST_4D_MATMUL_TESTS]
+)
+@pypto.options(pass_options={"enable_slice": True})
+def test_cast_matmul_4d(case: dict):
+    run_cast_matmul_nd_test(case)
 
 
 def run_cast_matmul_demo(run_mode):
@@ -293,11 +579,11 @@ def run_cast_matmul_demo(run_mode):
 
         for m_idx in pypto.loop(0, m_loop, 1, name="LOOP_L0_mIdx", idx_name="m_idx"):
             for n_idx in pypto.loop(0, n_loop, 1, name="LOOP_L0_nIdx", idx_name="n_idx"):
-                a_tile = a[m_idx * m_view_size:m_idx * m_view_size + m_view_size, :]
+                a_tile = pypto.view(a, [m_view_size, k_size], [m_idx * m_view_size, 0])
                 pypto.set_vec_tile_shapes(m_view_size, k_size)
                 a_fp16_tile = pypto.cast(a_tile, pypto.DT_FP16)
 
-                b_view = b[:, n_idx * n_view_size:n_idx * n_view_size + n_view_size]
+                b_view = pypto.view(b, [k_size, n_view_size], [0, n_idx * n_view_size])
                 out_view = pypto.matmul(a_fp16_tile, b_view, pypto.DT_FP16)
                 out[
                     m_idx * m_view_size:m_idx * m_view_size + m_view_size,

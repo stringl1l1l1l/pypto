@@ -37,6 +37,9 @@ class CastMatmulConfig:
     b_cast: bool
     a_trans: bool = False
     b_trans: bool = False
+    batch_shape: tuple[int, ...] = ()
+    batch_view_shape: tuple[int, ...] = ()
+    enable_ksplit: bool = False
 
     DTYPE_CONFIG = {
         "DT_FP16": {"pto": pypto.DT_FP16, "torch": torch.float16, "atol": 1e-3, "rtol": 1e-3},
@@ -78,6 +81,9 @@ class CastMatmulConfig:
             b_cast=case["b_cast"],
             a_trans=case.get("a_trans", False),
             b_trans=case.get("b_trans", False),
+            batch_shape=tuple(case.get("batchshape", ())),
+            batch_view_shape=tuple(case.get("batchviewshape", ())),
+            enable_ksplit=case.get("enableksplit", False),
         )
 
     @classmethod
@@ -106,6 +112,7 @@ CAST_RIGHT_MATMUL_TESTS = [
         "b_cast": True,
         "a_trans": False,
         "b_trans": True,
+        "enableksplit": False,
         "viewshape": [64, 320],
         "cubetileshape": [[64, 64], [80, 80], [320, 320]],
         "a_vectileshape": [384, 80],
@@ -131,6 +138,7 @@ CAST_LEFT_MATMUL_TESTS = [
         "b_cast": False,
         "a_trans": False,
         "b_trans": False,
+        "enableksplit": False,
         "viewshape": [176, 128],
         "cubetileshape": [[176, 176], [128, 128], [128, 128]],
         "a_vectileshape": [88, 64],
@@ -156,6 +164,7 @@ CAST_BOTH_MATMUL_TESTS = [
         "b_cast": True,
         "a_trans": False,
         "b_trans": False,
+        "enableksplit": False,
         "viewshape": [128, 128],
         "cubetileshape": [[128, 128], [32, 32], [128, 128]],
         "a_vectileshape": [64, 32],
@@ -164,6 +173,7 @@ CAST_BOTH_MATMUL_TESTS = [
         "products": ["950"],
     },
 ]
+
 
 
 @dataclass
@@ -232,6 +242,62 @@ SCALED_MM_UB2L1_TESTS = [
         "cubetileshape": [[64, 128], [64, 128], [64, 64]],
         "b_vectileshape": [16, 96],
         "out_dtype": "DT_FP32",
+        "products": ["950"],
+    },
+]
+
+CAST_3D_MATMUL_TESTS = [
+    {
+        "id": "CM04",
+        "name": "fp16_to_int8_bmm3d_left_cast_out_int32",
+        "desc": "3D A矩阵FP16输入Cast为INT8后BatchMatmul,INT32输出",
+        "batchshape": [5],
+        "m": 674,
+        "k": 288,
+        "n": 923,
+        "a_input_dtype": "DT_FP16",
+        "b_input_dtype": "DT_INT8",
+        "matmul_dtype": "DT_INT8",
+        "out_dtype": "DT_INT32",
+        "a_cast": True,
+        "b_cast": False,
+        "a_trans": False,
+        "b_trans": False,
+        "enableksplit": False,
+        "batchviewshape": [3],
+        "viewshape": [128, 128],
+        "cubetileshape": [[64, 64], [64, 64], [64, 64]],
+        "a_vectileshape": [1, 128, 128],
+        "b_vectileshape": [1, 128, 128],
+        "extend_params": {},
+        "products": ["950"],
+    },
+]
+
+CAST_4D_MATMUL_TESTS = [
+    {
+        "id": "CM05",
+        "name": "both_fp32_to_bf16_bmm4d_trans_a_out_fp32",
+        "desc": "4D双输入FP32均Cast为BF16后BatchMatmul+A转置,FP32输出",
+        "batchshape": [3, 4],
+        "m": 422,
+        "k": 320,
+        "n": 451,
+        "a_input_dtype": "DT_FP32",
+        "b_input_dtype": "DT_FP32",
+        "matmul_dtype": "DT_BF16",
+        "out_dtype": "DT_FP32",
+        "a_cast": True,
+        "b_cast": True,
+        "a_trans": True,
+        "b_trans": False,
+        "enableksplit": True,
+        "batchviewshape": [2, 3],
+        "viewshape": [128, 256],
+        "cubetileshape": [[128, 128], [128, 128], [128, 128]],
+        "a_vectileshape": [1, 1, 64, 64],
+        "b_vectileshape": [1, 1, 64, 64],
+        "extend_params": {},
         "products": ["950"],
     },
 ]
