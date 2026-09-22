@@ -47,7 +47,7 @@ pypto_pro.language.store_tile(
 | tile_offsets | 输入 | 目标Tensor的Tile块偏移，List[int或Scalar]类型。由order指定的维度按块索引乘以Tile对应维度大小换算，其余维度按绝对偏移使用；不支持负数索引，换算后的绝对偏移不得超过对应维度的形状。 |
 | relu_pre_mode | 输入 | 预处理模式，pypto_pro.language.ReluPreMode类型，可选。支持ReluPreMode.NormalRelu。 |
 | scale | 输入 | 量化比例，float、Scalar或Tile类型，可选。float或运行时Scalar表示整块Tile使用同一比例；运行时DT_FP32 Scalar直接传比例值，运行时DT_INT32或DT_INT64 Scalar须传入预编码的float32位模式。Tile表示逐列量化，须位于Fixpipe Buffer，数据类型为DT_INT64，形状为[1, N]，其中N为16的倍数且不大于512。 |
-| order | 输入 | 维度映射，List[int]类型，可选。指定源Tile的两个维度分别对应目标Tensor的哪两个维度，仅支持包含两个升序维度索引的列表，例如[0, 2]；维度索引必须在目标Tensor的维度范围内。省略时使用目标Tensor的最后两个维度。 |
+| order | 输入 | 维度映射，List[int]类型，可选。指定源Tile的两个维度分别对应目标Tensor的哪两个维度，仅支持包含两个升序维度索引的列表，例如[0, 2]；维度索引必须在目标Tensor的维度范围内。省略时使用目标Tensor的最后两个维度。<br>- 当Tensor为1维时，不支持传入order参数。 |
 | atomic | 输入 | 原子写模式，pypto_pro.language.AtomicType类型，可选。支持AtomicType.AtomicNone（覆盖写）和AtomicType.AtomicAdd（原子累加）。 |
 | phase | 输入 | 分块写回阶段，[pypto_pro.language.STPhase](../basic_data_structures/STPhase.md)类型，可选。支持STPhase.Partial和STPhase.Final；scale为逐列量化Tile时不能同时设置该参数。 |
 

@@ -39,7 +39,7 @@ pypto_pro.language.load_tile(
 | dst_tile | 输出 | 目的操作数，Tile类型，存储空间为L1 Buffer或UB，首地址必须按32字节对齐。接口按照该Tile的valid_shape搬运数据；Tile块大小由shape决定，不受valid_shape影响。支持的数据类型和分形组合详见[约束说明](#约束说明)。 |
 | src_tensor | 输入 | 源操作数，Tensor类型，存储空间为GM。支持的数据类型和分形组合详见[约束说明](#约束说明)。 |
 | tile_offsets | 输入 | 表示源Tensor各维度的Tile块编号或绝对元素坐标，List[int或Scalar]类型，长度须与源Tensor的维数相同。<br>- 不支持负数。<br>- order选中的维度按Tile块编号寻址，对应编号乘以dst_tile的shape中对应维度的大小后得到绝对元素坐标。<br>- order未选中的维度按绝对元素坐标寻址，用于固定高维Tensor的其他维度。<br>- 换算后的绝对元素坐标必须位于源Tensor的shape范围内；边界Tile可通过pypto_pro.language.set_validshape设置有效形状，保证有效搬运范围不越过源Tensor边界。 |
-| order | 输入 | 可选，维度映射，List[int]类型。列表中的第i项表示dst_tile第i维对应src_tensor的维度。<br>- 升序表示不转置，例如order=[0, 1]。<br>- 降序表示转置，例如order=[1, 0]。<br>- 不设置时，dst_tile默认对应src_tensor的最后两个维度，且不转置。 |
+| order | 输入 | 可选，维度映射，List[int]类型。列表中的第i项表示dst_tile第i维对应src_tensor的维度。<br>- 升序表示不转置，例如order=[0, 1]。<br>- 降序表示转置，例如order=[1, 0]。<br>- 不设置时，dst_tile默认对应src_tensor的最后两个维度，且不转置。<br>- 当Tensor为1维时，不支持传入order参数。 |
 
 ## 约束说明
 

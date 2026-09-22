@@ -37,7 +37,7 @@ pypto_pro.language.load(
 | dst_tile | 输出 | 目的操作数，Tile类型，存储空间为L1 Buffer或UB，首地址必须按32字节对齐。接口按照该Tile的valid_shape搬运数据。支持的数据类型和分形组合详见[约束说明](#约束说明)。 |
 | src_tensor | 输入 | 源操作数，Tensor类型，存储空间为GM。支持的数据类型和分形组合详见[约束说明](#约束说明)。 |
 | offsets | 输入 | 表示源Tensor各维度的绝对元素坐标，List[int或Scalar]类型，长度须与源Tensor的维数相同。<br>- 不支持负数。<br>- 未被order选中的维度使用对应值固定下标。<br>- 搬运起始位置必须位于源Tensor的shape范围内；边界Tile可通过pypto_pro.language.set_validshape设置有效形状，保证有效搬运范围不越过源Tensor边界。<br>- 例如，offsets=[64, 0]表示从二维Tensor的第64行、第0列开始搬运。 |
-| order | 输入 | 可选，维度映射，长度为2的编译期整数列表。列表中的第i项表示dst_tile第i维对应src_tensor的维度，两个维度索引必须互不重复且位于src_tensor的维度范围内。<br>- 升序表示不转置，例如order=[0, 1]。<br>- 降序表示转置，例如order=[1, 0]。<br>- 普通Tensor不设置order时，dst_tile默认对应src_tensor的最后两个维度，即[ndim - 2, ndim - 1]，且不转置。<br>- 搬运MX矩阵乘量化系数时，src_tensor的最后一维是物理phase轴，不能在order中选择；不设置order时，默认对应phase轴之前的两个维度，即[ndim - 3, ndim - 2]。 |
+| order | 输入 | 可选，维度映射，长度为2的编译期整数列表。列表中的第i项表示dst_tile第i维对应src_tensor的维度，两个维度索引必须互不重复且位于src_tensor的维度范围内。<br>- 升序表示不转置，例如order=[0, 1]。<br>- 降序表示转置，例如order=[1, 0]。<br>- 普通Tensor不设置order时，dst_tile默认对应src_tensor的最后两个维度，即[ndim - 2, ndim - 1]，且不转置。<br>- 搬运MX矩阵乘量化系数时，src_tensor的最后一维是物理phase轴，不能在order中选择；不设置order时，默认对应phase轴之前的两个维度，即[ndim - 3, ndim - 2]。<br>- 当Tensor为1维时，不支持传入order参数。 |
 
 ## 约束说明
 

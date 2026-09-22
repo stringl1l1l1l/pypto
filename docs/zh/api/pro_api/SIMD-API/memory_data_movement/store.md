@@ -41,7 +41,7 @@ pypto_pro.language.store(
 | offsets | 输入 | 可选，表示目的Tensor各维度的绝对元素坐标，List[int或Scalar]类型，长度须与目的Tensor的维数相同。<br>- 不支持负数。<br>- 对于高维NZ Tensor，最后两项对应M、N方向。 |
 | relu_pre_mode | 输入 | 可选，L0C Buffer→GM搬运时是否开启随路ReLU操作，[pypto_pro.language.ReluPreMode](../basic_data_structures/ReluPreMode.md)类型。 |
 | scale | 输入 | 可选，是否使能量化功能及设置量化模式下的量化参数，数据在搬出L0C时由Fixpipe乘以该比例并转换到目的数据类型。不同的传入形式会影响量化粒度，支持如下类型：<br>- **float类型**：直接传入固定值（如scale = 2.0），适用于整块tile使用同一比例。<br>- **Scalar类型**：量化比例在运行时确定，需按数据类型传值。<br>&nbsp;&nbsp;- DT_FP32：直接传原始比例值（如0.5）。<br>&nbsp;&nbsp;- DT_INT32、DT_INT64：传预编码的float32位模式转成的整数（如`struct.pack("!f", 0.5)`）。<br>- **Tile类型**：每列使用独立比例，需满足以下要求：<br>&nbsp;&nbsp;- target_memory必须为pl.MemorySpace.Scaling。<br>&nbsp;&nbsp;- shape为[1, N]（列量化），N必须是16的倍数且N ≤ 512。<br>&nbsp;&nbsp;- dtype为DT_INT64。<br>&nbsp;&nbsp;- 目的操作数的Tile数据类型为DT_INT8时，Scaling tile每个DT_INT64元素的bit46需置1，用于选择有符号量化；未置位时L0C Buffer中的负值会被按无符号解读。<br>&nbsp;&nbsp;- 用户需要先把比例数据从GM搬到L1，再搬到Scaling，并完成MTE1→FIX同步。 |
-| order | 输入 | 可选，维度映射，List[int]类型，指定源Tile各维度对应的目标Tensor维度。<br>- 各维度编号必须在目标Tensor的维度范围内、不能重复。<br>- 仅支持按升序排列。<br>- 省略时对应目标Tensor的最后两个维度。GM分型为NZ时，只能指定为目标Tensor的最后两个维度。 |
+| order | 输入 | 可选，维度映射，List[int]类型，指定源Tile各维度对应的目标Tensor维度。<br>- 各维度编号必须在目标Tensor的维度范围内、不能重复。<br>- 仅支持按升序排列。<br>- 省略时对应目标Tensor的最后两个维度。GM分型为NZ时，只能指定为目标Tensor的最后两个维度。<br>- 当Tensor为1维时，不支持传入order参数。 |
 | atomic | 输入 | 可选，原子写模式，[pypto_pro.language.AtomicType](../basic_data_structures/AtomicType.md)类型。 |
 | phase | 输入 | 可选，分块写回阶段，[pypto_pro.language.STPhase](../basic_data_structures/STPhase.md)类型。<br>- 不支持与Tile类型的scale同时使用。 |
 

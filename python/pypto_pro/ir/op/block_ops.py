@@ -1160,6 +1160,8 @@ def _resolve_order(
     consumed by C++ codegen) and ``is_transpose`` (bool, consumed by codegen).
     """
     if order is None:
+        if tensor_ndim == 1:
+            return None, False
         order = list(range(tensor_ndim - tile_ndim, tensor_ndim))
     is_transpose = len(order) >= 2 and order[0] > order[1]
     tile_dims = sorted(order)
@@ -1188,12 +1190,21 @@ def _validate_tile_dims(
     op_name: str,
 ) -> tuple[list[int] | None, Any | None]:
     if tensor_ndim == 1:
+        if tile_dims is not None:
+            raise InvalidArgument(
+                f"{op_name}: order is not supported for rank-1 Tensors (the axis mapping is "
+                f"expressed by the Tile shape), got {tile_dims}"
+            )
         access_size = _validate_rank1_tensor_tile_shape(tile_shape, op_name)
         return None, access_size
 
     tile_ndim = len(tile_shape)
     if tile_dims is None:
         tile_dims = list(range(tensor_ndim - tile_ndim, tensor_ndim))
+    elif len(tile_dims) != 2:
+        raise InvalidShape(
+            f"{op_name}: order must be a 2-element list, got {len(tile_dims)}: {tile_dims}"
+        )
     if len(set(tile_dims)) != len(tile_dims):
         raise InvalidShape(f"{op_name}: order axes must be unique, got {tile_dims}")
     for dim in tile_dims:
