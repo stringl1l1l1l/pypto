@@ -142,7 +142,7 @@ def loop_body_shapes(
         spare = ub2.next()            # taken OUTSIDE the loop, so it is a stable tile
     tick = 0
     for ki in pl.range(0, NT):
-        scale = tick + 2.0            # zone 1: supplies a stage argument
+        scale = tick + 2            # zone 1: supplies a stage argument
         with pl.section_vector():
             spare2 = ub2.next()       # a purely local group: its rotation is the user's own
             pl.muls(spare2, spare2, 1.0)
@@ -182,7 +182,7 @@ def test_allowed_shapes_are_placed_correctly():
 
     # A zone-1 statement stays where it was written; the snapshot after it reads what it
     # produced, so no value has to be moved to be seen.
-    assert at("scale = tick + 2.0") < at("_pl_ctx_0.scale = scale") < at("produce(")
+    assert at("scale = tick + 2") < at("_pl_ctx_0.scale = scale") < at("produce(")
 
     # One fill per field, and the stage reads it from the slot rather than live.
     assert lines.count("_pl_ctx_0.ki = ki") == 1

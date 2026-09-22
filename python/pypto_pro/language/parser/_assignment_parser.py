@@ -350,6 +350,20 @@ class AssignmentParserMixin:
         else:
             self.scope_manager.define_var(var_name, value_expr, span=span)
 
+    def _is_array_field(self, field_type: ir.Type) -> bool:
+        """True when *field_type* is a 1-D array field (plain nested TupleType)."""
+        return (
+            isinstance(field_type, ir.TupleType)
+            and self.classify_tuple_type(field_type).kind == TupleTypeKind.TUPLE
+        )
+
+    def _is_struct_value(self, expr) -> bool:
+        """True when *expr* is a mutable ``pl.struct`` / struct_array slot."""
+        return (
+            isinstance(getattr(expr, "type", None), ir.TupleType)
+            and self.classify_tuple_type(expr.type).kind == TupleTypeKind.STRUCT
+        )
+
     def _parse_struct_field_assignment(self, target: ast.Attribute, stmt: ast.Assign, span: ir.Span) -> None:
         """Lower ``base.field = rhs`` to ``EvalStmt(struct.set(base, rhs, field=...))``.
 
@@ -359,16 +373,18 @@ class AssignmentParserMixin:
         """
         base = self.parse_expression(target.value)
         field_name = target.attr
-        if isinstance(base, ir.MakeTuple) and not self._is_struct_array_tuple(base) and self.named_fields(base):
+        if not self._is_struct_value(base):
             raise InvalidOperation(
-                f"Cannot assign to immutable named tuple field '{ast.unparse(target)}'",
+                f"Cannot assign field '{field_name}': the target is not a struct",
                 span=span,
-                hint="Use pl.struct() or pl.struct_array() for mutable fields.",
+                hint="Field assignment is only supported on pl.struct() or pl.struct_array() elements, "
+                "e.g. s.field = v or arr[i].field = v.",
+                parser_retry=True,
             )
         fields = self.named_fields(base)
-        if not fields or field_name not in fields:
-            raise InvalidOperation(
-                f"Cannot assign to '{ast.unparse(target)}': base is not a named struct/tuple with field '{field_name}'",
+        if field_name not in fields:
+            raise InvalidVal(
+                f"Struct has no field '{field_name}'",
                 span=span,
                 parser_retry=True,
             )
@@ -381,18 +397,18 @@ class AssignmentParserMixin:
             )
         field_idx = fields.index(field_name)
         field_type = base.type.types[field_idx]
-        if isinstance(field_type, ir.TupleType) and isinstance(value_expr, ir.MakeTuple):
-            arr_len = len(field_type.types)
-            val_len = len(value_expr.elements)
-            if val_len != arr_len:
-                raise InvalidVal(
-                    f"Array field '{field_name}' expects {arr_len} elements, got {val_len}",
-                    span=span,
-                )
-            for j in range(val_len):
+        self._check_scalar_or_array_field(field_name, value_expr, span)
+        if not ir.structural_equal(field_type, value_expr.type, enable_auto_mapping=False):
+            raise InvalidType(
+                f"Struct field '{field_name}' expects type {field_type}, got {value_expr.type}",
+                span=span,
+                hint="Assign a value whose type matches the field.",
+            )
+        if self._is_array_field(field_type):
+            for j, elem in enumerate(value_expr.elements):
                 idx_const = ir.ConstInt(j, DataType.INT64, span)
                 call = ir.create_op_call(
-                    "struct.set", [base, idx_const, value_expr.elements[j]],
+                    "struct.set", [base, idx_const, elem],
                     {"field": field_name}, span,
                 )
                 self.builder.emit(ir.EvalStmt(call, span))
@@ -415,11 +431,13 @@ class AssignmentParserMixin:
             field_name = target.value.attr
             fields = self.named_fields(base)
             if fields:
-                if self.classify_tuple_type(base.type).kind != TupleTypeKind.STRUCT:
+                if not self._is_struct_value(base):
                     raise InvalidOperation(
-                        f"Cannot assign to immutable named tuple field '{ast.unparse(target)}'",
+                        f"Cannot assign field '{field_name}': the target is not a struct",
                         span=span,
-                        hint="Use pl.struct() or pl.struct_array() for mutable fields.",
+                        hint="Field assignment is only supported on pl.struct() or pl.struct_array() elements, "
+                        "e.g. s.field = v or arr[i].field = v.",
+                        parser_retry=True,
                     )
                 if field_name not in fields:
                     raise InvalidVal(
@@ -427,15 +445,10 @@ class AssignmentParserMixin:
                         span=span,
                         parser_retry=True,
                     )
-                field_idx = fields.index(field_name)
-                field_type = base.type.types[field_idx]
+                field_type = base.type.types[fields.index(field_name)]
                 # An array field is a plain nested TupleType. A nested named tuple or
                 # struct has a TupleTypeInfo entry and is not subscript-writable.
-                is_array_field = (
-                    isinstance(field_type, ir.TupleType)
-                    and self.classify_tuple_type(field_type).kind == TupleTypeKind.TUPLE
-                )
-                if not is_array_field:
+                if not self._is_array_field(field_type):
                     raise InvalidOperation(
                         f"Cannot subscript struct field '{field_name}': field is not an array",
                         span=span,
@@ -457,6 +470,13 @@ class AssignmentParserMixin:
                         f"Array field '{field_name}' index {index_expr.value} out of bounds "
                         f"for {len(field_type.types)} elements",
                         span=span,
+                    )
+                elem_type = field_type.types[0]
+                if not ir.structural_equal(elem_type, value_expr.type, enable_auto_mapping=False):
+                    raise InvalidType(
+                        f"Struct field '{field_name}' expects type {elem_type}, got {value_expr.type}",
+                        span=span,
+                        hint="Assign a value whose type matches the field.",
                     )
                 call = ir.create_op_call(
                     "struct.set", [base, index_expr, value_expr], {"field": field_name}, span,

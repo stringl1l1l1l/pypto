@@ -15,6 +15,9 @@ Covers the parser-side rejections added in _struct_parser.py:
   - nested named tuple/struct as a field value
   - empty array field
   - mixed-dtype array field
+Plus assignment-time rejections in _assignment_parser.py:
+  - dtype mismatch on struct.set
+  - scalar/list/tensor written to the wrong field kind
 Plus positive cases confirming valid declarations are not rejected.
 """
 
@@ -246,6 +249,139 @@ def test_err_struct_array_tensor_field():
         def kernel(a_t: pl.Tensor[[16], pl.DT_FP16]):
             arr = pl.struct_array(2, "S", data=a_t)
             _test_result = arr[0].data
+
+        _parse(kernel)
+
+
+# =============================================================================
+# Field write dtype mismatch (struct.set)
+# =============================================================================
+
+def test_err_struct_field_write_float_to_int():
+    """Writing a float to an int-locked field must be rejected."""
+
+    with pytest.raises(InvalidType, match="Struct field 'scale' expects type"):
+        @pl.jit(auto_mutex=False)
+        def kernel(_jit_entry: pl.DT_INT64):
+            s = pl.struct("Cfg", scale=1)
+            s.scale = 3.5
+            _test_result = s.scale
+
+        _parse(kernel)
+
+
+def test_err_struct_field_write_int_to_float():
+    """Writing an int to a float-locked field must be rejected (exact-match rule)."""
+
+    with pytest.raises(InvalidType, match="Struct field 'scale' expects type"):
+        @pl.jit(auto_mutex=False)
+        def kernel(_jit_entry: pl.DT_INT64):
+            s = pl.struct("Cfg", scale=1.0)
+            s.scale = 1
+            _test_result = s.scale
+
+        _parse(kernel)
+
+
+def test_err_struct_array_field_write_dtype_mismatch():
+    """Whole-array assignment with mismatched element dtype must be rejected."""
+
+    with pytest.raises(InvalidType, match="Struct field 'a' expects type"):
+        @pl.jit(auto_mutex=False)
+        def kernel(_jit_entry: pl.DT_INT64):
+            s = pl.struct("S", a=[1, 2])
+            s.a = [1.0, 2.0]
+            _test_result = s.a[0]
+
+        _parse(kernel)
+
+
+def test_err_struct_array_field_element_write_dtype_mismatch():
+    """s.arr[i] = v with a mismatched element dtype must be rejected."""
+
+    with pytest.raises(InvalidType, match="Struct field 'a' expects type"):
+        @pl.jit(auto_mutex=False)
+        def kernel(_jit_entry: pl.DT_INT64):
+            s = pl.struct("S", a=[1, 2])
+            s.a[0] = 1.0
+            _test_result = s.a[0]
+
+        _parse(kernel)
+
+
+def test_err_struct_array_field_element_write_non_scalar():
+    """s.arr[i] = tensor must be rejected; element writes require a scalar."""
+
+    with pytest.raises(InvalidType, match="Struct field 'a' expects type"):
+        @pl.jit(auto_mutex=False)
+        def kernel(a_t: pl.Tensor[[16], pl.DT_INT64]):
+            s = pl.struct("S", a=[1, 2])
+            s.a[0] = a_t
+            _test_result = s.a[0]
+
+        _parse(kernel)
+
+
+def test_ok_struct_field_write_same_dtype():
+    """Writing a float to a float-locked field parses without error."""
+
+    @pl.jit(auto_mutex=False)
+    def kernel(_jit_entry: pl.DT_INT64):
+        s = pl.struct("Cfg", scale=1.0)
+        s.scale = 3.5
+        _test_result = s.scale
+
+    _parse(kernel)
+
+
+def test_err_struct_array_field_write_scalar():
+    """Assigning a scalar to an array field must be rejected."""
+
+    with pytest.raises(InvalidType, match="Struct field 'arr' expects type"):
+        @pl.jit(auto_mutex=False)
+        def kernel(_jit_entry: pl.DT_INT64):
+            s = pl.struct("S", arr=[0, 0, 0])
+            s.arr = 1
+            _test_result = s.arr[0]
+
+        _parse(kernel)
+
+
+def test_err_struct_array_field_write_nested_list():
+    """Assigning a nested list to a 1-D array field must be rejected."""
+
+    with pytest.raises(InvalidType, match="non-scalar elements"):
+        @pl.jit(auto_mutex=False)
+        def kernel(_jit_entry: pl.DT_INT64):
+            s = pl.struct("S", arr=[0, 0])
+            s.arr = [[1, 2], [3, 4]]
+            _test_result = s.arr[0]
+
+        _parse(kernel)
+
+
+def test_err_struct_scalar_field_write_list():
+    """Assigning a list to a scalar field must be rejected."""
+
+    with pytest.raises(InvalidType, match="Struct field 'scale' expects type"):
+        @pl.jit(auto_mutex=False)
+        def kernel(_jit_entry: pl.DT_INT64):
+            s = pl.struct("S", scale=0)
+            s.scale = [1, 2, 3]
+            _test_result = s.scale
+
+        _parse(kernel)
+
+
+def test_err_struct_scalar_field_write_tensor():
+    """Assigning a whole tensor to a scalar field must be rejected."""
+
+    with pytest.raises(InvalidType, match="must be a scalar or a fixed-size array"):
+        @pl.jit(auto_mutex=False)
+        def kernel(a_t: pl.Tensor[[16], pl.DT_INT64]):
+            s = pl.struct("S", scale=0)
+            s.scale = a_t
+            _test_result = s.scale
 
         _parse(kernel)
 

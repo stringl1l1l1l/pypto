@@ -445,7 +445,7 @@ def test_err_chain_on_scalar_element():
 
 def test_err_chain_write():
     """make_tuple is immutable; chained write raises InvalidOperation."""
-    with pytest.raises(InvalidOperation, match="immutable named tuple field"):
+    with pytest.raises(InvalidOperation, match="the target is not a struct"):
 
         @pl.jit(auto_mutex=False)
         def kernel(_jit_entry: pl.DT_INT64):
@@ -460,7 +460,7 @@ def test_err_chain_write():
 
 def test_err_named_tuple_array_field_element_write():
     """make_tuple is immutable; array field element write raises InvalidOperation."""
-    with pytest.raises(InvalidOperation, match="immutable named tuple field"):
+    with pytest.raises(InvalidOperation, match="the target is not a struct"):
 
         @pl.jit(auto_mutex=False)
         def kernel(_jit_entry: pl.DT_INT64):
@@ -487,8 +487,8 @@ def test_err_chain_string_subscript():
 
 
 def test_err_struct_field_holding_make_tuple():
-    """Chained read through a struct field holding a make_tuple is unsupported."""
-    with pytest.raises(InvalidShape):
+    """Assigning a make_tuple to a scalar struct field is rejected at the write."""
+    with pytest.raises(InvalidType, match="Struct field 't' expects type"):
 
         @pl.jit(auto_mutex=False)
         def kernel(_jit_entry: pl.DT_INT64):

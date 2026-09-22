@@ -196,7 +196,7 @@ def test_arr_field_whole_assign_expands():
 def test_arr_field_whole_assign_length_mismatch():
     """s.arr = [1, 2] on a 4-element array field should raise PyptoProError."""
 
-    with pytest.raises(InvalidVal, match="expects 4 elements, got 2"):
+    with pytest.raises(InvalidType, match="Struct field 'arr' expects type"):
         @pl.jit(auto_mutex=False)
         def kernel(_jit_entry: pl.DT_INT64):
             s = pl.struct("S", arr=[0, 0, 0, 0])
