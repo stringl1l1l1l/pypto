@@ -556,7 +556,8 @@ std::vector<SymbolicScalar> npu::tile_fwk::GetViewValidShape(const std::vector<S
         return {};
     }
     FE_ASSERT(FeError::INVALID_VAL, validShape.size() == viewShape.size())
-        << "Their sizes actually are " << validShape.size() << " and " << viewShape.size();
+        << "View rank mismatch: input tensor rank is " << validShape.size() << ", view shape rank is "
+        << viewShape.size() << ". pypto.view cannot change tensor rank; use pypto.unsqueeze to add a dimension.";
 
     std::vector<SymbolicScalar> result;
     for (size_t i = 0; i < validShape.size(); i++) {
