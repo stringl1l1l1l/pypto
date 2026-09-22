@@ -216,6 +216,10 @@ INLINE uint32_t BlockDescValidCoreNum(BlockDesc desc, bool isAiv)
 
 #define ENABLE_AICORE_TRACE 0
 
+// 直通 selfReadyQueue 容量：同类型就绪后继截留直通上限（resolve 收尾直写本核槽位，
+// fetch 循环每轮开头直取，省 push/pop 矩阵探测往返；波内实测容量 1 即饱和）
+constexpr uint32_t SELF_QUEUE_SIZE = 1;
+
 struct DrcoEntryState {
     BlockDesc blockDesc;
     __gm__ KernelArgs* args;
@@ -229,6 +233,8 @@ struct DrcoEntryState {
     uint32_t readyMatrixPushGroupIndex;
     uint32_t readyMatrixPushColIdx;
     uint32_t readyMatrixPopRowIndex;
+    uint32_t selfReadyQueueSize;
+    uint32_t selfReadyQueue[SELF_QUEUE_SIZE];
     bool isExectedLeafTask{false};
 
 #if ENABLE_AICORE_TRACE
@@ -250,6 +256,8 @@ struct DrcoEntryState {
 #define EVENT_STITCH_NODE(size) EVENT(8, size)
 #define EVENT_FETCH_START() EVENT(9, 0x1000)
 #define EVENT_FETCH_END() EVENT(9, 0x2000)
+#define EVENT_PUSH_SELF_READY_QUEUE() EVENT(10, 0x1000)
+#define EVENT_POP_SELF_READY_QUEUE() EVENT(11, 0x1000)
             uint32_t eventCode;
         } traceEventList[EVENT_SIZE];
     } traceEventStatistic;
@@ -316,9 +324,19 @@ INLINE T DrcoAtomicResolveDependOnce(__gm__ T* ptr)
 
 INLINE uint32_t DrcoLocalReadyMatrixGetRowIdx(uint32_t localIdx) { return localIdx % npu::tile_fwk::LOCAL_GROUP_SIZE; }
 
+// 类型内本地编号：blockIdx < nrValidAic（AIC 核）为 blockIdx，否则（AIV 核）为 blockIdx - nrValidAic。
+// LocalQueue/LocalMatrix 统一按此编号索引：group = 本地编号 / N，行/列 = 本地编号 % N
+INLINE uint32_t DrcoGetCoreTypedIdx(uint32_t blockIdx, uint32_t nrValidAic)
+{
+    return blockIdx < nrValidAic ? blockIdx : blockIdx - nrValidAic;
+}
+
 // 遍历 rowIdx 行的有效列 [0, validCoreNum)，依次 CAS 写入多个任务，返回实际写入个数；
 // 每个 CAS 成功的任务记录 EVENT_PUSH_LOCAL(groupIdx) 事件（打点写入的 group）
 // 写入流程 4：多余的任务依次写到后续核的矩阵，具体行由 coreIdx % N 决定；只写有效列，无主列不写
+// 列起点 = push 核身份散列 +1（(localIdx+1) % validCoreNum）：撞进同矩阵同行的核列起点错开，
+// 摊平低列号槽位的 CAS 冲突热点；+1 跳过 push 核自己的列——selfQueue 直通期间本核
+// 无暇 pop 本列（列私有模型），首批任务直接落到邻近核列由空闲核取走；validCoreNum==0 禁写早退
 INLINE uint32_t DrcoLocalReadyMatrixPushBatch(DrcoEntryState* state, __gm__ DrcoLocalReadyMatrix* matrix,
                                               uint32_t groupIdx, uint32_t rowIdx, uint32_t* readyTaskList, uint32_t n,
                                               bool* rowExhausted)
@@ -432,13 +450,6 @@ INLINE uint32_t DrcoLocalReadyQueueGetFirstTask(__gm__ DrcoLocalReadyQueue* queu
         taskId = DrcoAtomicLoad(&queue->taskList[headPrev]);
     }
     return DRCO_DECODE_TASK(taskId);
-}
-
-// 类型内本地编号：blockIdx < nrValidAic（AIC 核）为 blockIdx，否则（AIV 核）为 blockIdx - nrValidAic。
-// LocalQueue/LocalMatrix 统一按此编号索引：group = 本地编号 / N，行/列 = 本地编号 % N
-INLINE uint32_t DrcoGetCoreTypedIdx(uint32_t blockIdx, uint32_t nrValidAic)
-{
-    return blockIdx < nrValidAic ? blockIdx : blockIdx - nrValidAic;
 }
 
 // ==================== RootFuncList 原语 ====================
@@ -642,8 +653,25 @@ INLINE void DrcoFlushBatchTasks(DrcoEntryState* state, __gm__ npu::tile_fwk::Drc
 {
     for (uint32_t coreType = 0; coreType < npu::tile_fwk::DRCO_QUEUE_MAX; coreType++) {
         if (succTaskIdListSizeCoreList[coreType] > 0) {
-            DrcoDynFuncDataListPushBatch(state, rootFuncList, succTaskIdListCoreList[coreType],
-                                         succTaskIdListSizeCoreList[coreType], coreType);
+            // 直通 selfReadyQueue：同类型（succ core type == 本核类型）后继优先直通本核 selfReadyQueue，
+            // 本核 fetch 下一轮开头直接全部执行，省 push + 矩阵/队列探测往返；
+            // selfReadyQueue 放不下的溢出部分再走 localMatrix/localQueue
+            uint32_t directCnt = 0;
+            if (coreType == DRCO_CORE_TYPE && state->selfReadyQueueSize < SELF_QUEUE_SIZE) {
+                uint32_t freeCnt = SELF_QUEUE_SIZE - state->selfReadyQueueSize;
+                directCnt = succTaskIdListSizeCoreList[coreType] < freeCnt ? succTaskIdListSizeCoreList[coreType] :
+                                                                             freeCnt;
+                for (uint32_t i = 0; i < directCnt; i++) {
+                    uint32_t succTaskId = succTaskIdListCoreList[coreType][i];
+                    state->selfReadyQueue[state->selfReadyQueueSize + i] = succTaskId;
+                    TraceEvent(state, succTaskId, EVENT_PUSH_SELF_READY_QUEUE());
+                }
+                state->selfReadyQueueSize += directCnt;
+            }
+            if (directCnt < succTaskIdListSizeCoreList[coreType]) {
+                DrcoDynFuncDataListPushBatch(state, rootFuncList, succTaskIdListCoreList[coreType] + directCnt,
+                                             succTaskIdListSizeCoreList[coreType] - directCnt, coreType);
+            }
             succTaskIdListSizeCoreList[coreType] = 0;
         }
     }
@@ -855,7 +883,10 @@ INLINE void DrcoResolveDepend(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoR
             __gm__ DrcoGlobalStitchNodeMatrix* matrix = DrcoRootFuncListGetStitchNodeMatrix(rootFuncList);
 
             if (firstNode != nullptr) {
-                uint32_t start = 0;
+                // 起点跳过 producer 自己的行：首个节点若落本行，唯一消费者是自己——producer 常因
+                // 执行当前任务或 fetch 空转占用，整条链的展开被单核串行阻塞；+1 落到其他核行，
+                // 空闲核立即可并行消费（后续节点经 start 轮转自然遍布全行域）
+                uint32_t start = 1;
 
                 for (__gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode* node = firstNode->nodeNext;
                      node != nullptr && fallbackNode == nullptr; node = node->nodeNext) {
@@ -1096,6 +1127,26 @@ INLINE bool DrcoDynFuncDataListFetchTaskMixHub(DrcoEntryState* state,
     return false;
 }
 
+INLINE bool DrcyDynFuncDataListFetchSelfQueue(DrcoEntryState* state, uint32_t& resultCoreType,
+                                              uint32_t resultTaskIdList[LOCAL_GROUP_SIZE], uint32_t& resultTaskIdCount)
+{
+    // selfReadyQueue 优先消费：resolve 收尾时直通到本核 selfReadyQueue 的同类型就绪后继，
+    // fetch 开头一次性全部取走执行；消费即清空，直通任务照常走 TaskOnce 执行与计数，
+    // 不绕过 finish 语义（selfReadyQueue 容量 <= resultTaskIdList 容量，可整批取出）
+    if (state->selfReadyQueueSize > 0) {
+        uint32_t count = state->selfReadyQueueSize;
+        for (uint32_t i = 0; i < count; i++) {
+            TraceEvent(state, state->selfReadyQueue[i], EVENT_POP_SELF_READY_QUEUE());
+            resultTaskIdList[i] = state->selfReadyQueue[i];
+        }
+        state->selfReadyQueueSize = 0;
+        resultCoreType = DRCO_CORE_TYPE;
+        resultTaskIdCount = count;
+        return true;
+    }
+    return false;
+}
+
 INLINE uint32_t DrcoDynFuncDataListFetchTask(DrcoEntryState* state,
                                              __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                                              uint32_t& resultCoreType, uint32_t resultTaskIdList[LOCAL_GROUP_SIZE])
@@ -1132,6 +1183,13 @@ INLINE uint32_t DrcoDynFuncDataListFetchTask(DrcoEntryState* state,
 
         if (get_sys_cnt() - t0 > AICORE_LEAF_TASK_RUN_TIMEOUT) {
             Trap();
+        }
+
+        // 直通 selfReadyQueue 优先消费（每轮循环开头查）：stitch 扫描/展开可能在【本轮循环内】
+        // 经 FlushBatchTasks 写入 selfQueue（同类型后继直通路径），若只在函数入口查一次，写入后
+        // 本函数空转期间槽内任务永久饿死（实测卡死教训：检查必须在循环内每轮开头）
+        if (DrcyDynFuncDataListFetchSelfQueue(state, resultCoreType, resultTaskIdList, resultTaskIdCount)) {
+            break;
         }
 
         DrcoDynFuncDataListFetchResolveStitchNodeMatrix(state, rootFuncList, blockIdx);
@@ -1423,7 +1481,12 @@ INLINE void KernelEntryDrco(int64_t ffts_addr, int64_t inputs, int64_t outputs, 
 
         state.readyMatrixPopRowIndex = 0;
         state.readyMatrixPushGroupIndex = BlockDescTypedBlockIdx(state.blockDesc) / npu::tile_fwk::LOCAL_GROUP_SIZE;
-        state.readyMatrixPushColIdx = BlockDescTypedBlockIdx(state.blockDesc) % npu::tile_fwk::LOCAL_GROUP_SIZE;
+        // 游标初始 +1：跳过本核自己的列——列私有模型下本列唯一消费者是自己，producer 常因
+        // selfQueue 直通/当前批执行无暇 pop 本列，首波任务落本列会被扣住（实测跳行 -24%）；
+        // 游标续推右移天然不再回到本列，行满回绕后晚期落回无碍（波首已避开）
+        state.readyMatrixPushColIdx = (BlockDescTypedBlockIdx(state.blockDesc) + 1) % npu::tile_fwk::LOCAL_GROUP_SIZE;
+
+        state.selfReadyQueueSize = 0;
 
         ExecDrcoPerCoreTasks(&state, perCoreQueue, rootFuncList);
         ExecDrcoReadyQueueTasks(&state, rootFuncList, perCoreQueue);
