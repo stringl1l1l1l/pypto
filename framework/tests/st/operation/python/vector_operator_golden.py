@@ -1612,7 +1612,8 @@ def gen_minimum_op_golden(case_name: str, output: Path, case_index: int = None) 
 def gen_div_op_golden(case_name: str, output: Path, case_index: int = None) -> bool:
     # golden开发者需要根据具体golden逻辑修改，不同注册函数内的generate_golden_files可重名
     def golden_func(inputs: list, _config: dict):
-        return [inputs[0] / inputs[1]]
+        result = torch.div(from_numpy(inputs[0]), from_numpy(inputs[1]))
+        return [to_numpy(result)]
 
     logging.debug("Case(%s), Golden creating...", case_name)
     return gen_op_golden("Div", golden_func, output, case_index)
@@ -1679,7 +1680,8 @@ def gen_divs_op_golden(case_name: str, output: Path, case_index: int = None) -> 
         params = config.get("params")
         params["scalar_type"] = params.get("scalar_type", "fp32")
         params["scalar"] = get_dtype_by_name(params["scalar_type"])(params["scalar"])
-        return [inputs[0] / params["scalar"]]
+        result = torch.div(from_numpy(inputs[0]), params["scalar"])
+        return [to_numpy(result)]
 
     logging.debug("Case(%s), Golden creating...", case_name)
     return gen_op_golden("Divs", golden_func, output, case_index)

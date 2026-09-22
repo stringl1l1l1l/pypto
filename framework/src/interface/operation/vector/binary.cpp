@@ -153,9 +153,8 @@ Tensor Div(const Tensor& self, const Tensor& other, PrecisionType precisionType)
     CheckTensorsDataTypeConsistency(self.GetStorage(), other.GetStorage(), "DIV");
 
     const auto& supportedTypes = ConfigManager::Instance().GetOpSupportedInputDtypes(Opcode::OP_DIV);
-    auto isDivSupportedInt = [](DataType dt) { return dt == DT_INT16 || dt == DT_INT32; };
+    auto isDivSupportedInt = [](DataType dt) { return dt == DT_INT16 || dt == DT_INT32 || dt == DT_INT64; };
     CheckTensorDataType(self.GetStorage(), supportedTypes, "DIV");
-    CheckInt64Broadcast(self.GetStorage(), other.GetStorage(), "DIV");
 
     if (isDivSupportedInt(self.GetDataType())) {
         Tensor castSelf = Cast(self, DT_FP32, CastMode::CAST_NONE, SaturationMode::ON);

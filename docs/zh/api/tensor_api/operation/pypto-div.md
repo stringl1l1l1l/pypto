@@ -37,19 +37,14 @@ div(input: Tensor, other: Union[Tensor, float, int], precision_type: PrecisionTy
 ## 返回值说明
 
 返回输出Tensor，Shape为input和other广播后大小。
-
-- 当输入为浮点类型时，输出数据类型与输入相同；当输入为DT_INT16或DT_INT32时，输出数据类型为DT_FP32。
-<!-- npu="950" id11 -->
-- 对于Ascend 950PR&950DT系列产品，当输入为DT_INT64或DT_UINT64时，输出数据类型与输入相同。
-<!-- end id11 -->
+当input为浮点类型时，输出Tensor数据类型与input相同；当input为整型时，输出数据类型为DT_FP32。
 
 ## 约束说明
 
-1. input和other都为Tensor时，数据类型应该相同。
-2. other为scalar时，若input为浮点类型，则scalar支持整型（自动转为浮点）；若input为整型，则scalar不支持浮点类型（会报错）。
-3. Tensor数据类型说明：
+1. input和other都为Tensor时，数据类型应该相同；input为整型类型时，other暂不支持浮点标量。
+2. Tensor数据类型说明：
    <!-- npu="950" id7 -->
-   - Ascend 950PR&950DT系列产品：DT_FP16，DT_FP32，DT_BF16，DT_INT16，DT_INT32，DT_INT64，DT_UINT64。
+   - Ascend 950PR&950DT系列产品：DT_FP16，DT_FP32，DT_BF16，DT_INT16，DT_INT32，DT_INT64。
    <!-- end id7 -->
    <!-- npu="A3" id8 -->
    - Atlas A3系列产品：DT_FP16，DT_FP32，DT_BF16，DT_INT16，DT_INT32。
@@ -57,7 +52,7 @@ div(input: Tensor, other: Union[Tensor, float, int], precision_type: PrecisionTy
    <!-- npu="910b" id9 -->
    - Atlas A2系列产品：DT_FP16，DT_FP32，DT_BF16，DT_INT16，DT_INT32。
    <!-- end id9 -->
-4. **精度模式说明**：
+3. **精度模式说明**：
     - **HIGH_PRECISION（高精度模式）**：默认模式，在底层实现中会使用更高精度的计算方式，在不同型号上的支持情况：
       <!-- npu="950" id4 -->
       - Ascend 950PR&950DT系列产品：支持
@@ -69,13 +64,9 @@ div(input: Tensor, other: Union[Tensor, float, int], precision_type: PrecisionTy
       - Atlas A2系列产品：不支持
       <!-- end id6 -->
     - **INTRINSIC（指令模式）**：直接使用芯片指令进行计算。
-5. Tensor类型输入不支持`TileOpFormat.TILEOP_NZ`格式。
-6. 整型输入约束：
-
-   - 当输入为DT_INT16或DT_INT32时，内部会将输入转换为DT_FP32进行计算（float32尾数为24位）。在 $[-2^{24},\ 2^{24}]$ 范围内的整数可精确转换，超出范围的整数在转换时可能丢失低位精度。
-   <!-- npu="950" id10 -->
-   - 对于Ascend 950PR&950DT系列产品，当输入为DT_INT64或DT_UINT64时，不进行类型转换，直接按整数除法计算。
-   <!-- end id10 -->
+4. Tensor类型输入不支持`TileOpFormat.TILEOP_NZ`格式。
+5. 整型输入约束：
+当输入为DT_INT16或DT_INT32或DT_INT64时，内部会将输入转换为DT_FP32进行计算（float32尾数为24位）。在 $[-2^{24},\ 2^{24}]$ 范围内的整数可精确转换，超出范围的整数在转换时可能丢失低位精度。
 
 ## 调用示例
 
