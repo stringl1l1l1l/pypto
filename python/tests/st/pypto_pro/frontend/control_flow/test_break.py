@@ -562,7 +562,9 @@ def for_while_if_not_break_continue_kernel(
                 tile_b = b_db.next()
                 tile_c = c_db.next()
                 pl.load_tile(tile_a, x, [i, j])
+                pl.system.bar_mte2()
                 pl.load_tile(tile_b, y, [i, j])
+                pl.system.bar_mte2()
                 if not j >= 1 and not i >= 1:
                     pl.add(tile_c, tile_a, tile_b)
                     pl.store_tile(z, tile_c, [i, j])
