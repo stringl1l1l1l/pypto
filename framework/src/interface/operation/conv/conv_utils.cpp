@@ -421,6 +421,10 @@ void CheckTileTiling(DataType outType, const Tensor& inputTensor, const Tensor& 
     CheckHowoTile(inputTensor, weightTensor, attrParam);
     CheckAlignment(tileCinFmap, k0, "tileCinFmap");
     CheckAlignment(tileCinWeight, k0, "tileCinWeight");
+    if (attrParam.isConv3D) {
+        CheckDivisible(ConvAlignB(cinWeight, k0), tileCinFmap, "cin", "tileCinFmap");
+        CheckDivisible(ConvAlignB(cinWeight, k0), tileCinWeight, "cin", "tileCinWeight");
+    }
     if (convTile.setL0Tile) {
         CheckL0TileTiling(outType, attrParam, weightTensor, inputTensor);
     }

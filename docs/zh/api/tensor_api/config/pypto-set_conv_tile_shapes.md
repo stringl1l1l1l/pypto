@@ -57,9 +57,13 @@ TileShape需要满足以下约束条件：
 
         - tileCinFmap * sizeof(dtype) % 32 == 0
 
+        - CeilAlign(Cin, C0) % tileCinFmap == 0（仅Conv3D规格有此约束）
+
         - C0 <= tileCinWeight <= CeilAlign(Cin, C0)（Cin为权重输入通道实际数量）
 
         - tileCinWeight * sizeof(dtype) % 32 == 0
+
+        - CeilAlign(Cin, C0) % tileCinWeight == 0（仅Conv3D规格有此约束）
 
         - 1 <= tileN <= CeilAlign(Cout // groups, 16)（Cout为输出特征图实际通道数）
 
