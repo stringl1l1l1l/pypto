@@ -682,17 +682,14 @@ public:
                                                           std::vector<OperandAttribute>& oOpAttr);
     void NormalizeCoaForInCasts(std::vector<OperandAttribute>& iOpAttr,
                                 std::vector<std::vector<SymbolicScalar>>& coaLists, int& coaIndex,
-                                std::unordered_map<LogicalTensorPtr, int>& processedOperands,
-                                std::unordered_set<Operation*>& normalizedOps,
+                                std::unordered_map<LogicalTensorPtr, int>& normTensors,
                                 const std::unordered_map<int, Operation*>& opmagicToOp);
     void NormalizeCoaForOutCasts(std::vector<OperandAttribute>& oOpAttr,
                                  std::vector<std::vector<SymbolicScalar>>& coaLists, int& coaIndex,
-                                 std::unordered_map<LogicalTensorPtr, int>& processedOperands,
-                                 std::unordered_set<Operation*>& normalizedOps,
+                                 std::unordered_map<LogicalTensorPtr, int>& normTensors,
                                  const std::unordered_map<int, Operation*>& opmagicToOp);
     void NormalizeCoaForNormalOperands(std::vector<std::vector<SymbolicScalar>>& coaLists, int& coaIndex,
-                                       std::unordered_map<LogicalTensorPtr, int>& processedOperands,
-                                       const std::unordered_set<Operation*>& normalizedOps);
+                                       std::unordered_map<LogicalTensorPtr, int>& normTensors);
     void NormalizeCoaForSpecialInfo(std::vector<std::vector<SymbolicScalar>>& coaLists, int& coaIndex);
     void GetOutcastSymbolicExpr(std::map<int, SymbolicScalar>& tabel);
 

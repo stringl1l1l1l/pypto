@@ -575,6 +575,24 @@ public:
                opcode == Opcode::OP_L1_TO_BT;
     }
 
+    inline bool IsTransData(Opcode opCode) const
+    {
+        return opCode == Opcode::OP_NCHW2NC1HWC0 || opCode == Opcode::OP_NCHW2Fractal_Z ||
+               opCode == Opcode::OP_NC1HWC02NCHW || opCode == Opcode::OP_NCDHW2NDC1HWC0 ||
+               opCode == Opcode::OP_NCDHW2FRACTAL_Z_3D || opCode == Opcode::OP_NDC1HWC02NCDHW ||
+               opCode == Opcode::OP_FractalZ2NCHW || opCode == Opcode::OP_FractalZ3D2NCDHW;
+    }
+
+    inline bool IsReshapeCopyIn(Opcode opCode) const
+    {
+        return opCode == Opcode::OP_RESHAPE_COPY_IN || opCode == Opcode::OP_L1_RESHAPE_COPY_IN;
+    }
+
+    inline bool IsReshapeCopyOut(Opcode opCode) const
+    {
+        return opCode == Opcode::OP_RESHAPE_COPY_OUT || opCode == Opcode::OP_L0C_RESHAPE_COPY_OUT;
+    }
+
     inline bool IsCopyInOrOut(Opcode opCode) const { return IsCopyIn(opCode) || IsCopyOut(opCode); }
 
     inline bool IsSync(Opcode opcode) const { return opcode == Opcode::OP_SYNC_SRC || opcode == Opcode::OP_SYNC_DST; }

@@ -3184,40 +3184,15 @@ static void MaybeNormalizeValue(std::vector<SymbolicScalar>& valueCoa, SymbolicS
     }
 }
 
-static void NormalizeReshapeCopyDynValidShape(Operation* op, std::vector<std::vector<SymbolicScalar>>& coaLists,
-                                              int& coaIndex, bool valueToIndex)
+static std::vector<SymbolicScalar> MaybeNormalizeValue(std::vector<OpImmediate>& opImmList, int coaIndex,
+                                                       bool valueToIndex)
 {
-    Opcode opcode = op->GetOpcode();
-    if (opcode != Opcode::OP_RESHAPE_COPY_OUT && opcode != Opcode::OP_RESHAPE_COPY_IN &&
-        opcode != Opcode::OP_L0C_RESHAPE_COPY_OUT && opcode != Opcode::OP_L1_RESHAPE_COPY_IN) {
-        return;
+    std::vector<SymbolicScalar> coaList;
+    for (auto valueCoa : OpImmediate::ToSpecified(opImmList)) {
+        MaybeNormalizeValue(coaList, valueCoa, coaIndex, valueToIndex);
+        coaIndex += 1;
     }
-    auto copyAttr = std::static_pointer_cast<CopyOpAttribute>(op->GetOpAttribute());
-    FE_ASSERT(FeError::INVALID_PTR, copyAttr != nullptr)
-        << "Normalize reshape copy dyn valid shape failed: copyAttr is null.\n"
-        << "Operation: " << op->Dump();
-
-    bool useToDynValidShape = op->GetOpcode() == Opcode::OP_RESHAPE_COPY_OUT ||
-                              op->GetOpcode() == Opcode::OP_L0C_RESHAPE_COPY_OUT;
-    const char* dynValidShapeName = useToDynValidShape ? "toDynValidShape" : "fromDynValidShape";
-    auto opImmList = useToDynValidShape ? copyAttr->GetToDynValidShape() : copyAttr->GetFromDynValidShape();
-    FE_ASSERT(FeError::INVALID_PTR, !opImmList.empty())
-        << "Normalize reshape copy dyn valid shape failed: " << dynValidShapeName << " is empty.\n"
-        << "Operation: " << op->Dump();
-
-    std::vector<SymbolicScalar> dynValidShape = OpImmediate::ToSpecified(opImmList);
-    std::vector<SymbolicScalar> valueCoaList;
-    for (auto& value : dynValidShape) {
-        MaybeNormalizeValue(valueCoaList, value, coaIndex + static_cast<int>(valueCoaList.size()), valueToIndex);
-    }
-
-    if (useToDynValidShape) {
-        copyAttr->SetToDynValidShape(OpImmediate::Specified(dynValidShape));
-    } else {
-        copyAttr->SetFromDynValidShape(OpImmediate::Specified(dynValidShape));
-    }
-    coaLists.emplace_back(valueCoaList);
-    coaIndex += valueCoaList.size();
+    return coaList;
 }
 
 static std::vector<SymbolicScalar> NormalizeCopyIn(Operation* op, int coaIndexBase, bool valueToIndex)
@@ -3240,7 +3215,6 @@ static std::vector<SymbolicScalar> NormalizeCopyIn(Operation* op, int coaIndexBa
     // shape to normal
     opImmList = copyAttr->GetShape();
     OpImmediate::NormalizeValue(operandCoaList, operandCoaIndex, opImmList, coaIndex, valueToIndex);
-    copyAttr->SetShape(opImmList);
     operandCoaIndex += dim;
     coaIndex += dim;
 
@@ -3253,11 +3227,8 @@ static std::vector<SymbolicScalar> NormalizeCopyIn(Operation* op, int coaIndexBa
 
     opImmList = copyAttr->GetToDynValidShape();
     if (op->GetOpcode() == Opcode::OP_L1_COPY_IN_CONV) {
-        std::vector<SymbolicScalar> valueCoaList;
-        for (auto validshape : OpImmediate::ToSpecified(opImmList)) {
-            MaybeNormalizeValue(valueCoaList, validshape, coaIndex, valueToIndex);
-            coaIndex += 1;
-        }
+        auto valueCoaList = MaybeNormalizeValue(opImmList, coaIndex, valueToIndex);
+        coaIndex += valueCoaList.size();
         operandCoaList.erase(operandCoaList.end() - valueCoaList.size(), operandCoaList.end());
         operandCoaList.insert(operandCoaList.end(), valueCoaList.begin(), valueCoaList.end());
     } else {
@@ -3289,7 +3260,6 @@ static std::vector<SymbolicScalar> NormalizeCopyOut(Operation* op, int coaIndexB
     // shape to normals
     opImmList = copyAttr->GetShape();
     OpImmediate::NormalizeValue(operandCoaList, operandCoaIndex, opImmList, coaIndex, valueToIndex);
-    copyAttr->SetShape(opImmList);
     operandCoaIndex += dim;
     coaIndex += dim;
 
@@ -3302,11 +3272,8 @@ static std::vector<SymbolicScalar> NormalizeCopyOut(Operation* op, int coaIndexB
 
     opImmList = copyAttr->GetFromDynValidShape();
     if (op->GetOpcode() == Opcode::OP_L0C_COPY_OUT_CONV) {
-        std::vector<SymbolicScalar> valueCoaList;
-        for (auto validshape : OpImmediate::ToSpecified(opImmList)) {
-            MaybeNormalizeValue(valueCoaList, validshape, coaIndex, valueToIndex);
-            coaIndex += 1;
-        }
+        auto valueCoaList = MaybeNormalizeValue(opImmList, coaIndex, valueToIndex);
+        coaIndex += valueCoaList.size();
         operandCoaList.erase(operandCoaList.end() - valueCoaList.size(), operandCoaList.end());
         operandCoaList.insert(operandCoaList.end(), valueCoaList.begin(), valueCoaList.end());
     } else {
@@ -3394,8 +3361,7 @@ std::vector<std::vector<SymbolicScalar>> Function::NormalizeCoa(std::vector<Oper
                                                                 std::vector<OperandAttribute>& oOpAttr)
 {
     std::unordered_map<int, Operation*> opmagicToOp;
-    std::unordered_map<LogicalTensorPtr, int> processedOperands;
-    std::unordered_set<Operation*> normalizedOps;
+    std::unordered_map<LogicalTensorPtr, int> normTensors;
 
     opmagicToOp.reserve(operations_.size());
     for (auto& op : operations_) {
@@ -3405,9 +3371,9 @@ std::vector<std::vector<SymbolicScalar>> Function::NormalizeCoa(std::vector<Oper
     int coaIndex = COA_INDEX_BASE;
     std::vector<std::vector<SymbolicScalar>> coaLists;
     coaLists.reserve(incastPosition.size() + outcastPosition.size());
-    NormalizeCoaForInCasts(iOpAttr, coaLists, coaIndex, processedOperands, normalizedOps, opmagicToOp);
-    NormalizeCoaForOutCasts(oOpAttr, coaLists, coaIndex, processedOperands, normalizedOps, opmagicToOp);
-    NormalizeCoaForNormalOperands(coaLists, coaIndex, processedOperands, normalizedOps);
+    NormalizeCoaForInCasts(iOpAttr, coaLists, coaIndex, normTensors, opmagicToOp);
+    NormalizeCoaForOutCasts(oOpAttr, coaLists, coaIndex, normTensors, opmagicToOp);
+    NormalizeCoaForNormalOperands(coaLists, coaIndex, normTensors);
     NormalizeCoaForSpecialInfo(coaLists, coaIndex);
 
     return coaLists;
@@ -3451,8 +3417,7 @@ static bool IsOutcastCopyOutChain(Operation* op, std::vector<Operation*>& copyOu
 
 void Function::NormalizeCoaForInCasts(std::vector<OperandAttribute>& iOpAttr,
                                       std::vector<std::vector<SymbolicScalar>>& coaLists, int& coaIndex,
-                                      std::unordered_map<LogicalTensorPtr, int>& processedOperands,
-                                      std::unordered_set<Operation*>& normalizedOps,
+                                      std::unordered_map<LogicalTensorPtr, int>& normTensors,
                                       const std::unordered_map<int, Operation*>& opmagicToOp)
 {
     bool valueToIndex = parent_->GetFunctionType() == FunctionType::DYNAMIC_LOOP_PATH;
@@ -3460,7 +3425,6 @@ void Function::NormalizeCoaForInCasts(std::vector<OperandAttribute>& iOpAttr,
     for (auto [opmagic, k] : incastPosition) {
         auto op = opmagicToOp.at(opmagic);
         if (op->GetIOpAttrOffset(k) != -1) {
-            normalizedOps.insert(op);
             continue;
         }
         std::vector<SymbolicScalar> operandCoaList;
@@ -3478,7 +3442,6 @@ void Function::NormalizeCoaForInCasts(std::vector<OperandAttribute>& iOpAttr,
                 for (auto copyIn : copyInList) {
                     operandCoaList = NormalizeCopyIn(copyIn, coaIndex, valueToIndex);
                     copyIn->SetIOpAtt(isReshape ? 0 : k, coaIndex);
-                    normalizedOps.insert(copyIn);
                     if (!isReshape) {
                         iOpAttr.emplace_back(coaIndex);
                     }
@@ -3492,23 +3455,20 @@ void Function::NormalizeCoaForInCasts(std::vector<OperandAttribute>& iOpAttr,
                     coaIndex += operandCoaList.size();
                     coaLists.emplace_back(std::move(operandCoaList));
                 }
-                normalizedOps.insert(op);
                 continue;
             }
             auto iOperand = op->GetInputOperand(k);
-            auto it = processedOperands.find(iOperand);
-            if (it != processedOperands.end()) {
+            auto it = normTensors.find(iOperand);
+            if (it != normTensors.end()) {
                 op->SetIOpAtt(k, it->second);
                 iOpAttr.emplace_back(it->second);
-                normalizedOps.insert(op);
                 continue;
             }
             operandCoaList = NormalizeTensor(iOperand, coaIndex, false, op->GetOpcode() == Opcode::OP_NOP);
-            processedOperands.emplace(iOperand, coaIndex);
+            normTensors.emplace(iOperand, coaIndex);
         }
         op->SetIOpAtt(k, coaIndex);
         iOpAttr.emplace_back(coaIndex);
-        normalizedOps.insert(op);
         coaIndex += operandCoaList.size();
         coaLists.emplace_back(std::move(operandCoaList));
     }
@@ -3516,8 +3476,7 @@ void Function::NormalizeCoaForInCasts(std::vector<OperandAttribute>& iOpAttr,
 
 void Function::NormalizeCoaForOutCasts(std::vector<OperandAttribute>& oOpAttr,
                                        std::vector<std::vector<SymbolicScalar>>& coaLists, int& coaIndex,
-                                       std::unordered_map<LogicalTensorPtr, int>& processedOperands,
-                                       std::unordered_set<Operation*>& normalizedOps,
+                                       std::unordered_map<LogicalTensorPtr, int>& normTensors,
                                        const std::unordered_map<int, Operation*>& opmagicToOp)
 {
     bool valueToIndex = parent_->GetFunctionType() == FunctionType::DYNAMIC_LOOP_PATH;
@@ -3525,7 +3484,6 @@ void Function::NormalizeCoaForOutCasts(std::vector<OperandAttribute>& oOpAttr,
     for (auto [opmagic, k] : outcastPosition) {
         auto op = opmagicToOp.at(opmagic);
         if (op->GetOOpAttrOffset(k) != -1) {
-            normalizedOps.insert(op);
             continue;
         }
         bool isAtomic = op->GetOOperands()[0]->HasAttr(OpAttributeKey::writeConflict);
@@ -3535,18 +3493,13 @@ void Function::NormalizeCoaForOutCasts(std::vector<OperandAttribute>& oOpAttr,
             operandCoaList = NormalizeCopyOut(op, coaIndex, valueToIndex);
         } else if (op->GetIOperands().size() > 0 && !this->IsFromInCast(op->GetIOperands().front()) &&
                    IsOutcastCopyOutChain(op, copyOutList)) {
-            // 出口链 COPY_OUT→RESHAPE：参数化链首 COPY_OUT 的 attr（镜像入口侧 COPY_IN→RESHAPE
-            // 的处理），RESHAPE 出口 tensor 只记录值不回写。折叠在 COPY_OUT attr 里的字面量由此
-            // 进入参数表而非 hash。
             bool isReshape = op->GetOpcode() == Opcode::OP_RESHAPE;
             for (auto copyOut : copyOutList) {
                 if (copyOut->GetOOpAttrOffset(0) != -1) {
-                    normalizedOps.insert(copyOut);
                     continue;
                 }
                 operandCoaList = NormalizeCopyOut(copyOut, coaIndex, valueToIndex);
                 copyOut->SetOOpAtt(isReshape ? 0 : k, coaIndex, false);
-                normalizedOps.insert(copyOut);
                 if (!isReshape) {
                     oOpAttr.emplace_back(coaIndex, isAtomic);
                 }
@@ -3560,31 +3513,27 @@ void Function::NormalizeCoaForOutCasts(std::vector<OperandAttribute>& oOpAttr,
                 coaIndex += operandCoaList.size();
                 coaLists.emplace_back(std::move(operandCoaList));
             }
-            normalizedOps.insert(op);
             continue;
         } else {
             auto oOperand = op->GetOutputOperand(k);
-            auto it = processedOperands.find(oOperand);
-            if (it != processedOperands.end()) {
+            auto it = normTensors.find(oOperand);
+            if (it != normTensors.end()) {
                 op->SetOOpAtt(k, it->second, isAtomic);
                 oOpAttr.emplace_back(it->second, isAtomic);
-                normalizedOps.insert(op);
                 continue;
             }
             operandCoaList = NormalizeTensor(oOperand, coaIndex, false);
-            processedOperands.emplace(oOperand, coaIndex);
+            normTensors.emplace(oOperand, coaIndex);
         }
         op->SetOOpAtt(k, coaIndex, isAtomic);
         oOpAttr.emplace_back(coaIndex, isAtomic);
-        normalizedOps.insert(op);
         coaIndex += operandCoaList.size();
         coaLists.emplace_back(std::move(operandCoaList));
     }
 }
 
 void Function::NormalizeCoaForNormalOperands(std::vector<std::vector<SymbolicScalar>>& coaLists, int& coaIndex,
-                                             std::unordered_map<LogicalTensorPtr, int>& processedOperands,
-                                             const std::unordered_set<Operation*>& normalizedOps)
+                                             std::unordered_map<LogicalTensorPtr, int>& normTensors)
 {
     std::unordered_set<LogicalTensorPtr> inOutCasts;
     inOutCasts.insert(inCasts_.begin(), inCasts_.end());
@@ -3595,30 +3544,31 @@ void Function::NormalizeCoaForNormalOperands(std::vector<std::vector<SymbolicSca
             outcastRawMagics.insert(outcast->GetRawMagic());
         }
     }
+
     bool valueToIndex = parent_->GetFunctionType() == FunctionType::DYNAMIC_LOOP_PATH;
     for (auto& op : operations_) {
         if (op->GetOpcode() == Opcode::OP_NOP) {
             continue;
         }
-        // In/outcast 规范化只覆盖已登记 operand。多输出 op（如 INDEX_ADD 的 tmp）仍要处理剩余操作数，
-        // 不能因 op 已在 normalizedOps 中就整算子跳过。
-        if (normalizedOps.count(op.get()) == 0) {
-            if (IsCopyIn(op->GetOpcode()) && !op->GetIOperands().empty() &&
-                outcastRawMagics.count(op->GetInputOperand(0)->GetRawMagic()) > 0) {
-                auto operandCoaList = NormalizeCopyIn(op.get(), coaIndex, valueToIndex);
+        if ((IsCopyIn(op->GetOpcode()) || OpcodeManager::Inst().IsCopyFromL1(op->GetOpcode())) &&
+            !op->GetIOperands().empty() && op->GetIOpAttrOffset(0) == -1 && op->GetOpAttribute() != nullptr) {
+            auto operandCoaList = NormalizeCopyIn(op.get(), coaIndex, valueToIndex);
+            // Inner copy attr still goes into coaLists; only outcast-raw copies may occupy IOpAtt,
+            // which InferParamIndex treats as tensor validshape COA.
+            if (outcastRawMagics.count(op->GetInputOperand(0)->GetRawMagic()) > 0) {
                 op->SetIOpAtt(0, coaIndex);
-                coaIndex += operandCoaList.size();
-                coaLists.emplace_back(std::move(operandCoaList));
-                continue;
             }
-            if (IsCopyOut(op->GetOpcode()) && !op->GetOOperands().empty() &&
-                outcastRawMagics.count(op->GetOutputOperand(0)->GetRawMagic()) > 0) {
-                auto operandCoaList = NormalizeCopyOut(op.get(), coaIndex, valueToIndex);
+            coaIndex += operandCoaList.size();
+            coaLists.emplace_back(std::move(operandCoaList));
+        }
+        if (IsCopyOut(op->GetOpcode()) && !op->GetOOperands().empty() && op->GetOOpAttrOffset(0) == -1 &&
+            op->GetOpAttribute() != nullptr) {
+            auto operandCoaList = NormalizeCopyOut(op.get(), coaIndex, valueToIndex);
+            if (outcastRawMagics.count(op->GetOutputOperand(0)->GetRawMagic()) > 0) {
                 op->SetOOpAtt(0, coaIndex, false);
-                coaIndex += operandCoaList.size();
-                coaLists.emplace_back(std::move(operandCoaList));
-                continue;
             }
+            coaIndex += operandCoaList.size();
+            coaLists.emplace_back(std::move(operandCoaList));
         }
         for (size_t i = 0; i < op->GetInputOperandSize(); i++) {
             auto iOperand = op->GetInputOperand(i);
@@ -3628,14 +3578,14 @@ void Function::NormalizeCoaForNormalOperands(std::vector<std::vector<SymbolicSca
             if (inOutCasts.count(iOperand) > 0) {
                 continue;
             }
-            auto it = processedOperands.find(iOperand);
-            if (it != processedOperands.end()) {
+            auto it = normTensors.find(iOperand);
+            if (it != normTensors.end()) {
                 op->SetIOpAtt(i, it->second);
                 continue;
             }
             if (!iOperand->GetDynOffset().empty() || !iOperand->GetDynValidShape().empty()) {
                 auto operandCoaList = NormalizeTensor(iOperand, coaIndex, valueToIndex);
-                processedOperands.emplace(iOperand, coaIndex);
+                normTensors.emplace(iOperand, coaIndex);
                 coaIndex += operandCoaList.size();
                 coaLists.emplace_back(std::move(operandCoaList));
             }
@@ -3653,14 +3603,14 @@ void Function::NormalizeCoaForNormalOperands(std::vector<std::vector<SymbolicSca
             if (oOperand->GetConsumers().empty() && !OpcodeManager::Inst().IsCopyInOrOut(op->GetOpcode())) {
                 continue;
             }
-            auto it = processedOperands.find(oOperand);
-            if (it != processedOperands.end()) {
+            auto it = normTensors.find(oOperand);
+            if (it != normTensors.end()) {
                 op->SetOOpAtt(i, it->second, false);
                 continue;
             }
             if (!oOperand->GetDynOffset().empty() || !oOperand->GetDynValidShape().empty()) {
                 auto operandCoaList = NormalizeTensor(oOperand, coaIndex, valueToIndex);
-                processedOperands.emplace(oOperand, coaIndex);
+                normTensors.emplace(oOperand, coaIndex);
                 op->SetOOpAtt(i, coaIndex, false);
                 coaIndex += operandCoaList.size();
                 coaLists.emplace_back(std::move(operandCoaList));
@@ -3691,10 +3641,7 @@ void Function::NormalizeCoaForSpecialInfo(std::vector<std::vector<SymbolicScalar
                 coaLists.emplace_back(valueCoaList);
                 coaIndex += 1;
             }
-        } else if (op->GetOpcode() == Opcode::OP_NCHW2NC1HWC0 || op->GetOpcode() == Opcode::OP_NCHW2Fractal_Z ||
-                   op->GetOpcode() == Opcode::OP_NC1HWC02NCHW || op->GetOpcode() == Opcode::OP_NCDHW2NDC1HWC0 ||
-                   op->GetOpcode() == Opcode::OP_NCDHW2FRACTAL_Z_3D || op->GetOpcode() == Opcode::OP_NDC1HWC02NCDHW ||
-                   op->GetOpcode() == Opcode::OP_FractalZ2NCHW || op->GetOpcode() == Opcode::OP_FractalZ3D2NCDHW) {
+        } else if (OpcodeManager::Inst().IsTransData(op->GetOpcode())) {
             if (op->HasAttr(OpAttributeKey::transDataOffset)) {
                 std::vector<SymbolicScalar> offsets;
                 op->GetAttr(OpAttributeKey::transDataOffset, offsets);
@@ -3706,15 +3653,23 @@ void Function::NormalizeCoaForSpecialInfo(std::vector<std::vector<SymbolicScalar
                 }
                 op->SetAttribute(OpAttributeKey::transDataOffset, offsets);
             }
-        } else if (op->GetOpcode() == Opcode::OP_L1_TO_L0A || op->GetOpcode() == Opcode::OP_L1_TO_L0B ||
-                   op->GetOpcode() == Opcode::OP_L1_TO_L0_AT || op->GetOpcode() == Opcode::OP_L1_TO_L0_BT ||
-                   op->GetOpcode() == Opcode::OP_L1_TO_FIX_QUANT_PRE || op->GetOpcode() == Opcode::OP_L1_TO_L0A_SCALE ||
-                   op->GetOpcode() == Opcode::OP_L1_TO_L0B_SCALE || op->GetOpcode() == Opcode::OP_L1_TO_BT) {
-            auto operandCoaList = NormalizeCopyIn(op.get(), coaIndex, valueToIndex);
-            coaIndex += operandCoaList.size();
-            coaLists.emplace_back(std::move(operandCoaList));
+        } else if (OpcodeManager::Inst().IsReshapeCopyIn(op->GetOpcode())) {
+            // reshape copy need both to and from validshape normalized, from is done during NormalizeCopyIn
+            auto copyAttr = std::static_pointer_cast<CopyOpAttribute>(op->GetOpAttribute());
+            auto validshape = copyAttr->GetFromDynValidShape();
+            auto coaList = MaybeNormalizeValue(validshape, coaIndex, valueToIndex);
+            copyAttr->SetFromDynValidShape(OpImmediate::Specified(coaList));
+            coaIndex += coaList.size();
+            coaLists.emplace_back(std::move(coaList));
+        } else if (OpcodeManager::Inst().IsReshapeCopyOut(op->GetOpcode())) {
+            // reshape copy need both to and from validshape normalized, from is done during NormalizeCopyIn
+            auto copyAttr = std::static_pointer_cast<CopyOpAttribute>(op->GetOpAttribute());
+            auto validshape = copyAttr->GetToDynValidShape();
+            auto coaList = MaybeNormalizeValue(validshape, coaIndex, valueToIndex);
+            copyAttr->SetToDynValidShape(OpImmediate::Specified(coaList));
+            coaIndex += coaList.size();
+            coaLists.emplace_back(std::move(coaList));
         }
-        NormalizeReshapeCopyDynValidShape(op.get(), coaLists, coaIndex, valueToIndex);
     }
 }
 
