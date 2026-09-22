@@ -1,4 +1,4 @@
-# 基础编译依赖（配合python3 build_ci.py使用）
+# 基础编译依赖
 setuptools>=70.3.0
 pybind11>=2.13.6
 
