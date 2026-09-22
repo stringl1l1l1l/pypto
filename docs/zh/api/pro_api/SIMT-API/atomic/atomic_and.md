@@ -49,7 +49,7 @@ import pypto_pro.language as pl
 def clear_status_bits(
     flags: pl.Tensor[[1, 1], pl.DT_UINT32],
     masks: pl.Tensor[[1, 256], pl.DT_UINT32],
-) -> None:
+):
     tid = pl.simt.linear_thread_idx()
     pl.simt.atomic_and(flags[0, 0], masks[0, tid])
 

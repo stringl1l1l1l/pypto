@@ -49,7 +49,7 @@ import pypto_pro.language as pl
 def merge_observed_flags(
     observed_flags: pl.Tensor[[1, 256], pl.DT_UINT32],
     flags: pl.Tensor[[1, 1], pl.DT_UINT32],
-) -> None:
+):
     tid = pl.simt.linear_thread_idx()
     pl.simt.atomic_or(flags[0, 0], observed_flags[0, tid])
 

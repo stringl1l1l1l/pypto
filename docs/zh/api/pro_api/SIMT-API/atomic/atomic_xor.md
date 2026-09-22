@@ -49,7 +49,7 @@ import pypto_pro.language as pl
 def compute_hit_parity(
     hit: pl.Tensor[[1, 256], pl.DT_UINT32],
     parity: pl.Tensor[[1, 1], pl.DT_UINT32],
-) -> None:
+):
     tid = pl.simt.linear_thread_idx()
     if hit[0, tid] != 0:
         pl.simt.atomic_xor(parity[0, 0], 1)

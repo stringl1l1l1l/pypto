@@ -50,7 +50,7 @@ def publish_fault(
     fault_flags: pl.Tensor[[1, 256], pl.DT_UINT32],
     status: pl.Tensor[[1, 1], pl.DT_UINT32],
     old_status: pl.Tensor[[1, 256], pl.DT_UINT32],
-) -> None:
+):
     tid = pl.simt.linear_thread_idx()
     if fault_flags[0, tid] != 0:
         old_status[0, tid] = pl.simt.atomic_exch(status[0, 0], 1)

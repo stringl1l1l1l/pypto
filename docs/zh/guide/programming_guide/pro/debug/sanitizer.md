@@ -8,8 +8,8 @@ Kernel中的内存访问错误（GM越界、tile越界、片上地址重叠、mu
 
 - 仅供调试使用：插桩与检测会改变Kernel执行开销，性能测量前应在@pypto_pro.language.jit()中移除sanitizer=True。
 - 每次启动Kernel会在GM上分配约1GB的日志缓冲，同一位置的重复缺陷会聚合为一条并计数。
-- `pypto_pro.language.Ptr`只携带地址、不携带所指内存的大小，以指针为源的视图无法获知源大小，不做声明shape超出源的检查。
-- 检测覆盖Kernel主体内的访问与声明；SIMT线程块（`pypto_pro.language.simt.launch`）内的所有访问（GM/tile/mutex）均不检测。
+- pypto_pro.language.Ptr只携带地址、不携带所指内存的大小，以指针为源的视图无法获知源大小，不做声明shape超出源的检查。
+- 检测覆盖Kernel主体内的访问与声明；SIMT线程块内的所有访问（GM/tile/mutex）均不检测。
 
 ## 操作步骤
 

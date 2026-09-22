@@ -50,7 +50,7 @@ def consume_quota(
     remaining: pl.Tensor[[1, 1], pl.DT_UINT32],
     requests: pl.Tensor[[1, 256], pl.DT_UINT32],
     old_remaining: pl.Tensor[[1, 256], pl.DT_UINT32],
-) -> None:
+):
     tid = pl.simt.linear_thread_idx()
     old_remaining[0, tid] = pl.simt.atomic_sub(remaining[0, 0], requests[0, tid])
 
