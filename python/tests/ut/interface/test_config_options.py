@@ -12,8 +12,6 @@
 
 import inspect
 
-import pytest
-
 import pypto
 from pypto.experimental import (
     get_operation_options,
@@ -252,25 +250,18 @@ def test_auto_mix_partition():
     pass_option = pypto.get_pass_options()
     assert pass_option["auto_mix_partition"] == 'off'
 
-    # custom level int (>100) round-trips as the int itself
-    pypto.set_pass_options(auto_mix_partition=101)
-    pass_option = pypto.get_pass_options()
-    assert pass_option["auto_mix_partition"] == 101
-
-    # legacy int 1 keeps high-level behavior (backward compatible), warns, reads back 'high'
-    with pytest.warns(UserWarning, match="legacy value equivalent to 'high'"):
-        pypto.set_pass_options(auto_mix_partition=1)
+    # legacy int 1 keeps high-level behavior (backward compatible), reads back 'high'
+    pypto.set_pass_options(auto_mix_partition=1)
     pass_option = pypto.get_pass_options()
     assert pass_option["auto_mix_partition"] == 'high'
 
-    # legacy int 0 keeps off behavior, warns, reads back 'off'
-    with pytest.warns(UserWarning, match="legacy value equivalent to 'off'"):
-        pypto.set_pass_options(auto_mix_partition=0)
+    # legacy int 0 keeps off behavior, reads back 'off'
+    pypto.set_pass_options(auto_mix_partition=0)
     pass_option = pypto.get_pass_options()
     assert pass_option["auto_mix_partition"] == 'off'
 
-    # undocumented int encodings 2~100 are rejected
-    for invalid_value in (2, 3, 50, 100):
+    # int values other than legacy 0/1 are rejected (custom op-limit config is not exposed)
+    for invalid_value in (-5, -1, 2, 3, 50, 100, 101, 200):
         try:
             pypto.set_pass_options(auto_mix_partition=invalid_value)
             assert False, "Should raise ValueError"

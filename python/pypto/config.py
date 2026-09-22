@@ -16,7 +16,6 @@ import logging
 import re
 import sys
 from typing import Dict, List, Optional, Tuple, Union
-import warnings
 
 from . import pypto_impl
 from .error import FeError
@@ -249,30 +248,22 @@ def set_print_options(
 # auto_mix_partition 档位名的整数编码, 与 C++ 侧档位语义保持一致:
 # 'high'=1 为旧值兼容(旧版本 =1 开启即 high 上限), 'default'=2 为推荐收紧档(内部编码, 对外不暴露)
 _AUTO_MIX_PARTITION_LEVELS = {'off': 0, 'high': 1, 'default': 2}
-# 自定义档(总 op 数上限)要求 N > 100, 3~100 为非法值
-_AUTO_MIX_CUSTOM_MIN_OP_NUM = 100
 
 
 def _encode_auto_mix_partition(value: Union[int, str]) -> int:
-    """Normalize auto_mix_partition: string levels map to int encodings, ints pass through."""
+    """Normalize auto_mix_partition: string levels map to int encodings, legacy ints 0/1 pass through."""
     if isinstance(value, str):
         level = _AUTO_MIX_PARTITION_LEVELS.get(value)
         if level is None:
             raise ValueError(
-                f"Invalid auto_mix_partition: '{value}'. Expected 'off', 'default', 'high' or int > 100."
+                f"Invalid auto_mix_partition: '{value}'. Expected 'off', 'default' or 'high'."
             )
         return level
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"Invalid auto_mix_partition: '{value}'. Expected 'off', 'default', 'high' or int > 100.")
-    if value in (0, 1):
-        equivalent = "'off'" if value == 0 else "'high' (Cube ops <= 2000 and Vector ops <= 2240 per merged subgraph)"
-        warnings.warn(
-            f"auto_mix_partition={value} is a legacy value equivalent to {equivalent}; prefer the string level name.",
-            stacklevel=2,
-        )
-    if 2 <= value <= _AUTO_MIX_CUSTOM_MIN_OP_NUM:
+        raise ValueError(f"Invalid auto_mix_partition: '{value}'. Expected 'off', 'default' or 'high'.")
+    if value not in (0, 1):
         raise ValueError(
-            f"Invalid auto_mix_partition: {value}. Expected 'off', 'default', 'high' or int > 100."
+            f"Invalid auto_mix_partition: {value}. Expected 'off', 'default' or 'high'."
         )
     return value
 
@@ -281,7 +272,7 @@ _AUTO_MIX_PARTITION_LEVEL_NAMES = {code: name for name, code in _AUTO_MIX_PARTIT
 
 
 def _decode_auto_mix_partition(value: int) -> Union[int, str]:
-    """Decode the stored int config back to the user-facing level name (custom N stays int)."""
+    """Decode the stored int config back to the user-facing level name."""
     return _AUTO_MIX_PARTITION_LEVEL_NAMES.get(value, value)
 
 
@@ -346,11 +337,9 @@ def set_pass_options(
         'off' disables auto CV Mix graph merging; 'high' enables it with high
         op limits (Cube ops <= 2000 and Vector ops <= 2240 per merged
         subgraph); 'default' enables it with tighter op limits (Cube ops <=
-        1700 and Vector ops <= 400, the default when not configured); N
-        (int > 100) enables it with a custom limit: the total op count
-        (Cube + Vector) of a merged subgraph must not exceed N.
-        get_pass_options reads back the configured form: level names for
-        levels, the int itself for a custom limit.
+        1700 and Vector ops <= 400, the default when not configured).
+        Ints 0 and 1 are accepted as legacy equivalents of 'off' and 'high'.
+        get_pass_options reads back the configured level name.
 
     sg_set_tunevf_mode : int
         Control the VF (Vector Fusion) tuning pass behavior.
