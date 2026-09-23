@@ -40,6 +40,7 @@ Naming convention:
 
 import logging
 import os
+import struct
 
 import pypto_pro.language as pl
 import pytest
@@ -1402,6 +1403,84 @@ def t24_sq_dn_zn_kloop_tail(
         pl.store(out, ac, [0, 0], phase=pl.STPhase.Final)
 
 
+# === Per-channel (Scaling Tile) scale + STPhase store ==============================
+# Regression: the CCE Scaling-Tile store branch used to drop the phase kwarg, so the
+# TSTORE_FP emission lost the STPhase unit-flag. A 4-block K-loop builds a balanced UF
+# chain (matmul Partial -> matmul_acc Partial x2 -> matmul_acc Final); the per-channel
+# store closes it with STPhase.Final, exercising phase forwarding on the fp-tile path.
+
+
+@pl.jit(auto_mutex=True)
+def t25_nsq_per_channel_scale_phase(
+    a: pl.Tensor[[M_NSQ, 512], pl.DT_FP16],
+    b: pl.Tensor[[512, N_NSQ], pl.DT_FP16],
+    fp_params: pl.Tensor[[1, N_NSQ], pl.DT_INT64],
+    out: pl.Tensor[[M_NSQ, N_NSQ], pl.DT_INT8],
+):
+    """NN nsq K-loop (4 blocks), per-channel Scaling-Tile scale + STPhase.Final store."""
+    k_total = 512
+    tile_k = 128
+    a_l1 = pl.make_tile_group(
+        type=pl.TileType(shape=[M_NSQ, tile_k], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Mat, layout=pl.NZ),
+        addrs=0x00000,
+        mutex_ids=[0, 1],
+    )
+    b_l1 = pl.make_tile_group(
+        type=pl.TileType(shape=[tile_k, N_NSQ], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Mat, layout=pl.NZ),
+        addrs=0x10000,
+        mutex_ids=[2, 3],
+    )
+    fp_l1 = pl.make_tile_group(
+        type=pl.TileType(shape=[1, N_NSQ], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Mat, layout=pl.ND),
+        addrs=0x18000,
+        mutex_ids=[4],
+    )
+    a_l0a = pl.make_tile_group(
+        type=pl.TileType(shape=[M_NSQ, tile_k], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Left, layout=pl.NZ),
+        addrs=0x0,
+        mutex_ids=[5, 6],
+    )
+    b_l0b = pl.make_tile_group(
+        type=pl.TileType(shape=[tile_k, N_NSQ], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Right, layout=pl.ZN),
+        addrs=0x0,
+        mutex_ids=[7, 8],
+    )
+    acc_grp = pl.make_tile_group(
+        type=pl.TileType(
+            shape=[M_NSQ, N_NSQ], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ, fractal=1024
+        ),
+        addrs=0x0,
+        mutex_ids=[9],
+    )
+    fp_scaling = pl.make_tile_group(
+        type=pl.TileType(shape=[1, N_NSQ], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Scaling),
+        addrs=0x0,
+        mutex_ids=[10],
+    )
+    with pl.section_cube():
+        ac = acc_grp.current()
+        fp_tile = fp_scaling.current()
+        cur_fp_l1 = fp_l1.current()
+        pl.load(cur_fp_l1, fp_params, [0, 0])
+        pl.move(fp_tile, cur_fp_l1)
+        for ki in pl.range(0, k_total, tile_k):
+            cur_a = a_l1.next()
+            cur_b = b_l1.next()
+            al = a_l0a.next()
+            br = b_l0b.next()
+            pl.load(cur_a, a, [0, ki])
+            pl.load(cur_b, b, [ki, 0])
+            pl.move(al, cur_a)
+            pl.move(br, cur_b)
+            if ki == 0:
+                pl.matmul(ac, al, br, phase=pl.AccPhase.Partial)
+            elif ki < k_total - tile_k:
+                pl.matmul_acc(ac, ac, al, br, phase=pl.AccPhase.Partial)
+            else:
+                pl.matmul_acc(ac, ac, al, br, phase=pl.AccPhase.Final)
+        pl.store(out, ac, [0, 0], scale=fp_tile, phase=pl.STPhase.Final)
+
+
 # #####################################################################################
 # Test functions
 # #####################################################################################
@@ -1608,6 +1687,33 @@ def test_t24(_device):
     _run(t24_sq_dn_zn_kloop_tail, a, b.t().contiguous(), a, b, [M_SQ, N_SQ], _device)
 
 
+@pytest.mark.soc("950")
+@pypto.options(pass_options={"enable_slice": False})
+def test_t25_per_channel_scale_phase(_device):
+    # Integer-valued inputs so raw_ref * scale lands exactly on integers: no
+    # round-half ambiguity between torch (half-to-even) and the hardware FixPipe,
+    # so the int8 output can be checked exactly (atol=0).
+    #   a[m, k] = 1, b[k, n] = v_n  ->  raw_ref[m, n] = 512 * v_n
+    # scale = 1/512 (exact in fp32) then cancels K, giving expected[m, n] = v_n.
+    k_dim = 512
+    scale_value = 1.0 / k_dim
+    scale_bits = (1 << 46) | struct.unpack("!I", struct.pack("!f", scale_value))[0]
+    fp_params = torch.full((1, N_NSQ), scale_bits, device=_device, dtype=torch.int64)
+
+    a = torch.ones([M_NSQ, k_dim], device=_device, dtype=torch.float16)
+    col = (torch.arange(N_NSQ, device=_device) % 64 - 32).to(torch.float16)  # -32..31, int8-safe
+    b = col.unsqueeze(0).repeat(k_dim, 1).contiguous()
+    out = torch.zeros([M_NSQ, N_NSQ], device=_device, dtype=torch.int8)
+
+    t25_nsq_per_channel_scale_phase(a, b, fp_params, out)
+    torch.npu.synchronize()
+
+    raw_ref = torch.matmul(a.float(), b.float())
+    expected = torch.clamp(torch.round(raw_ref * scale_value), -128, 127).to(torch.int8)
+    torch.testing.assert_close(out.to(torch.int32), expected.to(torch.int32), rtol=0, atol=0)
+    logging.info("test_t25_per_channel_scale_phase passed.")
+
+
 # #####################################################################################
 # Main
 # #####################################################################################
@@ -1640,6 +1746,7 @@ if __name__ == "__main__":
         ("t22_sq_dn_zn_tn_kloop_if", test_t22, dev),
         ("t23_sq_dn_zn_tt_kloop_if", test_t23, dev),
         ("t24_sq_dn_zn_kloop_tail", test_t24, dev),
+        ("t25_nsq_per_channel_scale_phase", test_t25_per_channel_scale_phase, dev),
     ]
 
     logging.info("=" * 80)

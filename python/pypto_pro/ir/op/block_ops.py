@@ -353,8 +353,8 @@ def _ir_store(
     pre_quant_scalar, fp_tile = _resolve_scale_param(scale, actual_span)
     is_quant = pre_quant_scalar is not None or fp_tile is not None
     _check_layout_dtype(op_name, tile, out, quant=is_quant)
-    if fp_tile is not None and phase is not None:
-        raise InvalidOperation("scale (per-channel) cannot be combined with phase")
+    if relu_pre_mode is not None and _src_mem is not None and _src_mem != _ir_core.MemorySpace.Acc:
+        raise NotSupported(f"{op_name}: relu_pre_mode is only supported for Acc (L0C) source tiles")
     if fp_tile is not None and atomic != AtomicType.AtomicNone:
         raise InvalidOperation(
             "scale (per-channel) cannot be combined with atomic — the fixpipe quantization "
@@ -406,6 +406,11 @@ def _ir_store_tile(
     if _src_mem is not None and _src_mem not in (_ir_core.MemorySpace.Vec, _ir_core.MemorySpace.Acc):
         raise InvalidOperation(f"{op_name}: src tile must be in Vec (UB) or Acc (L0C) memory, got {_src_mem.name}")
 
+    if phase is not None and not isinstance(phase, STPhase):
+        raise InvalidArgument(f"{op_name}: invalid phase value {phase!r}, expected STPhase")
+    if not isinstance(atomic, AtomicType):
+        raise InvalidType(f"{op_name}: invalid atomic value {atomic!r}, expected AtomicType")
+
     tensor_ndim = len(out.type.shape)
     tile_shape = list(tile.type.shape)
     tile_dims, access_size = _validate_tile_dims(order, tensor_ndim, tile_shape, op_name)
@@ -435,8 +440,8 @@ def _ir_store_tile(
     pre_quant_scalar, fp_tile = _resolve_scale_param(scale, actual_span)
     is_quant = pre_quant_scalar is not None or fp_tile is not None
     _check_layout_dtype(op_name, tile, out, quant=is_quant)
-    if fp_tile is not None and phase is not None:
-        raise InvalidOperation("scale (per-channel) cannot be combined with phase")
+    if relu_pre_mode is not None and _src_mem is not None and _src_mem != _ir_core.MemorySpace.Acc:
+        raise NotSupported(f"{op_name}: relu_pre_mode is only supported for Acc (L0C) source tiles")
     if fp_tile is not None and atomic != AtomicType.AtomicNone:
         raise InvalidOperation(
             "scale (per-channel) cannot be combined with atomic — the fixpipe quantization "
@@ -683,14 +688,21 @@ def _ir_move(
         (MemorySpace.Mat, MemorySpace.ScaleLeft),
         (MemorySpace.Mat, MemorySpace.ScaleRight),
     }
-    if _src_mem is not None and _dst_mem is not None and (_src_mem, _dst_mem) not in _supported_move_paths:
+    if (_src_mem, _dst_mem) not in _supported_move_paths:
         raise NotSupported(
             f"move: unsupported data path src({_src_mem.name})->dst({_dst_mem.name}), "
             f"supported paths: Mat->Left, Mat->Right, Mat->Scaling, Mat->Bias, Mat->ScaleLeft, "
             f"Mat->ScaleRight, Acc->Mat, Acc->Vec, Vec->Vec, Vec->Mat"
         )
-    if _src_mem == MemorySpace.Acc and _dst_mem == MemorySpace.Mat and acc_to_vec_mode is not None:
+    if acc_to_vec_mode is not None and (_src_mem, _dst_mem) not in {
+        (MemorySpace.Acc, MemorySpace.Vec),
+    }:
         raise NotSupported("move: acc_to_vec_mode is only supported for Acc-to-Vec moves")
+    if relu_pre_mode is not None and (_src_mem, _dst_mem) not in {
+        (MemorySpace.Acc, MemorySpace.Vec),
+        (MemorySpace.Acc, MemorySpace.Mat),
+    }:
+        raise NotSupported("move: relu_pre_mode is only supported for Acc-to-Vec or Acc-to-Mat moves")
     if phase is not None and (_src_mem, _dst_mem) not in {
         (MemorySpace.Acc, MemorySpace.Vec),
         (MemorySpace.Acc, MemorySpace.Mat),
@@ -704,9 +716,10 @@ def _ir_move(
         _validate_offset_bounds("move", src.type.shape, offset_tuple.elements)
 
     pre_quant_scalar, fp_tile = _resolve_scale_param(scale, actual_span)
-    if fp_tile is not None and (
-        _src_mem != MemorySpace.Acc or _dst_mem not in (MemorySpace.Vec, MemorySpace.Mat)
-    ):
+    if fp_tile is not None and (_src_mem, _dst_mem) not in {
+        (MemorySpace.Acc, MemorySpace.Vec),
+        (MemorySpace.Acc, MemorySpace.Mat),
+    }:
         raise NotSupported("move: Scaling Tile scale only supports Acc-to-Vec or Acc-to-Mat moves")
 
     is_quant = pre_quant_scalar is not None or fp_tile is not None

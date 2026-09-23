@@ -65,27 +65,6 @@ def _make_qk() -> tuple[torch.Tensor, torch.Tensor]:
 # covered by test_scale_relu_fusion.py::test_per_channel_scale_relu_fusion.
 
 
-def test_err_store_per_channel_with_phase():
-    """store 当前不支持 per-channel scale 与 phase 同时使用"""
-
-    @pl.jit()
-    def kernel(
-        q: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP32],
-        k: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP32],
-        out: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_INT8],
-    ):
-        with pl.section_cube():
-            acc = _make_acc()
-            fp_type = pl.TileType(shape=[1, 64], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Scaling)
-            fp_tile = pl.make_tile(fp_type, addr=0x0000)
-            pl.store(out, acc, [0, 0], scale=fp_tile, phase=pl.STPhase.Partial)
-
-    q, k = _make_qk()
-    out = torch.zeros(64, 64, dtype=torch.int8)
-    with pytest.raises(InvalidOperation, match="cannot be combined with phase"):
-        kernel(q, k, out)
-
-
 def test_err_scale_tensor_rejected():
     """scale 传 GM Tensor 应在解析期被拒绝（Tensor 自动路径已移除）"""
 

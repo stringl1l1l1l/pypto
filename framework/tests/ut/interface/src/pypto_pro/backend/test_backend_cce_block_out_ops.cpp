@@ -1246,7 +1246,52 @@ TEST(BackendCCEBlockOutOps, StoreWithScalingTile)
     info->codegen_func(call, codegen);
     auto code = codegen.GetEmittedCode();
     EXPECT_CONTAINS(code, "TASSIGN(tensor, raw_ptr + ");
-    EXPECT_CONTAINS(code, "TSTORE(tensor, tile, fp);");
+    EXPECT_CONTAINS(code, "TSTORE<");
+    EXPECT_CONTAINS(code, ">(tensor, tile, fp);");
+}
+
+TEST(BackendCCEBlockOutOps, StoreWithScalingTileAndPhase)
+{
+    TestableCCECodegen codegen(ir::SectionKind::Vector);
+    auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
+    auto scaling_memref = MakeMemRef(ir::MemorySpace::Scaling);
+    auto tensor_type = MakeTensorType();
+    auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
+    auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
+    codegen.RegisterPointer("tensor", "raw_ptr");
+    auto call = MakeCallWithKwargs(
+        "block.store",
+        {MakeVar("tensor", tensor_type), MakeVar("tile", acc_tile), MakeOffsets(0, 0), MakeVar("fp", scaling_tile)},
+        {{"phase", static_cast<int>(ir::STPhase::Final)}});
+    auto* info = BackendCCE::Instance().GetOpInfo("block.store");
+    ASSERT_NE(info, nullptr);
+    info->codegen_func(call, codegen);
+    auto code = codegen.GetEmittedCode();
+    EXPECT_CONTAINS(code, "TSTORE<STPhase::Final,");
+    EXPECT_CONTAINS(code, ">(tensor, tile, fp);");
+}
+
+TEST(BackendCCEBlockOutOps, StoreWithScalingTileAndReluPhase)
+{
+    TestableCCECodegen codegen(ir::SectionKind::Vector);
+    auto acc_memref = MakeMemRef(ir::MemorySpace::Acc);
+    auto scaling_memref = MakeMemRef(ir::MemorySpace::Scaling);
+    auto tensor_type = MakeTensorType();
+    auto acc_tile = MakeTileType({16, 16}, ir::DataType::FP16, acc_memref);
+    auto scaling_tile = MakeTileType({16, 16}, ir::DataType::FP16, scaling_memref);
+    codegen.RegisterPointer("tensor", "raw_ptr");
+    auto call = MakeCallWithKwargs(
+        "block.store",
+        {MakeVar("tensor", tensor_type), MakeVar("tile", acc_tile), MakeOffsets(0, 0), MakeVar("fp", scaling_tile)},
+        {{"phase", static_cast<int>(ir::STPhase::Final)}, {"relu_pre_mode", 0}});
+    auto* info = BackendCCE::Instance().GetOpInfo("block.store");
+    ASSERT_NE(info, nullptr);
+    info->codegen_func(call, codegen);
+    auto code = codegen.GetEmittedCode();
+    EXPECT_CONTAINS(code, "TSTORE<STPhase::Final,");
+    EXPECT_CONTAINS(code, "AtomicType::AtomicNone");
+    EXPECT_CONTAINS(code, "ReluPreMode::NormalRelu");
+    EXPECT_CONTAINS(code, ">(tensor, tile, fp);");
 }
 
 TEST(BackendCCEBlockOutOps, Move)
