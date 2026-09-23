@@ -101,7 +101,7 @@ THREADS = 256
    最大值归约Kernel如下：
 
    ```python
-   @pl.jit(arch="a5")
+   @pl.jit(arch="3510")
    def reduce_max_kernel(
        src: pl.Tensor[[1, THREADS], pl.DT_FP32],
        max_value: pl.Tensor[[1, 1], pl.DT_FP32],
@@ -117,7 +117,7 @@ THREADS = 256
    指数计算和求和归约Kernel如下：
 
    ```python
-   @pl.jit(arch="a5")
+   @pl.jit(arch="3510")
    def exp_sum_kernel(
        src: pl.Tensor[[1, THREADS], pl.DT_FP32],
        exp_value: pl.Tensor[[1, THREADS], pl.DT_FP32],
@@ -140,7 +140,7 @@ THREADS = 256
    归一化Kernel如下：
 
    ```python
-   @pl.jit(arch="a5")
+   @pl.jit(arch="3510")
    def normalize_kernel(
        exp_value: pl.Tensor[[1, THREADS], pl.DT_FP32],
        dst: pl.Tensor[[1, THREADS], pl.DT_FP32],

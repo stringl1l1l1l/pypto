@@ -47,7 +47,7 @@ def transform(
 ```python
 import pypto_pro.language as pl
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def transform_kernel(
     input_tensor: pl.Tensor[[1, ELEMENTS], pl.DT_FP32],
     output: pl.Tensor[[1, ELEMENTS], pl.DT_FP32],
@@ -63,7 +63,7 @@ max_threads声明单个线程块的上限，threads指定本次调用的实际�
 
 ### 从Host启动外层Kernel
 
-在A5环境中，通过Host启动外层jit kernel函数：
+通过Host启动外层jit kernel函数：
 
 ```python
 import torch
@@ -201,7 +201,7 @@ def gather_rows(
             output[row, col] = input_tensor[input_row, col]
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def gather_kernel(
     input_tensor: pl.Tensor[[INPUT_ROWS, WIDTH], pl.DT_FP32],
     indices: pl.Tensor[[1, OUTPUT_ROWS], pl.DT_INT32],
@@ -222,7 +222,7 @@ gather_kernel[None, BLOCKS](input_tensor, indices, output, OUTPUT_ROWS)
 
 ## 当前能力边界
 
-- SIMT入口必须由外层A5 Vector执行域调用，不支持Host直接启动SIMT函数或在SIMT函数中嵌套调用SIMT入口函数。
+- SIMT入口必须由外层Vector执行域调用，不支持Host直接启动SIMT函数或在SIMT函数中嵌套调用SIMT入口函数。
 - SIMT中不支持Tile创建、SIMD Tile计算、Reg计算或System流水操作。
 - 不支持动态GM Shape、Tile Subview、L1 Buffer Tile、DN/NZ布局和通用指针参数。
 - 未提供Warp shuffle/vote/reduce、线程私有数组和显式Cached GM访问接口。
