@@ -40,11 +40,11 @@ pypto_pro.language.matmul_mx(
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| dst_tile | 输出 | 目的操作数，Tile类型，存储空间为L0C Buffer，shape为[M, N]，数据类型为DT_FP32，layout必须为NZ。 |
-| lhs_tile | 输入 | 源操作数（A，左矩阵），Tile类型，存储空间为L0A Buffer，数据类型支持DT_FP8E4M3FN、DT_FP8E5M2、DT_FP4E2M1和DT_FP4E1M2，layout必须为NZ，K必须为64的倍数。 |
-| rhs_tile | 输入 | 源操作数（B，右矩阵），Tile类型，存储空间为L0B Buffer，数据类型支持DT_FP8E4M3FN、DT_FP8E5M2、DT_FP4E2M1和DT_FP4E1M2。与lhs_tile的数据类型可以不同，但必须同时选自DT_FP8E4M3FN、DT_FP8E5M2，或同时选自DT_FP4E2M1、DT_FP4E1M2。layout必须为ZN，K必须为64的倍数。 |
-| scale_a | 输入 | 源操作数（左量化系数矩阵），Tile类型，存储空间为L0A_MX Buffer，数据类型为DT_FP8E8M0，shape为[M, K/32]，layout默认且仅支持ZZ，fractal默认且仅支持32。每个量化系数对应A矩阵K方向连续32个元素。 |
-| scale_b | 输入 | 源操作数（右量化系数矩阵），Tile类型，存储空间为L0B_MX Buffer，数据类型为DT_FP8E8M0，shape为[K/32, N]，layout默认且仅支持NN，fractal默认且仅支持32。每个量化系数对应B矩阵K方向连续32个元素。 |
+| dst_tile | 输出 | 目的操作数，Tile类型，存储空间为L0C Buffer，形状为[M, N]，数据类型为DT_FP32，layout必须为NZ。 |
+| lhs_tile | 输入 | 源操作数（A，左矩阵），Tile类型，存储空间为L0A Buffer，形状为[M, K]，数据类型支持DT_FP8E4M3FN、DT_FP8E5M2、DT_FP4E2M1和DT_FP4E1M2，layout必须为NZ，K必须与rhs_tile的K维一致且为64的倍数。 |
+| rhs_tile | 输入 | 源操作数（B，右矩阵），Tile类型，存储空间为L0B Buffer，形状为[K, N]，数据类型支持DT_FP8E4M3FN、DT_FP8E5M2、DT_FP4E2M1和DT_FP4E1M2。与lhs_tile的数据类型可以不同，但必须同时选自DT_FP8E4M3FN、DT_FP8E5M2，或同时选自DT_FP4E2M1、DT_FP4E1M2。layout必须为ZN，K必须与lhs_tile的K维一致且为64的倍数。 |
+| scale_a | 输入 | 源操作数（左量化系数矩阵），Tile类型，存储空间为L0A_MX Buffer，数据类型为DT_FP8E8M0，形状为[M, K/32]，layout默认且仅支持ZZ，fractal默认且仅支持32。每个量化系数对应A矩阵K方向连续32个元素。 |
+| scale_b | 输入 | 源操作数（右量化系数矩阵），Tile类型，存储空间为L0B_MX Buffer，数据类型为DT_FP8E8M0，形状为[K/32, N]，layout默认且仅支持NN，fractal默认且仅支持32。每个量化系数对应B矩阵K方向连续32个元素。 |
 | phase | 输入 | K维分块累加阶段，[pypto_pro.language.AccPhase](../basic_data_structures/AccPhase.md)类型，可选，用于控制矩阵计算与L0C Buffer数据搬出之间的UnitFlag同步。与[pypto_pro.language.STPhase](../basic_data_structures/STPhase.md)的配合方式见[AccPhase与STPhase配合使用说明](phase.md)。 |
 
 ## 约束说明
@@ -66,7 +66,7 @@ pypto_pro.language.matmul_mx(
 
 ### MXFP8矩阵乘
 
-下面计算C[128, 128] = A[128, 128] @ B[128, 128]。A和B的K方向均包含4个量化系数分组，因此scale_a/scale_b Tile的逻辑shape分别为[128, 4]和[4, 128]，GM中的Tensor物理shape分别为[128, 2, 2]和[2, 128, 2]。
+下面计算C[128, 128] = A[128, 128] @ B[128, 128]。A和B的K方向均包含4个量化系数分组，因此scale_a/scale_b Tile的逻辑形状分别为[128, 4]和[4, 128]，GM中的Tensor物理形状分别为[128, 2, 2]和[2, 128, 2]。
 
 ```python
 import os
@@ -161,7 +161,7 @@ if __name__ == "__main__":
 
 ### MXFP4矩阵乘
 
-下面计算C[128, 128] = A[128, 128] @ B[128, 128]。A和B的K方向均包含4个量化系数分组，因此scale_a/scale_b Tile的逻辑shape分别为[128, 4]和[4, 128]，GM中的Tensor物理shape分别为[128, 2, 2]和[2, 128, 2]。FP4矩阵在运行时以uint8存储，每字节打包两个FP4元素。
+下面计算C[128, 128] = A[128, 128] @ B[128, 128]。A和B的K方向均包含4个量化系数分组，因此scale_a/scale_b Tile的逻辑形状分别为[128, 4]和[4, 128]，GM中的Tensor物理形状分别为[128, 2, 2]和[2, 128, 2]。FP4矩阵在运行时以uint8存储，每字节打包两个FP4元素。
 
 ```python
 import os
