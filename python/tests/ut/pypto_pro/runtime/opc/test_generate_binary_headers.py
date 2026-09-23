@@ -16,10 +16,20 @@ from dataclasses import dataclass
 import importlib
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
+from asc_op_compile_base.asc_op_compiler.ascendc_constants import KernelMetaType
 from pypto_pro._errors import InvalidArgument
 import pypto_pro.language as pl
 from pypto_pro.runtime.opc.pypto_compile import (
+    _build_compile_info,
+    _build_tiling_info,
+    _compile_core_names,
+    _compile_target_name,
+    _compile_target_options,
+    _gen_infer_cpp,
+    _kernel_type_from_codegen,
+    _kernel_type_from_target,
     _load_kernel,
     generate_binary_headers,
     prepare_binary_headers,
@@ -125,6 +135,153 @@ def test_pypto_compile_op_sets_up_explicit_arch(monkeypatch):
         pypto_compile_op("unused.py", "kernel", {"kernel_name": "kernel"}, arch="a5")
 
     assert received_arch == ["a5"]
+
+
+@pytest.mark.parametrize(
+    "aic_per_block,aiv_per_block,expected",
+    [
+        (1, 0, KernelMetaType.KERNEL_TYPE_AIC_ONLY),
+        (0, 1, KernelMetaType.KERNEL_TYPE_AIV_ONLY),
+        (1, 1, KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1),
+        (1, 2, KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2),
+    ],
+)
+def test_kernel_type_from_target_uses_configured_core_ratio(aic_per_block, aiv_per_block, expected):
+    target = SimpleNamespace(aic_per_block=aic_per_block, aiv_per_block=aiv_per_block)
+
+    assert _kernel_type_from_target(target) is expected
+
+
+@pytest.mark.parametrize(
+    "has_cube,has_vector,expected",
+    [
+        (True, False, KernelMetaType.KERNEL_TYPE_AIC_ONLY),
+        (False, True, KernelMetaType.KERNEL_TYPE_AIV_ONLY),
+        (True, True, KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2),
+    ],
+)
+def test_kernel_type_from_codegen_reuses_a5_target_config(has_cube, has_vector, expected):
+    codegen_result = SimpleNamespace(has_cube=has_cube, has_vector=has_vector)
+
+    assert _kernel_type_from_codegen(codegen_result, "a5") is expected
+
+
+@pytest.mark.parametrize(
+    "kernel_type,expected",
+    [
+        (KernelMetaType.KERNEL_TYPE_AIC_ONLY, ("cube",)),
+        (KernelMetaType.KERNEL_TYPE_AIV_ONLY, ("vec",)),
+        (KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1, ("cube", "vec")),
+        (KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2, ("cube", "vec")),
+    ],
+)
+def test_compile_core_names_follow_kernel_type(kernel_type, expected):
+    assert _compile_core_names(kernel_type) == expected
+
+
+def test_compile_target_name_uses_mix_suffix_only_for_mixed_kernel():
+    assert _compile_target_name("probe", "3", "cube", KernelMetaType.KERNEL_TYPE_AIC_ONLY) == "probe_3"
+    assert (
+        _compile_target_name("probe", "3", "cube", KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2)
+        == "probe_3_mix_aic"
+    )
+    assert (
+        _compile_target_name("probe", "3", "vec", KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2)
+        == "probe_3_mix_aiv"
+    )
+
+
+@pytest.mark.parametrize(
+    "kernel_type,expected",
+    [
+        (KernelMetaType.KERNEL_TYPE_AIC_ONLY, ["-DRAW_AIC_ONLY_DUMP_TENSOR"]),
+        (KernelMetaType.KERNEL_TYPE_AIV_ONLY, []),
+        (
+            KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1,
+            ["-D__MIX_CORE_MACRO__=1", "-D__MIX_CORE_AIC_RATION__=1"],
+        ),
+        (
+            KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2,
+            ["-D__MIX_CORE_MACRO__=1", "-D__ASCENDC_ENABLE_VEC_TAIL_TILING_COPY__"],
+        ),
+    ],
+)
+def test_compile_target_options_match_c310_compile_op(kernel_type, expected):
+    assert _compile_target_options(kernel_type, enable_c310_rules=True) == expected
+
+
+def test_infer_cpp_uses_resolved_kernel_type():
+    codegen_result = SimpleNamespace(entry_params=[], kernel_name="probe")
+
+    source = _gen_infer_cpp(
+        codegen_result,
+        "ProbeKey_tilingkey.h",
+        "",
+        KernelMetaType.KERNEL_TYPE_AIV_ONLY,
+    )
+
+    assert "KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);" in source
+    assert "KERNEL_TYPE_MIX_AIC_1_2" not in source
+
+
+@pytest.mark.parametrize(
+    "kernel_type,expected_task_ration",
+    [
+        (KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1, 1),
+        (KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2, 2),
+        (KernelMetaType.KERNEL_TYPE_AIV_ONLY, 2),
+    ],
+)
+def test_build_tiling_info_uses_inferred_kernel_type(monkeypatch, kernel_type, expected_task_ration):
+    compile_module = importlib.import_module("pypto_pro.runtime.opc.pypto_compile")
+    tiling_info = SimpleNamespace(task_ration=2)
+    monkeypatch.setattr(compile_module, "get_tiling_info_by_tiling", lambda *args: tiling_info)
+
+    result = _build_tiling_info({}, SimpleNamespace(default_kernel_type=kernel_type), None, "probe")
+
+    assert result.task_ration == expected_task_ration
+
+
+def test_build_compile_info_uses_inferred_kernel_types_and_filtered_keys(monkeypatch, tmp_path):
+    compile_module = importlib.import_module("pypto_pro.runtime.opc.pypto_compile")
+    inferred_kernel_types = {
+        "1": KernelMetaType.KERNEL_TYPE_AIV_ONLY,
+        "2": KernelMetaType.KERNEL_TYPE_AIV_ONLY,
+    }
+    inferred_info = SimpleNamespace(
+        code_channel=1,
+        tiling_key_list=["1", "2"],
+        tiling_key_group_map={},
+        hard_sync=False,
+        enable_deterministic=False,
+        tiling_key_deterministic={},
+        tiling_key_kernel_type=inferred_kernel_types,
+        no_set_kernel_type=False,
+        default_kernel_type=KernelMetaType.KERNEL_TYPE_AIV_ONLY,
+        template_tiling_info=None,
+        tiling_key_struct_map={},
+        register_tiling_struct=set(),
+        tpl_tiling_struct=set(),
+    )
+    monkeypatch.setattr(compile_module.CommonUtility, "get_kernel_meta_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(compile_module, "handle_sk_codegen_options", lambda *args: None)
+
+    compile_info = _build_compile_info(
+        "probe.cpp",
+        "probe",
+        "probe_origin",
+        {"op_type": "Probe"},
+        inferred_info,
+        ["2"],
+        None,
+    )
+
+    assert compile_info.tiling_key_list == ["2"]
+    assert compile_info.default_kernel_type == KernelMetaType.KERNEL_TYPE_AIV_ONLY
+    assert compile_info.no_set_kernel_type is False
+    assert compile_info.tiling_key_kernel_type is inferred_kernel_types
+    assert compile_info.raw_tiling_key_kernel_type == inferred_kernel_types
+    assert compile_info.raw_tiling_key_kernel_type is not inferred_kernel_types
 
 
 @pytest.mark.parametrize("kernel_count", [0, 2])

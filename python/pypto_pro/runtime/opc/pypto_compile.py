@@ -29,8 +29,8 @@ concrete key, while **reusing the real ``asc_op_compile_base`` backend leaves** 
 - ``fatbin_objs`` — the fat ``.o`` link;
 - ``CommonUtility.get_kernel_meta_dir`` / ``get_distinct_filename_tag`` — the real flat ``kernel_meta`` layout.
 
-Artifacts land flat in ``kernel_meta`` exactly like the real compiler: ``<kernel>_mix_aic_<tk>.o`` /
-``<kernel>_mix_aiv_<tk>.o`` per (tilingkey, core), one fat ``<kernel>.o`` and ``<kernel>.json``. Per-key
+Artifacts land flat in ``kernel_meta`` exactly like the real compiler: one per-key object for every
+physical core required by the inferred kernel type, one fat ``<kernel>.o`` and ``<kernel>.json``. Per-key
 codegen output (``kernel.cpp`` + the per-key wrapper ``.cpp``) is kept on disk for debugging (not cleaned).
 The json path is recorded via ``op_context.add_build_res("json_file_path", ...)`` so the reused
 ``SingleOpCompile`` picks it up and ``SingleOpPostCompile`` appends ``supportInfo``.
@@ -73,6 +73,7 @@ from asc_op_compile_base.asc_op_compiler.ascendc_constants import (
     MIX_CORE_MACRO,
     TILING_KEY_MACRO,
     CompileOptionTuple,
+    KernelMetaType,
 )
 from asc_op_compile_base.asc_op_compiler.compile_op import (
     _add_op_compile_options_by_customized_json,
@@ -90,6 +91,7 @@ from asc_op_compile_base.common.context import op_context
 from asc_op_compile_base.common.utils import log as logger
 
 from pypto_pro import DataType
+from pypto_pro.runtime.compile_config import get_jit_compile_config
 
 from ..._errors import (
     InvalidArgument,
@@ -101,11 +103,17 @@ from ..._errors import (
     message_of,
 )
 
-# (AscendC core channel, kernel symbol/meta suffix, compile-make suffix)
-_MIX_CORE_COMPILE_TARGETS = (
-    (CORE_TYPE_CUBE, "mix_aic", "aic"),
-    (CORE_TYPE_VEC, "mix_aiv", "aiv"),
-)
+# (AscendC core channel, object suffix, compile-make suffix)
+_CORE_COMPILE_TARGETS = {
+    "cube": (CORE_TYPE_CUBE, "mix_aic", "aic"),
+    "vec": (CORE_TYPE_VEC, "mix_aiv", "aiv"),
+}
+_KERNEL_TYPE_BY_CORE_RATIO = {
+    (1, 0): KernelMetaType.KERNEL_TYPE_AIC_ONLY,
+    (0, 1): KernelMetaType.KERNEL_TYPE_AIV_ONLY,
+    (1, 1): KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1,
+    (1, 2): KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2,
+}
 _ORIG_DTYPE_TO_PYPTO = {
     "dt_bool": DataType.BOOL,
     "dt_int8": DataType.INT8,
@@ -239,7 +247,65 @@ def _signature_parts(entry_params):
     return ", ".join(decls), names
 
 
-def _gen_infer_cpp(cg, tilingkey_header: str, kernel_cpp: str) -> str:
+def _kernel_type_from_target(target) -> KernelMetaType:
+    kernel_type = _KERNEL_TYPE_BY_CORE_RATIO.get((target.aic_per_block, target.aiv_per_block))
+    if kernel_type is None:
+        raise InvalidVal(
+            "PyPTO OPC does not support the resolved core ratio "
+            f"{target.aic_per_block}:{target.aiv_per_block}"
+        )
+    return kernel_type
+
+
+def _kernel_type_from_codegen(cg, arch: str) -> KernelMetaType:
+    target = get_jit_compile_config().resolve_kernel_target(
+        arch,
+        has_cube=cg.has_cube,
+        has_vector=cg.has_vector,
+    )
+    return _kernel_type_from_target(target)
+
+
+def _compile_core_names(kernel_type: KernelMetaType) -> tuple[str, ...]:
+    if kernel_type == KernelMetaType.KERNEL_TYPE_AIC_ONLY:
+        return ("cube",)
+    if kernel_type == KernelMetaType.KERNEL_TYPE_AIV_ONLY:
+        return ("vec",)
+    if kernel_type in {
+        KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1,
+        KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2,
+    }:
+        return ("cube", "vec")
+    raise InvalidVal(f"PyPTO OPC does not support kernel type {kernel_type.name}")
+
+
+def _compile_target_name(kernel_name: str, tiling_key: str, core_name: str, kernel_type: KernelMetaType) -> str:
+    target_name = f"{kernel_name}_{tiling_key}"
+    if kernel_type in {
+        KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1,
+        KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2,
+    }:
+        target_name += "_mix_aic" if core_name == "cube" else "_mix_aiv"
+    return target_name
+
+
+def _compile_target_options(kernel_type: KernelMetaType, enable_c310_rules: bool) -> list[str]:
+    options = []
+    if kernel_type in {
+        KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1,
+        KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2,
+    }:
+        options.append(f"-D{MIX_CORE_MACRO}=1")
+    if kernel_type == KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1:
+        options.append("-D__MIX_CORE_AIC_RATION__=1")
+    if enable_c310_rules and kernel_type == KernelMetaType.KERNEL_TYPE_MIX_AIC_1_2:
+        options.append("-D__ASCENDC_ENABLE_VEC_TAIL_TILING_COPY__")
+    if enable_c310_rules and kernel_type == KernelMetaType.KERNEL_TYPE_AIC_ONLY:
+        options.append("-DRAW_AIC_ONLY_DUMP_TENSOR")
+    return options
+
+
+def _gen_infer_cpp(cg, tilingkey_header: str, kernel_cpp: str, kernel_type: KernelMetaType) -> str:
     sig, names = _signature_parts(cg.entry_params)
     ws_idx = len(names) - 2 if len(names) >= 2 else None
     inner = list(names)
@@ -256,7 +322,7 @@ def _gen_infer_cpp(cg, tilingkey_header: str, kernel_cpp: str) -> str:
         f"{kernel_cpp}\n"
         f'extern "C" __global__ AICORE void {cg.kernel_name}({sig})\n'
         "{\n"
-        f"    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);\n"
+        f"    KERNEL_TASK_TYPE_DEFAULT({kernel_type.name});\n"
         f"{ws_lines}"
         f"    {cg.kernel_name}_impl({', '.join(inner)});\n"
         "}\n"
@@ -271,7 +337,7 @@ def _prepare_infer_cpp(
     cce_file: str,
     kernel_name: str,
     kernel_meta_dir: str,
-) -> str:
+) -> tuple[str, KernelMetaType]:
     """Generate the infer source from one default legal TilingKey and prepare its headers."""
     from pypto_pro.runtime.jit import _codegen
 
@@ -289,6 +355,7 @@ def _prepare_infer_cpp(
     )
     if infer_cg is None:
         raise RuntimeFailure(f"pypto codegen failed for default tilingkey {default_tiling_key}")
+    kernel_type = _kernel_type_from_codegen(infer_cg, arch)
     for header in (name for name in os.listdir(infer_cg.build_dir) if name.endswith(".h")):
         shutil.copyfile(os.path.join(infer_cg.build_dir, header), os.path.join(kernel_meta_dir, header))
     tilingkey_header = f"{schema.cls_name}_tilingkey.h"
@@ -298,8 +365,8 @@ def _prepare_infer_cpp(
     )
     kernel_cpp = Path(infer_cg.build_dir, "kernel.cpp").read_text(encoding="utf-8")
     infer_cpp_path = os.path.join(kernel_meta_dir, f"{kernel_name}_pypto_infer.cpp")
-    _write(infer_cpp_path, _gen_infer_cpp(infer_cg, tilingkey_header, kernel_cpp))
-    return infer_cpp_path
+    _write(infer_cpp_path, _gen_infer_cpp(infer_cg, tilingkey_header, kernel_cpp, kernel_type))
+    return infer_cpp_path, kernel_type
 
 
 def generate_binary_headers(kernel, arch="a5") -> str:
@@ -458,7 +525,27 @@ def _prepare_dfx(op_info, tiling_info: TilingInfo, compile_info: CompileInfo) ->
     return dfx_op_info
 
 
-def _build_compile_info(cce_file, kernel_name, origin_func_name, op_info, infered_info_from_ifile, compile_log_path):
+def _build_tiling_info(op_info, infered_info_from_ifile, value_depend, origin_func_name):
+    tiling_info = get_tiling_info_by_tiling(
+        op_info,
+        infered_info_from_ifile,
+        value_depend,
+        origin_func_name,
+    )
+    if infered_info_from_ifile.default_kernel_type == KernelMetaType.KERNEL_TYPE_MIX_AIC_1_1:
+        tiling_info.task_ration = 1
+    return tiling_info
+
+
+def _build_compile_info(
+    cce_file,
+    kernel_name,
+    origin_func_name,
+    op_info,
+    infered_info_from_ifile,
+    tiling_key_list,
+    compile_log_path,
+):
     compile_info = CompileInfo()
     compile_info.src_file = cce_file
     compile_info.dst_file = os.path.join(CommonUtility.get_kernel_meta_dir(), f"{kernel_name}.o")
@@ -466,7 +553,7 @@ def _build_compile_info(cce_file, kernel_name, origin_func_name, op_info, infere
     compile_info.origin_func_name = origin_func_name
     compile_info.op_type = _op_info_get(op_info, "op_type")
     compile_info.code_channel = infered_info_from_ifile.code_channel
-    compile_info.tiling_key_list = infered_info_from_ifile.tiling_key_list
+    compile_info.tiling_key_list = tiling_key_list
     compile_info.tiling_key_group_map = infered_info_from_ifile.tiling_key_group_map
     compile_info.compile_log_path = compile_log_path
     compile_info.hard_sync = infered_info_from_ifile.hard_sync
@@ -505,13 +592,16 @@ def _gen_meta_sections(kernel_name, packed, tiling_info: TilingInfo, compile_inf
     dfx_generator = DFXSectionGenerator()
     dfx_generator.gen_dfx_struct_flag = False
     old_sub_core_type = compile_info.sub_core_type
-    for core_type, channel, _short in _MIX_CORE_COMPILE_TARGETS:
-        section_kernel = f"{kernel_name}_{packed}_{channel}"
+    tiling_key = str(packed)
+    kernel_type = compile_info.tiling_key_kernel_type[tiling_key]
+    for core_name in _compile_core_names(kernel_type):
+        core_type, _channel, _short = _CORE_COMPILE_TARGETS[core_name]
+        section_kernel = _compile_target_name(kernel_name, tiling_key, core_name, kernel_type)
         out.append(
             get_ktype_section_variable(
                 f"{section_kernel}_section",
                 section_kernel,
-                compile_info.tiling_key_kernel_type[str(packed)],
+                kernel_type,
             )
         )
         compile_info.sub_core_type = core_type
@@ -528,6 +618,7 @@ def _gen_key_src(kernel_cpp_path, origin_func, impl_name, entry_params, kernel_n
     sig, names = _signature_parts(entry_params)
     _ws_idx = len(names) - 2 if len(names) >= 2 else None
     inner = list(names)
+    kernel_type = compile_info.tiling_key_kernel_type[str(packed)]
     return (
         '#include "kernel_operator.h"\n'
         f'#include "{kernel_cpp_path}"\n'
@@ -537,7 +628,7 @@ def _gen_key_src(kernel_cpp_path, origin_func, impl_name, entry_params, kernel_n
         "}\n"
         f'extern "C" __global__ AICORE void auto_gen_{origin_func}_kernel({sig})\n'
         "{\n"
-        f"    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);\n"
+        f"    KERNEL_TASK_TYPE_DEFAULT({kernel_type.name});\n"
         f"    ascendc_auto_gen_{origin_func}_kernel({', '.join(names)});\n"
         "}\n" + _gen_meta_sections(kernel_name, packed, tiling_info, compile_info)
     )
@@ -618,7 +709,7 @@ def pypto_compile_op(
     if global_var_storage.get_variable("ascendc_compile_debug_config"):
         compile_log_path = os.path.join(kernel_meta_dir, kernel_name + distinct_tag + ".log")
 
-    infer_cpp_path = _prepare_infer_cpp(
+    infer_cpp_path, kernel_type = _prepare_infer_cpp(
         kernel,
         schema,
         dtype_consts,
@@ -640,7 +731,7 @@ def pypto_compile_op(
     )
     is_const_propagation = "-DFORCE_TILING_CONST_PROPAGATION" in opt.compile_options
     global_var_storage.set_variable("ascendc_tiling_const_propagation", is_const_propagation)
-    tiling_info = get_tiling_info_by_tiling(
+    tiling_info = _build_tiling_info(
         op_info,
         infered_info,
         extend_options.get("valueDepend"),
@@ -650,8 +741,15 @@ def pypto_compile_op(
     tiling_info.save_file(tiling_data_file_path)
     global_var_storage.set_variable("ascendc_is_static_op", tiling_info.static_shape_flag)
     tiling_keys = _filter_tiling_keys(infered_info.tiling_key_list, extend_options, ctx, kernel_name)
-    compile_info = _build_compile_info(cce_file, kernel_name, origin_func_name, op_info, infered_info, compile_log_path)
-    compile_info.tiling_key_list = tiling_keys
+    compile_info = _build_compile_info(
+        cce_file,
+        kernel_name,
+        origin_func_name,
+        op_info,
+        infered_info,
+        tiling_keys,
+        compile_log_path,
+    )
     logger.info(
         "pypto_compile_op: op=%s kernel_name=%s arch=%s keys=%d dtype=%s -> %s",
         _op_info_get(op_info, "op_type"),
@@ -664,7 +762,8 @@ def pypto_compile_op(
 
     op_info = _prepare_dfx(op_info, tiling_info, compile_info)
     obj_files: list[str] = []
-    cmds_by_core: dict[str, list] = {ch: [] for _, ch, _short in _MIX_CORE_COMPILE_TARGETS}
+    cmds_by_core: dict[str, list] = {core: [] for core in _CORE_COMPILE_TARGETS}
+    tiling_keys_by_core: dict[str, list] = {core: [] for core in _CORE_COMPILE_TARGETS}
     compile_options_ready = False
     for tiling_key in tiling_keys:
         packed = int(tiling_key)
@@ -684,6 +783,11 @@ def pypto_compile_op(
         )
         if cg is None:
             raise RuntimeFailure(f"pypto codegen failed for tilingkey {packed}")
+        if _kernel_type_from_codegen(cg, arch) != kernel_type:
+            raise InvalidOperation(
+                "PyPTO OPC requires one kernel type for all tiling keys, but codegen "
+                f"resolved a different type for tiling key {packed}"
+            )
         origin_func = cg.kernel_name
         impl_name = f"{origin_func}_impl"
         if not compile_options_ready:
@@ -708,24 +812,31 @@ def pypto_compile_op(
         src_path = os.path.join(kernel_meta_dir, f"{kernel_name}_{packed}_kernel.cpp")
         _write(src_path, src)
 
-        for core_type, channel, _short in _MIX_CORE_COMPILE_TARGETS:
+        for core_name in _compile_core_names(kernel_type):
+            core_type, channel, _short = _CORE_COMPILE_TARGETS[core_name]
             dst_o = os.path.join(kernel_meta_dir, f"{kernel_name}_{channel}_{packed}.o")
             sub_arch = _core_arch(core_type)
             cmd = gen_compile_cmd_v220(src_path, dst_o, opt, sub_arch, "")  # kernel.cpp self-includes its tiling.h
             cmd += [f"-D{TILING_KEY_MACRO}={packed}UL"]
-            cmd += [f"-D{MIX_CORE_MACRO}=1"]
-            if CommonUtility.is_c310():
-                cmd += ["-D__ASCENDC_ENABLE_VEC_TAIL_TILING_COPY__"]
-            cmd += [f"-Dauto_gen_{origin_func}_kernel={kernel_name}_{packed}_{channel}"]
+            cmd += _compile_target_options(kernel_type, CommonUtility.is_c310())
+            target_name = _compile_target_name(kernel_name, str(packed), core_name, kernel_type)
+            cmd += [f"-Dauto_gen_{origin_func}_kernel={target_name}"]
             cmd += [f"-D{impl_name}={impl_name}_{packed}"]
-            cmds_by_core[channel].append(cmd)
+            cmds_by_core[core_name].append(cmd)
+            tiling_keys_by_core[core_name].append(packed)
             obj_files.append(dst_o)
 
     # Per-key compile via the real backend: compile_multi_tilingkey writes <op>_tmp_<core>_<pid>.mk (one
     # target per tilingkey, +a -E precompile line under dump_cce) and runs `make -j`, exactly as
     # compile_op's compile_kernel_and_meta does. One .mk per core (aic/aiv), mirroring the golden layout.
-    for _core_type, channel, short in _MIX_CORE_COMPILE_TARGETS:
-        compile_multi_tilingkey(tiling_keys, cmds_by_core[channel], f"{kernel_name}_tmp_{short}", compile_log_path)
+    for core_name, (_core_type, _channel, short) in _CORE_COMPILE_TARGETS.items():
+        if cmds_by_core[core_name]:
+            compile_multi_tilingkey(
+                tiling_keys_by_core[core_name],
+                cmds_by_core[core_name],
+                f"{kernel_name}_tmp_{short}",
+                compile_log_path,
+            )
     # compile_multi_tilingkey swallows make failures unless build-log is enabled; verify every obj landed.
     missing = [o for o in obj_files if not os.path.exists(o)]
     if missing:
