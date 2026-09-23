@@ -13,7 +13,15 @@
 import inspect
 
 from pypto_pro import ir
-from pypto_pro._errors import InvalidArgument, InvalidFormat, InvalidTile, InvalidType, InvalidVal, NotSupported
+from pypto_pro._errors import (
+    InvalidArgument,
+    InvalidFormat,
+    InvalidShape,
+    InvalidTile,
+    InvalidType,
+    InvalidVal,
+    NotSupported,
+)
 import pypto_pro.language as pl
 import pytest
 
@@ -1026,3 +1034,185 @@ def test_high_dimensional_nz_store_rejects_non_final_transfer_axes():
             pl.store(out, tile, [0, 0, 0, 0], order=[1, 3])
 
         main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+# ===========================================================================
+# order kwarg length / rank-1 validation (load / store paths)
+# ===========================================================================
+
+
+def test_load_rejects_length1_order():
+    with pytest.raises(InvalidShape, match="load: order must be a 2-element list, got 1"):
+
+        @pl.jit(auto_mutex=False)
+        def main(a: pl.Tensor[[64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.load(tile, a, [0, 0], order=[0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_load_rejects_empty_order():
+    with pytest.raises(InvalidShape, match="load: order must be a 2-element list, got 0"):
+
+        @pl.jit(auto_mutex=False)
+        def main(a: pl.Tensor[[64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.load(tile, a, [0, 0], order=[])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_load_rejects_length3_order_on_rank3_tensor():
+    """Before the length check this crashed with a bare IndexError instead of a diagnostic."""
+    with pytest.raises(InvalidShape, match="load: order must be a 2-element list, got 3"):
+
+        @pl.jit(auto_mutex=False)
+        def main(a: pl.Tensor[[4, 64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.load(tile, a, [0, 0, 0], order=[0, 1, 2])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_store_rejects_length1_order():
+    with pytest.raises(InvalidShape, match="store: order must be a 2-element list, got 1"):
+
+        @pl.jit(auto_mutex=False)
+        def main(out: pl.Tensor[[64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.store(out, tile, [0, 0], order=[0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_load_rejects_order_on_rank1_tensor():
+    """Rank-1 tensors express the axis mapping through the Tile shape; order has no meaning."""
+    with pytest.raises(InvalidArgument, match="load: order is not supported for rank-1 Tensors"):
+
+        @pl.jit(auto_mutex=False)
+        def main(a: pl.Tensor[[1024], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[1, 1024], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.load(tile, a, [0], order=[0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_rank1_load_without_order_accepted():
+    """The no-order rank-1 path must keep working: the axis mapping comes from the tile shape."""
+
+    @pl.jit(auto_mutex=False)
+    def main(a: pl.Tensor[[1024], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[1, 1024], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        tile = pl.make_tile(tile_type, addr=0x0000)
+        pl.load(tile, a, [0])
+
+    main_program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    ir_str = _program_ir(main_program.get_function(main.__name__))
+    assert "block.load" in ir_str
+    assert "tile_dims" not in ir_str
+
+
+def test_load_accepts_explicit_2_element_order():
+    """A spelled-out legal order is preserved into the IR kwargs verbatim."""
+
+    @pl.jit(auto_mutex=False)
+    def main(a: pl.Tensor[[64, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        tile = pl.make_tile(tile_type, addr=0x0000)
+        pl.load(tile, a, [0, 0], order=[0, 1])
+
+    main_program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    ir_str = _program_ir(main_program.get_function(main.__name__))
+    assert "block.load" in ir_str
+    assert "tile_dims=[0, 1]" in ir_str
+
+
+def test_load_order_value_range_still_enforced():
+    with pytest.raises(InvalidShape, match="order axis 2 is out of range for Tensor rank 2"):
+
+        @pl.jit(auto_mutex=False)
+        def main(a: pl.Tensor[[64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.load(tile, a, [0, 0], order=[0, 2])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_load_order_uniqueness_still_enforced():
+    with pytest.raises(InvalidShape, match="order axes must be unique"):
+
+        @pl.jit(auto_mutex=False)
+        def main(a: pl.Tensor[[64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.load(tile, a, [0, 0], order=[0, 0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_load_tile_rejects_length1_order():
+    with pytest.raises(InvalidShape, match="load_tile: order must be a 2-element list, got 1"):
+
+        @pl.jit(auto_mutex=False)
+        def main(a: pl.Tensor[[64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.load_tile(tile, a, [0, 0], order=[0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_load_tile_accepts_explicit_2_element_order():
+    @pl.jit(auto_mutex=False)
+    def main(a: pl.Tensor[[64, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        tile = pl.make_tile(tile_type, addr=0x0000)
+        pl.load_tile(tile, a, [0, 0], order=[0, 1])
+
+    main_program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    ir_str = _program_ir(main_program.get_function(main.__name__))
+    assert "block.load" in ir_str
+    assert "tile_dims=[0, 1]" in ir_str
+
+
+def test_store_accepts_explicit_2_element_order():
+    @pl.jit(auto_mutex=False)
+    def main(out: pl.Tensor[[64, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        tile = pl.make_tile(tile_type, addr=0x0000)
+        pl.store(out, tile, [0, 0], order=[0, 1])
+
+    main_program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    ir_str = _program_ir(main_program.get_function(main.__name__))
+    assert "block.store" in ir_str
+
+
+def test_store_tile_rejects_length1_order():
+    with pytest.raises(InvalidShape, match="store_tile: order must be a 2-element list, got 1"):
+
+        @pl.jit(auto_mutex=False)
+        def main(out: pl.Tensor[[64, 64], pl.DT_FP32]):
+            tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+            tile = pl.make_tile(tile_type, addr=0x0000)
+            pl.store_tile(out, tile, [0, 0], order=[0])
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+
+
+def test_store_tile_accepts_explicit_2_element_order():
+    @pl.jit(auto_mutex=False)
+    def main(out: pl.Tensor[[64, 64], pl.DT_FP32]):
+        tile_type = pl.TileType(shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+        tile = pl.make_tile(tile_type, addr=0x0000)
+        pl.store_tile(out, tile, [0, 0], order=[0, 1])
+
+    main_program, _ = main.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
+    ir_str = _program_ir(main_program.get_function(main.__name__))
+    assert "block.store" in ir_str
