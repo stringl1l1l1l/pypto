@@ -472,9 +472,13 @@
                 "fp16",
                 "float32",
                 "bf16",
+                "hf8",
                 "uint8",
                 "uint16",
-                "uint32"
+                "uint32",
+                "fp8e4m3",
+                "fp8e5m2",
+                "fp8e8m0"
             ]
         },
         "TRIUL": {

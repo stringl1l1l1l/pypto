@@ -472,7 +472,7 @@ void CodeGenNPU::GenAlloc(const std::shared_ptr<SymbolManager>& sm, BufferType b
 
     CODEGEN_LOGI("bind key to name: %s->%s", sm->FormatAllocKey(key).c_str(), allocVarName.c_str());
 
-    std::string dataTypeStr = DataType2CCEStr(tensor->Datatype());
+    std::string dataTypeStr = CodeGenDataTypeStr(tensor->Datatype());
     const std::string& addrSpaceQualifier = OPERAND_TYPE_TO_ADDR_TYPE.at(bufferType);
 
     std::ostringstream allocNormal;

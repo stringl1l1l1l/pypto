@@ -234,7 +234,7 @@ TEST_F(GenerateMoveOpPassTest, ConvertToCopy)
         constexpr int expectedCopyOut = 1;
         EXPECT_EQ(view_num, expectedView) << "0 operations should be OP_VIEW";
         EXPECT_EQ(assemble_num, expectedAssemble) << "0 operations should be OP_ASSEMBLE";
-        EXPECT_EQ(copy_in_num, expectedCopyIn) << "4 operations should be OP_COPY_IN";
+        EXPECT_EQ(copy_in_num, expectedCopyIn) << "2 operations should be OP_COPY_IN";
         EXPECT_EQ(copy_out_num, expectedCopyOut) << "3 operations should be OP_COPY_OUT";
     }
 }
@@ -285,8 +285,8 @@ TEST_F(GenerateMoveOpPassTest, Transpose)
 
         // ================== Verify Pass Effect ==================
         auto updatedOperations = Program::GetInstance().GetFunctionByRawName("TENSOR_Tranpose")->Operations();
-        constexpr int expectedOperations = 12;
-        EXPECT_EQ(updatedOperations.size(), expectedOperations) << "total 12 operations";
+        constexpr int expectedOperations = 2;
+        EXPECT_EQ(updatedOperations.size(), expectedOperations) << "total 2 operations";
         int assemble_num = 0;
         int view_num = 0;
         int copy_in_num = 0;
@@ -329,18 +329,18 @@ TEST_F(GenerateMoveOpPassTest, Transpose)
             }
         }
         constexpr int expectedView = 0;
-        constexpr int expectedCopyIn = 4;
-        constexpr int expectedAssemble = 4;
+        constexpr int expectedCopyIn = 1;
+        constexpr int expectedAssemble = 0;
         constexpr int expectedCopyOut = 0;
         constexpr int expectedSlice = 0;
         constexpr int expectedContract = 0;
-        constexpr int expectedTransposeMoveout = 4;
-        EXPECT_EQ(assemble_num, expectedAssemble) << "4 operations should be OP_ASSEMBLE";
-        EXPECT_EQ(transpose_datamove_num, expectedTransposeMoveout) << "4 operations should be OP_TRANSPOSE_MOVEOUT";
+        constexpr int expectedTransposeMoveout = 1;
+        EXPECT_EQ(assemble_num, expectedAssemble) << "0 operations should be OP_ASSEMBLE";
+        EXPECT_EQ(transpose_datamove_num, expectedTransposeMoveout) << "1 operations should be OP_TRANSPOSE_MOVEOUT";
         EXPECT_EQ(view_num, expectedView) << "0 operations should be OP_VIEW";
         EXPECT_EQ(slice_num, expectedSlice) << "0 operations should be OP_SLICE";
         EXPECT_EQ(contract_num, expectedContract) << "0 operations should be OP_CONTRACT";
-        EXPECT_EQ(copy_in_num, expectedCopyIn) << "4 operations should be OP_COPY_IN";
+        EXPECT_EQ(copy_in_num, expectedCopyIn) << "1 operations should be OP_COPY_IN";
         EXPECT_EQ(copy_out_num, expectedCopyOut) << "0 operations should be OP_COPY_OUT";
     }
 }

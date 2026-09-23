@@ -22,35 +22,15 @@
 
 namespace npu::tile_fwk {
 
+constexpr int64_t MERGED_TILE_BUDGET_BYTES = 48 * 1024;
+
+static bool IsStaticFunction() { return Program::GetInstance().GetCurrentFunction()->IsStatic(); }
+
 enum class TransposeOpType {
     TRANSPOSE_MOVEIN,
     TRANSPOSE_MOVEOUT,
     TRANSPOSE_VNCHWCONV,
 };
-
-void CheckTransposeAxisCombination(int shapeSize, const std::vector<int>& perm)
-{
-    if (shapeSize == NUM_VALUE_4) {
-        std::vector<std::pair<int, int>> supported4D = {
-            {0, NUM_VALUE_2}, {1, NUM_VALUE_2}, {1, NUM_VALUE_3}, {NUM_VALUE_2, NUM_VALUE_3}};
-        bool isSupported = false;
-        for (const auto& axisPair : supported4D) {
-            if (perm[0] == axisPair.first && perm[1] == axisPair.second) {
-                isSupported = true;
-                break;
-            }
-        }
-        CHECK(VectorErrorCode::ERR_PARAM_INVALID, isSupported)
-            << "4D tensor transpose only supports: (0,2), (1,2), (1,3), (2,3). "
-            << "Current dim0=" << perm[0] << ", dim1=" << perm[1] << " is not supported.";
-    }
-
-    if (shapeSize == NUM_VALUE_5) {
-        CHECK(VectorErrorCode::ERR_PARAM_INVALID, perm[0] == NUM_VALUE_3 && perm[1] == NUM_VALUE_4)
-            << "5D tensor transpose only supports: (3,4). "
-            << "Current dim0=" << perm[0] << ", dim1=" << perm[1] << " is not supported.";
-    }
-}
 
 template <TransposeOpType T>
 Opcode GetTransposeOpName()
@@ -75,7 +55,11 @@ inline void UnalignPadTmpBufTile(std::vector<int64_t>& shape, int blockElem, Dat
     if (size >= NUM_VALUE_2) {
         int64_t alignSize = VNCHWCONV_REPEAT;
         if (BytesOf(dtype) == 1) {
-            alignSize = BLOCK_SIZE; // 1字节dtype按32对齐
+            alignSize = BLOCK_SIZE;
+        }
+        if (BytesOf(dtype) == NUM_VALUE_2 && shape[size - 1] % VNCHWCONV_REPEAT == 0 &&
+            shape[size - 1] < 2 * VNCHWCONV_REPEAT) {
+            shape[size - 1] = 2 * VNCHWCONV_REPEAT;
         }
         shape[size - NUM_VALUE_2] = AlignUp(shape[size - NUM_VALUE_2], alignSize);
         shape[size - 1] = AlignUp(shape[size - 1], blockElem);
@@ -84,7 +68,8 @@ inline void UnalignPadTmpBufTile(std::vector<int64_t>& shape, int blockElem, Dat
 
 template <TransposeOpType T>
 void TiledInnerTranspose(Function& function, const TileShape& tileShape, const int cur, Input& input,
-                         const LogicalTensorPtr& result, const std::vector<int>& shape)
+                         const LogicalTensorPtr& result, const std::vector<int>& shape, int64_t maxMerge,
+                         int64_t baseBytes)
 {
     int shapeSize = input.tensor.GetShape().size();
     if (cur == shapeSize) {
@@ -98,9 +83,16 @@ void TiledInnerTranspose(Function& function, const TileShape& tileShape, const i
             auto& op = function.AddOperation(GetTransposeOpName<T>(), {tile}, {resultTile});
             op.SetAttribute(OP_ATTR_PREFIX + "shape", shape);
         } else {
-            std::vector<int64_t> tmpShape(input.tileInfo.shape);
             int64_t blockElem = BLOCK_SIZE / static_cast<int>(BytesOf(tile->Datatype()));
-            UnalignPadTmpBufTile(tmpShape, blockElem, tile->Datatype());
+            std::vector<int64_t> tmpShape;
+            if (BytesOf(tile->Datatype()) == NUM_VALUE_2 &&
+                Platform::Instance().GetSoc().GetNPUArch() == NPUArch::DAV_2201 &&
+                input.tensor.GetShape().size() == NUM_VALUE_2 && input.tensor.GetShape()[shape[1]] >= 512) {
+                tmpShape = {AlignUp(input.tileInfo.shape[shape[0]], (int64_t)VNCHWCONV_REPEAT), 2 * VNCHWCONV_REPEAT};
+            } else {
+                tmpShape = input.tileInfo.shape;
+                UnalignPadTmpBufTile(tmpShape, blockElem, tile->Datatype());
+            }
             auto tempTensor = std::make_shared<LogicalTensor>(function, tile->Datatype(), tmpShape);
             tempTensor->dynValidShape_ = SymbolicScalar::FromConcrete(tmpShape);
             auto& op = function.AddOperation(GetTransposeOpName<T>(), {tile}, {resultTile, tempTensor});
@@ -109,10 +101,55 @@ void TiledInnerTranspose(Function& function, const TileShape& tileShape, const i
         return;
     }
     auto& vecTile = tileShape.GetVecTile();
-    for (int i = 0; i < input.tensor.GetShape()[cur]; i += vecTile[cur]) {
-        input.tileInfo.shape[cur] = std::min(input.tensor.GetShape()[cur] - i, vecTile[cur]);
+    int64_t step = vecTile[cur];
+    if ((cur == shape[0] || (cur == shape[1] && input.tensor.GetShape().size() >= NUM_VALUE_3)) && maxMerge > 1) {
+        step = vecTile[cur] *
+               std::min<int64_t>(maxMerge, (input.tensor.GetShape()[cur] + vecTile[cur] - 1) / vecTile[cur]);
+        if (cur == shape[0] && T == TransposeOpType::TRANSPOSE_VNCHWCONV) {
+            int64_t tilesInRow = (input.tensor.GetShape()[cur] + vecTile[cur] - 1) / vecTile[cur];
+            int64_t step16 = (step / VNCHWCONV_REPEAT) * VNCHWCONV_REPEAT;
+            if (step16 >= vecTile[cur]) {
+                step = step16;
+            } else if (input.tensor.GetShape().size() >= NUM_VALUE_3) {
+                int64_t rows16 = std::min<int64_t>(VNCHWCONV_REPEAT, tilesInRow * vecTile[cur]);
+                step = std::max(step, rows16);
+            } else if (tilesInRow * vecTile[cur] >= VNCHWCONV_REPEAT) {
+                step = VNCHWCONV_REPEAT;
+            } else {
+                step = vecTile[cur];
+            }
+        }
+    }
+    if (cur == shape[1] && T == TransposeOpType::TRANSPOSE_VNCHWCONV) {
+        int64_t rowTile = input.tileInfo.shape[shape[0]];
+        int64_t dtypeBytes = BytesOf(input.tensor.GetDataType());
+        int64_t blockElem = BLOCK_SIZE / dtypeBytes;
+        int64_t padRows = AlignUp(rowTile, blockElem);
+        constexpr int64_t OP_UB_BUDGET_BYTES = 160 * 1024;
+        int64_t batchElems = 1;
+        for (int d = 0; d < cur; ++d) {
+            if (d != shape[0]) {
+                batchElems *= input.tileInfo.shape[d];
+            }
+        }
+        int64_t alignSize = (dtypeBytes == 1) ? BLOCK_SIZE : VNCHWCONV_REPEAT;
+        int64_t tmpRowsAligned = AlignUp(rowTile, alignSize);
+        bool b16SmallTmp = (dtypeBytes == NUM_VALUE_2) && (input.tensor.GetShape().size() == NUM_VALUE_2) &&
+                           (input.tensor.GetShape()[shape[1]] >= 512);
+        int64_t tmpCoef = b16SmallTmp ? 0 : tmpRowsAligned;
+        int64_t bytesPerCol = batchElems * (rowTile + padRows + tmpCoef) * dtypeBytes;
+        int64_t colStepMax = OP_UB_BUDGET_BYTES / bytesPerCol;
+        colStepMax = (colStepMax / blockElem) * blockElem;
+        if (BytesOf(input.tensor.GetDataType()) == NUM_VALUE_2 && rowTile < VNCHWCONV_REPEAT &&
+            input.tensor.GetShape()[cur] >= 4096) {
+            colStepMax = std::min<int64_t>(colStepMax, 1024);
+        }
+        step = std::min(step, std::max<int64_t>(colStepMax, blockElem));
+    }
+    for (int i = 0; i < input.tensor.GetShape()[cur]; i += step) {
+        input.tileInfo.shape[cur] = std::min(input.tensor.GetShape()[cur] - i, step);
         input.tileInfo.offset[cur] = i;
-        TiledInnerTranspose<T>(function, tileShape, cur + 1, input, result, shape);
+        TiledInnerTranspose<T>(function, tileShape, cur + 1, input, result, shape, maxMerge, baseBytes);
     }
 }
 
@@ -122,7 +159,22 @@ void TiledInnerTranspose(Function& function, const TileShape& tileShape, const L
 {
     TileInfo tileInfo(result->shape.size(), result->offset.size());
     auto input = Input{operand, tileInfo};
-    TiledInnerTranspose<T>(function, tileShape, 0, input, result, shape);
+    int64_t baseBytes = BytesOf(operand->Datatype());
+    const auto& vecTile = tileShape.GetVecTile();
+    for (int i = 0; i < (int)operand->shape.size(); ++i) {
+        baseBytes *= std::min<int64_t>(operand->shape[i], vecTile[i]);
+    }
+    int64_t maxMerge = baseBytes > 0 ? MERGED_TILE_BUDGET_BYTES / baseBytes : 1;
+    if (maxMerge > 1) {
+        auto dimMergeFactor = [&](int d) {
+            return std::min<int64_t>(maxMerge, (operand->shape[d] + vecTile[d] - 1) / vecTile[d]);
+        };
+        while (maxMerge > 1 &&
+               baseBytes * dimMergeFactor(shape[0]) * dimMergeFactor(shape[1]) > MERGED_TILE_BUDGET_BYTES) {
+            --maxMerge;
+        }
+    }
+    TiledInnerTranspose<T>(function, tileShape, 0, input, result, shape, maxMerge, baseBytes);
 }
 
 void TensorInnerTranspose(Function& function, const LogicalTensorPtr& self, const LogicalTensorPtr& result,
@@ -220,15 +272,34 @@ bool MergeTransposeAxis(const Tensor& operand, std::vector<int64_t>& inputShape,
         }
     }
 
+    if (operand.GetShape().size() <= NUM_VALUE_5 &&                             // tileop支持5维
+        oldTransposeShape[0] == (int)operand.GetShape().size() - NUM_VALUE_2 && // 最后2维转置
+        oldTransposeShape[1] == (int)operand.GetShape().size() - 1 &&
+        (IsStaticFunction() || BytesOf(operand.GetStorage()->Datatype()) != NUM_VALUE_2) &&
+        operand.GetShape()[oldTransposeShape[0]] > 1 && operand.GetShape()[oldTransposeShape[0]] < VNCHWCONV_REPEAT &&
+        (pre * operand.GetShape()[oldTransposeShape[0]] >= VNCHWCONV_REPEAT ||
+         operand.GetShape()[oldTransposeShape[1]] < 4096) &&
+        oldVecTileShapes[oldTransposeShape[1]] >= VNCHWCONV_REPEAT) {
+        if (preNum != 1 || afterNum > 0) {
+            return false;
+        }
+        inputShape.clear();
+        vecTileShape.clear();
+        validShape.clear();
+        inputShape.push_back(pre * operand.GetShape()[oldTransposeShape[0]]);
+        vecTileShape.push_back(preTileShape * oldVecTileShapes[oldTransposeShape[0]]);
+        validShape.push_back(preValidShape * oldValidShapes[oldTransposeShape[0]]);
+        inputShape.push_back(operand.GetShape()[oldTransposeShape[1]]);
+        vecTileShape.push_back(oldVecTileShapes[oldTransposeShape[1]]);
+        validShape.push_back(oldValidShapes[oldTransposeShape[1]]);
+        transposeShape[0] = 0;
+        transposeShape[1] = 1;
+        return true;
+    }
+
     if (preNum <= 1 && midNum <= 1 && afterNum <= 1) {
         return false;
     }
-    if (operand.GetShape().size() <= NUM_VALUE_5 &&                             // tileop支持5维
-        oldTransposeShape[0] == (int)operand.GetShape().size() - NUM_VALUE_2 && // 最后2维转置
-        oldTransposeShape[1] == (int)operand.GetShape().size() - 1) {
-        return false;
-    }
-
     // [A1,T1,A2,T2,A3]
     validShape.clear();
     if (preNum > 0) {
@@ -280,10 +351,31 @@ Tensor Transpose(const Tensor& self, std::vector<int> perm)
     CHECK(VectorErrorCode::ERR_PARAM_INVALID, perm[1] < shapeSize && perm[1] >= 0) << "Transpose dim 1 is invalid.";
 
     std::sort(perm.begin(), perm.end());
-    if ((self.GetShape()[perm[0]] == 1 && self.GetShape()[perm[1]] == 1) || perm[0] == perm[1]) {
-        return self;
+    if (self.GetShape()[perm[0]] == 1 || self.GetShape()[perm[1]] == 1 || perm[0] == perm[1]) {
+        if (self.GetShape()[perm[0]] == self.GetShape()[perm[1]]) {
+            return self;
+        }
+        const auto& vecTile = TileShape::Current().GetVecTile();
+        bool tileCoversBatch = true;
+        for (int d = 0; d < shapeSize; ++d) {
+            if (d != perm[0] && d != perm[1] && vecTile[d] < self.GetShape()[d]) {
+                tileCoversBatch = false;
+                break;
+            }
+        }
+        int otherTransposedDim = (self.GetShape()[perm[0]] == 1) ? perm[1] : perm[0];
+        bool otherDimNotCovered = vecTile[otherTransposedDim] < self.GetShape()[otherTransposedDim];
+        if (tileCoversBatch && otherDimNotCovered) {
+            std::vector<int64_t> resultShape(self.GetShape());
+            std::swap(resultShape[perm[0]], resultShape[perm[1]]);
+            auto validShapes = self.GetStorage()->GetDynValidShape();
+            if (validShapes.empty()) {
+                validShapes = SymbolicScalar::FromConcrete(self.GetShape());
+            }
+            std::swap(validShapes[perm[0]], validShapes[perm[1]]);
+            return Reshape(self, resultShape, validShapes);
+        }
     }
-    CheckTransposeAxisCombination(shapeSize, perm);
 
     auto oldVecTileShapes = TileShape::Current().GetVecTile();
     CHECK(VectorErrorCode::ERR_PARAM_INVALID, (int)oldVecTileShapes.size() == shapeSize)
@@ -314,6 +406,24 @@ Tensor Transpose(const Tensor& self, std::vector<int> perm)
     TileShape::Current().SetVecTile(newVecTileShape);
     auto tmpOutputTensor = Transpose(tmpInputTensor, newTransposeShape);
     TileShape::Current().SetVecTile(oldVecTileShapes);
+    if (newInputShape.size() == NUM_VALUE_2 && !IsStaticFunction()) {
+        int64_t rows = self.GetShape()[perm[0]];
+        int64_t cols = self.GetShape()[perm[1]];
+        int64_t pre = newInputShape[0] / rows;
+        std::vector<int64_t> tmp3DShape = {cols, pre, rows};
+        auto tmp3D = Reshape(tmpOutputTensor, tmp3DShape, SymbolicScalar::FromConcrete(tmp3DShape));
+        Tensor result(self.GetStorage()->Datatype(), resultShape);
+        result.GetStorage()->UpdateDynValidShape(oldValidShapes);
+        int64_t alignRows = BytesOf(self.GetStorage()->Datatype()) == NUM_VALUE_2 ? VNCHWCONV_REPEAT : 4;
+        int64_t rowSliceBytes = pre * AlignUp(rows, alignRows) * BytesOf(self.GetStorage()->Datatype());
+        int64_t kT = std::min(cols, 196608 / 3 / std::max<int64_t>(1, rowSliceBytes));
+        kT = std::max<int64_t>(1, kT / VNCHWCONV_REPEAT * VNCHWCONV_REPEAT);
+        TileShape::Current().SetVecTile({kT, pre, rows});
+        CALL(InnerTranspose, *Program::GetInstance().GetCurrentFunction(), tmp3D.GetStorage(), result.GetStorage(),
+             std::vector<int>{0, 1});
+        TileShape::Current().SetVecTile(oldVecTileShapes);
+        return result;
+    }
     return Reshape(tmpOutputTensor, resultShape, oldValidShapes);
 }
 

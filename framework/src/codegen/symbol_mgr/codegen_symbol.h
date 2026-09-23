@@ -29,6 +29,7 @@
 #include "interface/tensor/logical_tensor.h"
 #include "codegen/utils/codegen_utils.h"
 #include "tilefwk/error_code.h"
+#include "tilefwk/platform.h"
 #include "symbol_id_gen.h"
 
 namespace npu::tile_fwk {
@@ -38,6 +39,26 @@ const std::string SCOPE_NAMESPACE = "Hardware";
 const std::string DIM = "Dim";
 const std::string COORD = "Coord";
 using BufferType = enum OperandType;
+
+// A2 (DAV_2201) 编译器在 __CCE_AICORE__ 下不定义 fp8 原生类型（hifloat8_t/float8_e4m3_t 等仅存在于
+// V310+ 的 typedef 或 proxy 结构）。fp8 属 1 字节类型，Transpose 等纯数据搬移场景（MOVEOUT 按字节 DMA、
+// TTRANS 走 b8 路径）按 uint8_t 生成内核缓冲类型即可，字节精度无损。
+inline const char* CodeGenDataTypeStr(DataType dtype)
+{
+    if (Platform::Instance().GetSoc().GetNPUArch() == NPUArch::DAV_2201) {
+        switch (dtype) {
+            case DT_FP8:
+            case DT_HF8:
+            case DT_FP8E4M3:
+            case DT_FP8E5M2:
+            case DT_FP8E8M0:
+                return "uint8_t";
+            default:
+                break;
+        }
+    }
+    return DataType2CCEStr(dtype);
+}
 using AllocKey = std::tuple<BufferType, int64_t /*RangeStart*/, int64_t /*RangeEnd*/>;
 
 struct AddrAlloc {
@@ -91,7 +112,7 @@ struct TileTensor {
         // local: e.g. (uint64_t)UB_S0_E16384
         oss << "(";
         if (bufType == BUF_DDR) {
-            oss << OPERAND_TYPE_TO_ADDR_TYPE.at(bufType) << " " << DataType2CCEStr(dtype) << "*)" << bufVar;
+            oss << OPERAND_TYPE_TO_ADDR_TYPE.at(bufType) << " " << CodeGenDataTypeStr(dtype) << "*)" << bufVar;
         } else {
             // cast local buffer pointer to uint64_t to adapt TileTensor mode
             oss << "uint64_t)";
@@ -102,7 +123,7 @@ struct TileTensor {
             }
             if (linearOffset != 0 && bufType != BUF_L1) {
                 // append linear offset, e.g. UBTileTensorFP32Dim2_1 ubTensor_1((uint64_t)((float *)UB_S0_E4096 + 32))
-                oss << "((" << DataType2CCEStr(dtype) << " *)" << bufVar << " + " << linearOffset << ")";
+                oss << "((" << CodeGenDataTypeStr(dtype) << " *)" << bufVar << " + " << linearOffset << ")";
             } else {
                 oss << bufVar;
             }
@@ -241,7 +262,7 @@ struct TileTensorUsing {
         if (bufType == BUF_DDR) {
             ss << GetAddrTypeByOperandType(bufType) << " ";
         }
-        ss << DataType2CCEStr(dtype) << ", ";
+        ss << CodeGenDataTypeStr(dtype) << ", ";
         ss << GetLayoutType(bufType, dim, isConstant);
         if (bufType != BUF_DDR) {
             ss << GetLayoutParams();

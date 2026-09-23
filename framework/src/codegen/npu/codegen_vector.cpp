@@ -281,8 +281,8 @@ std::string CodeGenOpNPU::GenTransposeDataMove() const
 
     AppendLocalBufferVarOffset({{gmIdx, std::ref(gmVar)}, {localIdx, std::ref(localVar)}});
 
-    std::string localDtypeStr = DataType2CCEStr(operandDtype[localIdx]);
-    std::string gmDtypeStr = DataType2CCEStr(operandDtype[gmIdx]);
+    std::string localDtypeStr = CodeGenDataTypeStr(operandDtype[localIdx]);
+    std::string gmDtypeStr = CodeGenDataTypeStr(operandDtype[gmIdx]);
     return PrintTransposeDataMove({gmIdx, localIdx, localVar, gmShape, localDtypeStr, gmDtypeStr});
 }
 
