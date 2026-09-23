@@ -36,6 +36,20 @@ class KernelTarget:
     aiv_per_block: int
     fat_object: bool
 
+    @property
+    def entry_qualifier(self) -> str:
+        """Declare the binary's engines explicitly, including scalar-only kernels."""
+        if self.aic_per_block and self.aiv_per_block:
+            return f"__mix__({self.aic_per_block}, {self.aiv_per_block})"
+        return "__cube__" if self.aic_per_block else "__vector__"
+
+    @property
+    def profiler_kernel_type(self) -> int:
+        """CANN task types: AI_CORE=0, AI_VECTOR_CORE=2, MIX_AIC=4."""
+        if self.aic_per_block and self.aiv_per_block:
+            return 4
+        return 0 if self.aic_per_block else 2
+
 
 @dataclass(frozen=True)
 class JitCompileConfig:
@@ -139,26 +153,29 @@ _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
     backend=CCE_BACKEND,
     kernel_targets={
         "a2a3": {
-            "cube_vec": KernelTarget("dav-c220", aic_per_block=1, aiv_per_block=2, fat_object=True),
-            "cube": KernelTarget("dav-c220-cube", aic_per_block=1, aiv_per_block=0, fat_object=False),
-            "vec": KernelTarget("dav-c220-vec", aic_per_block=0, aiv_per_block=1, fat_object=False),
+            "cube_vec": KernelTarget("dav-2201", aic_per_block=1, aiv_per_block=2, fat_object=True),
+            "cube": KernelTarget("dav-2201", aic_per_block=1, aiv_per_block=0, fat_object=False),
+            "vec": KernelTarget("dav-2201", aic_per_block=0, aiv_per_block=1, fat_object=False),
         },
         "a5": {
-            "cube_vec": KernelTarget("dav-c310", aic_per_block=1, aiv_per_block=2, fat_object=True),
-            "cube": KernelTarget("dav-c310-cube", aic_per_block=1, aiv_per_block=0, fat_object=False),
-            "vec": KernelTarget("dav-c310-vec", aic_per_block=0, aiv_per_block=1, fat_object=False),
+            "cube_vec": KernelTarget("dav-3510", aic_per_block=1, aiv_per_block=2, fat_object=True),
+            "cube": KernelTarget("dav-3510", aic_per_block=1, aiv_per_block=0, fat_object=False),
+            "vec": KernelTarget("dav-3510", aic_per_block=0, aiv_per_block=1, fat_object=False),
         },
     },
     memory_arch_flags={
         "a2a3": "-DMEMORY_BASE",
         "a5": "-DREGISTER_BASE",
     },
-    arch_flags=("--cce-aicore-arch={npu_arch}",),
-    fatobj_flags=("--cce-fatobj-link",),
+    arch_flags=("--npu-arch={npu_arch}",),
+    # ASC derives fat objects from the explicit __mix__ entry qualifier.
+    fatobj_flags=(),
     common_flags=(
         "-fPIC",
         "-shared",
-        "-xcce",
+        # The ASC host stub reports the binary's actual kernel type. The legacy
+        # CCE stub reports pure vector kernels as AI_CORE, overriding aclprof ranges.
+        "-xasc",
         "{mem_arch}",
         "-O3",
         "-std=c++17",
@@ -185,6 +202,8 @@ _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
     ),
     llvm_arch_args={
         "a2a3": (
+            "-include",
+            "kernel_operator.h",
             "-O3",
             "--cce-disable-kernel-global-attr-check",
             "-Wno-parentheses-equality",

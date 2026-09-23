@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from pypto.pypto_impl import ir
 from pypto.pypto_impl.ir import DataType
+from pypto_pro.language.typing.direction import TensorDirection
 
 from ..._errors import (
     InvalidArgument,
@@ -127,6 +128,8 @@ class TypeResolver:
         self.span_tracker = span_tracker
         self.bound_signature = bound_signature
         self._parameter_name: str | None = None
+        self._parameter_index: int | None = None
+        self.param_directions: dict[int, TensorDirection] = {}
 
     @staticmethod
     def _resolve_shape_spec_and_rank(
@@ -261,11 +264,18 @@ class TypeResolver:
             isinstance(func, ast.Name) and func.id == "MemRef"
         )
 
-    def resolve_param_type(self, type_node: ast.expr, parameter_name: str | None = None) -> "ir.Type":
+    def resolve_param_type(
+        self,
+        type_node: ast.expr,
+        parameter_name: str | None = None,
+        parameter_index: int | None = None,
+    ) -> "ir.Type":
         """Resolve AST type annotation to ir.Type for function parameters.
 
         Args:
             type_node: AST expression representing the type annotation
+            parameter_name: Source parameter name used by shape policies
+            parameter_index: Stable parameter position used by direction metadata
 
         Returns:
             Resolved IR type
@@ -273,12 +283,18 @@ class TypeResolver:
         Raises:
             NotSupported: If the annotation is a tuple, which a parameter cannot be
         """
+        if parameter_index is not None:
+            self.param_directions.pop(parameter_index, None)
+
         previous_parameter = self._parameter_name
+        previous_index = self._parameter_index
         self._parameter_name = parameter_name
+        self._parameter_index = parameter_index
         try:
             resolved = self.resolve_type(type_node)
         finally:
             self._parameter_name = previous_parameter
+            self._parameter_index = previous_index
         if isinstance(resolved, ir.TupleType):
             raise NotSupported(
                 "Parameter type cannot be a tuple",
@@ -449,7 +465,7 @@ class TypeResolver:
                 return self._resolve_tuple_type(type_node)
             return self._resolve_subscript_type(type_node)
 
-        # Handle pl.Tensor((64, 128), pl.DT_FP16) call notation (legacy)
+        # Handle pl.Tensor((64, 128), pl.DT_FP16) call notation
         if isinstance(type_node, ast.Call):
             return self._resolve_call_type(type_node)
 
@@ -759,6 +775,17 @@ class TypeResolver:
                 parser_retry=True,
             )
 
+    def _resolve_tensor_direction(self, node: ast.expr) -> TensorDirection | None:
+        """Resolve a public direction enum used in a Tensor annotation."""
+        if isinstance(node, ast.Attribute):
+            if node.attr not in {"Input", "Output"}:
+                return None
+        elif not isinstance(node, ast.Name):
+            return None
+
+        success, value = self.expr_evaluator.try_eval_expr(node)
+        return value if success and isinstance(value, TensorDirection) else None
+
     def _resolve_subscript_type(self, subscript_node: ast.Subscript) -> ir.Type:
         """Resolve subscript type annotation.
 
@@ -795,7 +822,7 @@ class TypeResolver:
             return ir.PtrType(dtype)
 
         # Tensor: [shape, dtype], [shape, dtype, layout_or_memref], [shape, dtype, layout, memref]
-        valid_counts = (2, 3, 4) if type_name == "Tensor" else (2, 3)
+        valid_counts = (2, 3, 4, 5) if type_name == "Tensor" else (2, 3)
         if not isinstance(slice_value, ast.Tuple) or len(slice_value.elts) not in valid_counts:
             if type_name == "Tensor":
                 message = (
@@ -824,35 +851,28 @@ class TypeResolver:
         shape = self._resolve_annotation_shape(shape_node, type_name)
         dtype = self.resolve_dtype(dtype_node)
 
-        n_elts = len(slice_value.elts)
-
-        # 2 args: [shape, dtype]
-        # Filter out pl.Input / pl.Output direction markers from the subscript
-        # elements; they were already captured by the annotation-level evaluation
-        # (see _extract_declared_direction) and carry no IR type meaning here.
-        from pypto_pro.language import _DirectionMarker
-
-        def _is_direction_marker(node: ast.expr) -> bool:
-            # Match ``pl.Input`` / ``pl.Output`` (Attribute on ``pl``) or a bare
-            # Name bound to a _DirectionMarker; the expr_evaluator fallback covers
-            # aliased imports (``from pypto_pro.language import Output``).
-            if isinstance(node, ast.Attribute):
-                if node.attr not in ("Input", "Output"):
-                    return False
-                base = node.value
-                return isinstance(base, ast.Name) and base.id == "pl"
-            if isinstance(node, ast.Name):
-                if node.id not in ("Input", "Output"):
-                    return False
+        # Direction is parser metadata only; remove it before resolving the IR TensorType.
+        direction: TensorDirection | None = None
+        elts: list[ast.expr] = []
+        for element in slice_value.elts:
+            element_direction = self._resolve_tensor_direction(element)
+            if element_direction is None:
+                elts.append(element)
+            elif direction is not None:
+                raise InvalidArgument(
+                    "Tensor direction can be specified only once",
+                    span=self._get_span(element),
+                    hint="Use one pl.Input or pl.Output value",
+                    parser_retry=True,
+                )
             else:
-                return False
-            try:
-                ok, v = self.expr_evaluator.try_eval_expr(node)
-                return ok and isinstance(v, _DirectionMarker)
-            except Exception:
-                return False
-
-        elts = [e for e in slice_value.elts if not _is_direction_marker(e)]
+                direction = element_direction
+        if len(elts) not in (2, 3, 4):
+            raise InvalidArgument(
+                f"Tensor subscript has invalid arguments: {ast.unparse(slice_value)}",
+                hint="Use pl.Tensor[[shape], dtype, optional layout/memref, optional pl.Input/pl.Output]",
+                parser_retry=True,
+            )
         slice_value = ast.Tuple(
             elts=elts,
             ctx=slice_value.ctx,
@@ -863,8 +883,13 @@ class TypeResolver:
         )
         n_elts = len(elts)
 
+        def with_direction(tensor_type: ir.TensorType) -> ir.TensorType:
+            if direction is not None and self._parameter_index is not None:
+                self.param_directions[self._parameter_index] = direction
+            return tensor_type
+
         if n_elts == 2:
-            return ir.TensorType(shape, dtype)
+            return with_direction(ir.TensorType(shape, dtype))
 
         # 3 args: [shape, dtype, layout_or_memref_or_view]
         if n_elts == 3:
@@ -872,11 +897,11 @@ class TypeResolver:
             # Disambiguate 3rd arg (backward compat)
             if self._is_memref_node(third):
                 memref = self.resolve_memref(third)
-                return ir.TensorType(shape, dtype, memref)
+                return with_direction(ir.TensorType(shape, dtype, memref))
             layout = self.resolve_layout(third)
             self._validate_tensor_layout(shape, layout, third)
             tensor_view = ir.TensorView([], layout)
-            return ir.TensorType(shape, dtype, None, tensor_view)
+            return with_direction(ir.TensorType(shape, dtype, None, tensor_view))
 
         # 4 args: [shape, dtype, layout, memref] -> Tensor only
         layout = self.resolve_layout(slice_value.elts[2])
@@ -890,7 +915,7 @@ class TypeResolver:
                 parser_retry=True,
             )
         memref = self.resolve_memref(memref_node)
-        return ir.TensorType(shape, dtype, memref, tensor_view)
+        return with_direction(ir.TensorType(shape, dtype, memref, tensor_view))
 
     def _resolve_tuple_type(self, subscript_node: ast.Subscript) -> "ir.TupleType":
         """Resolve tuple[T1, T2, ...] return type annotation to a single TupleType.
@@ -947,7 +972,7 @@ class TypeResolver:
         )
 
     def _resolve_tensor_type(self, call_node: ast.Call) -> ir.TensorType:
-        """Resolve pl.Tensor((shape), dtype) annotation (legacy)."""
+        """Resolve a pl.Tensor((shape), dtype, optional direction) annotation."""
         result = self._resolve_shaped_type(call_node, "Tensor", ir.TensorType)
         if not isinstance(result, ir.TensorType):
             raise InvalidType("Expected TensorType result")
@@ -959,7 +984,7 @@ class TypeResolver:
         type_name: str,
         type_ctor: type[ir.TensorType],
     ) -> ir.TensorType:
-        """Resolve a tensor type from a legacy call annotation.
+        """Resolve a tensor type from a call-style annotation.
 
         Args:
             call_node: AST Call node for the type constructor
@@ -972,16 +997,30 @@ class TypeResolver:
         Raises:
             InvalidType: If the call does not carry both shape and dtype
         """
-        if len(call_node.args) < 2:
+        if len(call_node.args) not in (2, 3):
             raise InvalidType(
-                f"{type_name} type requires shape and dtype arguments, got {len(call_node.args)}",
-                hint=f"Use pl.{type_name}[[shape], dtype] format",
+                f"{type_name} type requires shape, dtype, and optional direction arguments, "
+                f"got {len(call_node.args)}",
+                hint=f"Use pl.{type_name}([shape], dtype) or pl.{type_name}([shape], dtype, pl.Input/pl.Output)",
                 parser_retry=True,
             )
 
+        direction = None
+        if len(call_node.args) == 3:
+            direction = self._resolve_tensor_direction(call_node.args[2])
+            if direction is None:
+                raise InvalidType(
+                    "Tensor direction must be pl.Input or pl.Output",
+                    span=self._get_span(call_node.args[2]),
+                    parser_retry=True,
+                )
+
         shape = self.to_ir_shape(self.parse_shape(call_node.args[0]))
         dtype = self.resolve_dtype(call_node.args[1])
-        return type_ctor(shape, dtype)
+        result = type_ctor(shape, dtype)
+        if direction is not None and self._parameter_index is not None:
+            self.param_directions[self._parameter_index] = direction
+        return result
 
     def _parse_dim_elements(self, elts: list[ast.expr]) -> list[int | ir.Expr]:
         """Parse a list of dimension elements (int literal, variable, or evaluable expression).

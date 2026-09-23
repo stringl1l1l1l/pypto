@@ -14,10 +14,11 @@ from __future__ import annotations
 # DSL function bodies are parsed as AST, not executed -suppress pyright errors
 # from type-checking the annotations and kwargs inside parsed DSL bodies.
 import ast
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from pypto_pro import DataType, ir
-from pypto_pro._errors import InvalidArgument, InvalidType, NotSupported
+from pypto_pro._errors import InvalidArgument, InvalidFormat, InvalidType, NotSupported
 import pypto_pro.language as pl
 from pypto_pro.language.parser._expr_evaluator import ExprEvaluator
 from pypto_pro.language.parser._type_resolver import TypeResolver
@@ -43,6 +44,93 @@ def test_language_exports_only_dt_dtype_constants():
     assert not hasattr(pl, "INT32")
     assert not hasattr(pl, "FP32")
     assert not hasattr(pl, "BOOL")
+
+
+def test_input_and_output_are_public_enum_values():
+    assert isinstance(pl.Input, Enum)
+    assert isinstance(pl.Output, Enum)
+    assert pl.Input.value == 0
+    assert pl.Output.value == 1
+    assert type(pl.Input) is type(pl.Output)
+    assert not hasattr(pl, "TensorDirection")
+
+    for annotation in (
+        pl.Tensor[[64], pl.DT_FP32, pl.Output],
+        pl.Tensor([64], pl.DT_FP32, pl.Output),
+    ):
+        assert isinstance(annotation, pl.Tensor)
+        assert not hasattr(annotation, "direction")
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "pl.Tensor[[64], pl.DT_FP32, pl.Output, pl.ND, "
+        "pl.MemRef(pl.MemorySpace.DDR, 0, 1024, 0)]",
+        "pl.Tensor[[64], pl.DT_FP32, pl.ND, pl.Output, "
+        "pl.MemRef(pl.MemorySpace.DDR, 0, 1024, 0)]",
+        "pl.Tensor[[64], pl.DT_FP32, pl.ND, pl.MemRef(pl.MemorySpace.DDR, 0, 1024, 0), "
+        "pl.Output]",
+    ],
+)
+def test_tensor_direction_accepts_any_optional_position_after_dtype(code):
+    resolver = _make_resolver({"pl": pl})
+    node = ast.parse(code, mode="eval").body
+
+    result = resolver.resolve_param_type(node, parameter_name="out", parameter_index=3)
+
+    assert isinstance(result, ir.TensorType)
+    assert result.memref is not None
+    assert result.tensor_view.layout == ir.TensorLayout.ND
+    assert resolver.param_directions == {3: pl.Output}
+
+
+def test_call_style_tensor_direction_is_recorded_by_parameter_index():
+    resolver = _make_resolver({"pl": pl})
+    node = ast.parse(
+        "pl.Tensor([64], pl.DT_FP32, pl.Output)",
+        mode="eval",
+    ).body
+
+    result = resolver.resolve_param_type(node, parameter_name="out", parameter_index=2)
+
+    assert isinstance(result, ir.TensorType)
+    assert resolver.param_directions == {2: pl.Output}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "in", "out"])
+def test_call_style_tensor_direction_rejects_strings(direction):
+    resolver = _make_resolver({"pl": pl})
+    node = ast.parse(
+        f"pl.Tensor([64], pl.DT_FP32, {direction!r})",
+        mode="eval",
+    ).body
+
+    with pytest.raises(InvalidType, match="must be pl.Input or pl.Output"):
+        resolver.resolve_param_type(node, parameter_name="tensor", parameter_index=0)
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "in", "out"])
+def test_tensor_direction_rejects_strings(direction):
+    resolver = _make_resolver({"pl": pl})
+    node = ast.parse(
+        f"pl.Tensor[[64], pl.DT_FP32, {direction!r}]",
+        mode="eval",
+    ).body
+
+    with pytest.raises(InvalidFormat):
+        resolver.resolve_param_type(node, parameter_name="tensor", parameter_index=0)
+
+
+def test_tensor_direction_rejects_duplicate_values():
+    resolver = _make_resolver({"pl": pl})
+    node = ast.parse(
+        "pl.Tensor[[64], pl.DT_FP32, pl.Input, pl.Output]",
+        mode="eval",
+    ).body
+
+    with pytest.raises(InvalidArgument, match="Tensor direction can be specified only once"):
+        resolver.resolve_param_type(node, parameter_name="out", parameter_index=0)
 
 
 def test_resolve_tensor_type_subscript():

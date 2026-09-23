@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from pypto_pro._errors import InvalidVal, RuntimeFailure
+import pypto_pro.language as pl
 from pypto_pro.runtime.compile_config import JitCompileConfig, KernelTarget, get_jit_compile_config
 import pytest
 
@@ -34,31 +35,45 @@ def future_config():
     )
 
 
-@pytest.mark.parametrize("arch,prefix,memory", [
-    ("a2", "dav-c220", "-DMEMORY_BASE"),
-    ("a3", "dav-c220", "-DMEMORY_BASE"),
-    ("a5", "dav-c310", "-DREGISTER_BASE"),
+@pytest.mark.parametrize("arch,npu_arch,memory", [
+    ("a2", "dav-2201", "-DMEMORY_BASE"),
+    ("a3", "dav-2201", "-DMEMORY_BASE"),
+    ("a5", "dav-3510", "-DREGISTER_BASE"),
 ])
-@pytest.mark.parametrize("cube,vector,suffix,cores,fat_object", [
-    (True, False, "-cube", (1, 0), False),
-    (False, True, "-vec", (0, 1), False),
-    (True, True, "", (1, 2), True),
+@pytest.mark.parametrize("cube,vector,qualifier,cores,kernel_type", [
+    (True, False, "__cube__", (1, 0), 0),
+    (False, True, "__vector__", (0, 1), 2),
+    (True, True, "__mix__(1, 2)", (1, 2), 4),
 ])
-def test_existing_targets_preserve_compiler_flags_and_geometry(
-    arch, prefix, memory, cube, vector, suffix, cores, fat_object,
+def test_asc_targets_keep_entry_profiling_and_launch_geometry_consistent(
+    arch, npu_arch, memory, cube, vector, qualifier, cores, kernel_type,
 ):
-    """An architecture or mode mapping change must not alter either half of the compiled launch ABI."""
+    """ASC needs explicit core qualifiers; inferring from instructions fails for scalar-only probes."""
     config = get_jit_compile_config()
     target = config.resolve_kernel_target(arch, has_cube=cube, has_vector=vector)
     flags = config.build_bisheng_flags(toolkit_home="/toolkit", arch=arch, target=target, enable_print_debug=False)
-    caller = jit._generate_caller_cpp([], "kernel.cpp", "probe", target=target)
-    assert target.npu_arch == prefix + suffix
+    entry = jit._make_global_entry("probe", [], target=target)
+    caller = jit._generate_caller_cpp(
+        [], "kernel.cpp", "probe", target=target, global_entry=entry,
+        prof_param_specs=[jit.ParamSpec("out", jit.ParamKind.TENSOR, "int32", [32], pl.Output)],
+    )
+    assert target.npu_arch == npu_arch
     assert (target.aic_per_block, target.aiv_per_block) == cores
-    assert target.fat_object is fat_object
-    assert f"--cce-aicore-arch={prefix}{suffix}" in flags
-    assert ("--cce-fatobj-link" in flags) is fat_object
+    assert "-xasc" in flags
+    assert f"--npu-arch={npu_arch}" in flags
+    assert "-xcce" not in flags
+    assert "--cce-fatobj-link" not in flags
+    assert f"__global__ {qualifier} void probe(" in caller
+    assert f"pyptoProfInfo.kernelType = {kernel_type};" in caller
+    if cube and vector:
+        assert "pyptoProfInfo.blockNums = (blockDim & 0xffffU) | (2U << 16);" in caller
+    else:
+        assert "pyptoProfInfo.blockNums = blockDim;" in caller
     assert memory in flags
     assert f"ResolveLaunchBlockDim<{cores[0]}, {cores[1]}>" in caller
+    if arch in ("a2", "a3"):
+        llvm_args = config.build_llvm_args(arch)
+        assert llvm_args[llvm_args.index("-include") + 1] == "kernel_operator.h"
 
 
 def test_simt_launcher_bakes_inferred_dynamic_ub_into_generated_caller():
@@ -82,6 +97,7 @@ def test_architecture_specific_mixed_geometry_is_independent(future_config):
     future = future_config.resolve_kernel_target("future", has_cube=True, has_vector=True)
     assert (a5.aic_per_block, a5.aiv_per_block) == (1, 2)
     assert (future.aic_per_block, future.aiv_per_block) == (1, 1)
+    assert "__mix__(1, 1)" in jit._make_global_entry("probe", [], target=future)
 
 
 def test_missing_architecture_is_not_assumed_to_use_a5_geometry():
@@ -139,8 +155,8 @@ def test_shared_library_and_caller_use_the_same_resolved_target(monkeypatch, tmp
     assert len(captured) == 1
     flags, build_arch, caller = captured[0]
     assert build_arch == arch
-    assert f"--cce-aicore-arch={target.npu_arch}" in flags
-    assert "--cce-fatobj-link" in flags
+    assert f"--npu-arch={target.npu_arch}" in flags
+    assert "-xasc" in flags
     assert "--cce-enable-print" not in flags
     assert "/toolkit/asc/include" in flags
     assert "/toolkit/asc" in flags
@@ -191,5 +207,5 @@ def test_debug_command_reuses_compiled_target_without_resolving(monkeypatch, tmp
         kernel_name="probe", build_dir=str(tmp_path), target=target,
     )
     command = dump._build_debug_compile_cmd(compiled)
-    assert "--cce-aicore-arch=test-compiled-target" in command
-    assert "--cce-aicore-arch=dav-c310" not in command
+    assert "--npu-arch=test-compiled-target" in command
+    assert "--npu-arch=dav-3510" not in command

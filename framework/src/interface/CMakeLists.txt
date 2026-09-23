@@ -72,6 +72,14 @@ target_link_libraries(tile_fwk_interface
             Threads::Threads
             tile_fwk_platform
 )
+
+# Profiling uses the public CANN API, without a dependency on adapter-private
+# headers. CPU-only and C++ unit-test builds keep the status provider inactive.
+if (BUILD_WITH_CANN AND NOT ENABLE_UTEST)
+    find_cann_package(msprof REQUIRED)
+    target_compile_definitions(tile_fwk_interface PRIVATE BUILD_WITH_CANN)
+    target_link_libraries(tile_fwk_interface PRIVATE profapi)
+endif ()
 PTO_Fwk_AnalysisTargetHeaderFiles(TARGET tile_fwk_interface)
 PTO_Fwk_AnalysisTargetSymbols(TARGET tile_fwk_interface)
 

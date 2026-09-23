@@ -29,6 +29,7 @@ from typing import Any, Callable, TypeVar
 
 from pypto.pypto_impl import ir
 from pypto_pro.language.parser._ast_parser import ASTParser
+from pypto_pro.language.typing.direction import TensorDirection
 
 from .._errors import (
     NameNotFound,
@@ -215,9 +216,8 @@ class KernelDef:
         self._meta_data = meta_data
         self._tilingkey_consts = tilingkey_consts
         self._datatype_consts = datatype_consts
-        # Populated by parse_target_program: param name -> "in"/"out" from
-        # pl.Input/pl.Output annotation markers.
-        self._last_param_directions: dict[str, str] = {}
+        # Populated by parse_target_program: parameter index -> declared direction.
+        self._last_param_directions: dict[int, TensorDirection] = {}
         self._max_vec_tile_end = 0
         self._requires_simt = False
 
@@ -234,8 +234,8 @@ class KernelDef:
         return self._func.__name__
 
     @property
-    def last_param_directions(self) -> dict[str, str]:
-        """Direction markers from the most recent parse_target_program call."""
+    def last_param_directions(self) -> dict[int, TensorDirection]:
+        """Directions from the most recent parse_target_program call."""
         return dict(self._last_param_directions)
 
     @property
@@ -332,9 +332,9 @@ class KernelDef:
             program = ir.Program(
                 external_funcs + [ir_func], program_name, program_span, parser.debug_info
             )
-            # Direction markers (pl.Input/pl.Output) parsed off the annotations;
-            # consumed by the JIT caller for profiling tensor type.
-            self._last_param_directions = dict(parser.param_directions)
+            # Tensor directions are resolved with parameter types and keyed by
+            # stable parameter index for JIT profiling metadata.
+            self._last_param_directions = dict(parser.type_resolver.param_directions)
             self._max_vec_tile_end = parser.max_vec_tile_end
             self._requires_simt = parser.requires_simt
             return program, parser.matched_target

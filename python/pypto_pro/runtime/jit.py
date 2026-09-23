@@ -35,6 +35,7 @@ from pypto.pypto_impl import ir
 from pypto.pypto_impl.codegen import CCECodegen
 from pypto.pypto_impl.ir import ConstInt, PtrType, ScalarType, TensorType, TupleType, Var
 from pypto_pro import DataType
+from pypto_pro.language.typing.direction import TensorDirection
 from pypto_pro.runtime.compile_config import KernelTarget, get_jit_compile_config
 
 from .._errors import (
@@ -144,8 +145,8 @@ class ParamSpec:
     dtype: DataType | None  # element dtype; None for tiling struct params
     # Tensor dims: positive int = static, str = named dynamic var, -1 = unnamed dynamic; None for ptr/scalar.
     shape: list[int | str] | None
-    # Data direction of tensor params: "in" (read-only) or "out" (kernel stores into it).
-    direction: str | None = None
+    # Data direction of tensor params; non-tensor params leave it unset.
+    direction: TensorDirection | None = None
 
 
 @dataclasses.dataclass
@@ -514,28 +515,22 @@ def _infer_dynamic_ub_size(requires_simt: bool, tile_high_water: int) -> int:
 
 def _extract_param_specs(
     prog,
-    declared_directions: dict[str, str] | None = None,
+    declared_directions: dict[int, TensorDirection] | None = None,
 ) -> list[ParamSpec]:
     """Extract parameter descriptions from the kernel function in an ir.Program.
 
-    Tensor direction comes exclusively from ``pl.Input``/``pl.Output`` annotation
-    markers (``declared_directions``, keyed by source-level param name); params
-    without a marker default to ``"in"``.
+    Tensor directions are keyed by parameter index because codegen may rename
+    parameters while preserving their order. Unspecified tensors default to
+    TensorDirection.INPUT.
     """
     func = _get_kernel_ir_function(prog)
     declared_directions = declared_directions or {}
     specs: list[ParamSpec] = []
-    for var in func.params:
+    for parameter_index, var in enumerate(func.params):
         t = var.type
         if isinstance(t, TensorType):
             shape = [s.value if isinstance(s, ConstInt) else (s.name if isinstance(s, Var) else -1) for s in t.shape]
-            declared = declared_directions.get(var.name)
-            if declared is None:
-                # Declared keys use source-level names; IR names may carry a binding
-                # suffix (``out`` -> ``out_0``) — strip numeric suffix and retry.
-                base_name = var.name.rsplit("_", 1)[0] if var.name.rsplit("_", 1)[-1].isdigit() else var.name
-                declared = declared_directions.get(base_name)
-            direction = "out" if declared in ("out", "output") else "in"
+            direction = declared_directions.get(parameter_index, TensorDirection.INPUT)
             specs.append(ParamSpec(var.name, ParamKind.TENSOR, t.dtype, shape, direction))
         elif isinstance(t, PtrType):
             specs.append(ParamSpec(var.name, ParamKind.PTR, t.dtype, None))
@@ -946,33 +941,35 @@ def _generate_prof_range_snippet(
     param_specs: list[ParamSpec],
     dims_in_scope: set,
     *,
+    target: KernelTarget,
     launch_stmt: str,
 ) -> tuple[str, str, str]:
-    """Generate the aclprof tensor-info range (push/pop) wrapped around the launch.
+    """Generate tensor metadata for live profiling and cached graph replay.
 
-    Mirrors the asc-devkit torch_library_report_tensor sample: an
-    ``aclprofEventAttributes`` carrying ``aclprofTensorInfo`` is pushed right
-    before the ``<<<>>>`` launch and popped right after, so msprof associates
-    op name/type and per-tensor in/out, dtype, format and shape with the kernel.
-    Reporting uses the ``aclprof*`` interfaces declared in ``acl/acl_prof.h``
-    and exported by libmsprofiler (added to the link line in
-    :func:`_compile_shared_library`); the ``ProfStr2Id`` alias in libprofapi
-    crashes with std::bad_alloc and must not be used. Failures are ignored:
-    profiling metadata must never break the launch.
-
-    Captured launches also report node tensor information: some CANN analyzers
-    select the compiler's kernel node without merging its cached graph tensors.
+    The helper reports msprof node records while collecting, and independently
+    caches op/tensor info on captured tasks, including before collection starts.
+    Both paths use the same concrete launch shapes, directions and core layout.
+    String registration uses ``aclprofStr2Id`` from libmsprofiler; the
+    ``ProfStr2Id`` alias in libprofapi must not be used (it can crash).
+    Metadata failures must never break a launch.
     """
     tensors = [s for s in param_specs if s.kind == ParamKind.TENSOR]
     if not tensors:
         return "", "", ""
+
+    block_nums = "blockDim"
+    if target.aic_per_block and target.aiv_per_block:
+        # CANN stores the AIV:AIC ratio in the upper 16 bits, as the ASC node
+        # reporter does. Keep cached graph metadata consistent with that node.
+        block_nums = f"(blockDim & 0xffffU) | ({target.aiv_per_block}U << 16)"
 
     tensor_inits = []
     for spec in tensors:
         dims = list(spec.shape or [])
         shape_tokens = [_prof_shape_token(d, dims_in_scope) for d in dims]
         padded = shape_tokens[:8] + ["0"] * (8 - min(len(shape_tokens), 8))
-        tensor_type = 1 if spec.direction == "out" else 0
+        direction = spec.direction if spec.direction is not None else TensorDirection.INPUT
+        tensor_type = direction.value
         acl_dtype = _ACL_DTYPE_MAP.get(str(spec.dtype), 0)
         shape_str = "{" + ", ".join(padded) + "}"
         tensor_inits.append(
@@ -981,53 +978,66 @@ def _generate_prof_range_snippet(
         )
 
     op_name = f"PYPTO_{kernel_name}"
-    # The guard wraps the struct definitions too, so a non-profiling launch skips
-    # the tensor table fill entirely; the else branch launches uninstrumented.
-    # Everything from the definitions through the pop stays in ONE block:
-    # aclprofRangePushEx hands msprof a pointer to the stack tensors/info, and
-    # the Tx plugin may read them until the matching pop -- the locals must stay
-    # in scope across the kernel launch (official sample keeps push/launch/pop in
-    # one scope for the same reason). ``MsprofGetPath`` (weak, libprofapi) gates
-    # the ~1.5us push/pop pair on an active collection session: a non-empty
-    # profiler result path means a profiler is running; a toolkit without the
-    # symbol links it to null and we report unconditionally, as before.
+    # Keep tensors alive through the post-launch report/cache call. Outside
+    # collection and capture, skip tensor initialization and string registration.
     return (
-        "#include \"acl/acl_prof.h\"\n"
-        "#include \"pypto_profiler.h\"\n"
-        "// Weak: a toolkit without it links to null and we report unconditionally, as before.\n"
-        "extern \"C\" __attribute__((weak)) char *MsprofGetPath();\n",
+        '#include "acl/acl_prof.h"\n'
+        '#include "pypto_profiler.h"\n',
         "    {\n"
-        "        // Skip the whole report unless a profiler is collecting; empty path means off.\n"
-        "        const char *pyptoProfPath = (MsprofGetPath != nullptr) ? MsprofGetPath() : nullptr;\n"
-        "        const bool pyptoProfOn =\n"
-        "            (MsprofGetPath == nullptr) || (pyptoProfPath != nullptr && pyptoProfPath[0] != '\\0');\n"
-        "        if (pyptoProfOn) {\n"
+        "        // Collection and graph metadata caching independently need tensors.\n"
+        "        const bool pyptoProfOn = pypto::GetProfStatus();\n"
+        "        aclrtStreamAttrValue pyptoCaptureAttr{};\n"
+        "        const bool pyptoCaptureOn =\n"
+        "            aclrtGetStreamAttribute(stream, ACL_STREAM_ATTR_CACHE_OP_INFO, &pyptoCaptureAttr) "
+        "== ACL_SUCCESS &&\n"
+        "            pyptoCaptureAttr.cacheOpInfoSwitch;\n"
+        "        if (pyptoProfOn || pyptoCaptureOn) {\n"
         "        aclprofTensor pyptoProfTensors[] = {\n"
         + "\n".join(tensor_inits)
         + "\n        };\n"
         "        aclprofTensorInfo pyptoProfInfo{};\n"
-        "        aclprofEventAttributes pyptoProfAttrs;\n"
         "        pyptoProfInfo.opNameId = aclprofStr2Id(\"" + op_name + "\");\n"
         "        pyptoProfInfo.opTypeId = aclprofStr2Id(\"PyPTO\");\n"
         "        pyptoProfInfo.resv = 0;\n"
         f"        pyptoProfInfo.tensorNum = {len(tensor_inits)};\n"
-        "        pyptoProfInfo.kernelType = 0;\n"
-        "        pyptoProfInfo.blockNums = blockDim;\n"
+        f"        pyptoProfInfo.kernelType = {target.profiler_kernel_type};\n"
+        f"        pyptoProfInfo.blockNums = {block_nums};\n"
         "        pyptoProfInfo.stream = stream;\n"
         "        pyptoProfInfo.tensors = pyptoProfTensors;\n"
-        "        pyptoProfAttrs.version = 1;\n"
-        "        pyptoProfAttrs.size = sizeof(pyptoProfAttrs.message);\n"
-        "        pyptoProfAttrs.messageType = 0;\n"
-        "        pyptoProfAttrs.message.tensorInfo = &pyptoProfInfo;\n"
-        "        (void)aclprofRangePushEx(&pyptoProfAttrs);\n"
-        "        const uint64_t pyptoProfBegin = pypto::BeginCaptureTensorReport(pyptoProfOn, stream);\n",
-        "        pypto::ReportCaptureTensorInfo(pyptoProfInfo, pyptoProfBegin);\n"
-        "        (void)aclprofRangePop();\n"
+        "        const uint64_t pyptoProfBegin = pypto::BeginCaptureTensorReport(pyptoProfOn);\n",
+        "        pypto::ReportCaptureTensorInfo(pyptoProfInfo, pyptoProfBegin, pyptoCaptureOn);\n"
         "        } else {\n"
         + "    " + launch_stmt
         + "        }\n"
         "    }\n",
     )
+
+
+def _scalar_launch_abi(typ: str, name: str) -> tuple[str, str, str]:
+    """Return the physical entry type, host encoding and device decoding for a scalar.
+
+    ASC launch metadata can place an int64 dimension four bytes after a narrow
+    scalar, while the device loads it at an eight-byte boundary. Give every
+    physical argument an eight-byte slot (pointers already have that size).
+    The ctypes caller and the device impl retain their original DSL types.
+    FP32 travels as bits, preserving signed zero and NaN payloads without FP64
+    arithmetic on the device.
+    """
+    if typ in ("int64_t", "uint64_t"):
+        return typ, name, name
+    if typ == "float":
+        return (
+            "uint64_t",
+            f"static_cast<uint64_t>(__builtin_bit_cast(uint32_t, {name}))",
+            f"__builtin_bit_cast(float, static_cast<uint32_t>({name}))",
+        )
+    if typ in ("int8_t", "int16_t", "int32_t"):
+        entry_type = "int64_t"
+    elif typ in ("bool", "uint8_t", "uint16_t", "uint32_t"):
+        entry_type = "uint64_t"
+    else:
+        raise InvalidType(f"Unsupported scalar launch type '{typ}' for parameter '{name}'")
+    return entry_type, f"static_cast<{entry_type}>({name})", f"static_cast<{typ}>({name})"
 
 
 def _generate_caller_cpp(
@@ -1072,7 +1082,7 @@ def _generate_caller_cpp(
             kernel_args.append(f"({typ} *){name}")
         else:
             cpp_params.append(f"{typ} {name}")
-            kernel_args.append(name)
+            kernel_args.append(_scalar_launch_abi(typ, name)[1])
     sig = ", ".join(["uint32_t blockDim", "void* stream"] + cpp_params)
     call_args = ", ".join(kernel_args)
 
@@ -1094,7 +1104,7 @@ def _generate_caller_cpp(
     if prof_param_specs:
         dims_in_scope = {name for _, name, _is_ptr in kernel_params}
         prof_include, prof_push, prof_pop = _generate_prof_range_snippet(
-            kernel_name, prof_param_specs, dims_in_scope, launch_stmt=launch_stmt
+            kernel_name, prof_param_specs, dims_in_scope, target=target, launch_stmt=launch_stmt
         )
 
     return (
@@ -1253,21 +1263,27 @@ def _make_jit_paths(out_dir: str) -> CompilePaths:
 def _make_global_entry(
     kernel_name: str,
     entry_params: list[tuple[str, str, bool]],
+    *,
+    target: KernelTarget,
 ) -> str:
-    """Generate the ``__global__`` entry that forwards 1:1 to ``<kernel_name>_impl``.
-
-    The entry mirrors the impl signature exactly (same types/names, incl. a trailing
-    ffts_addr), so the forward is a plain pass-through.
-    """
+    """Decode eight-byte launch slots into the original ``<kernel_name>_impl`` types."""
     decls = []
     args = []
     for typ, name, is_ptr in entry_params:
-        decls.append(f"__gm__ {typ}* {name}" if is_ptr else f"{typ} {name}")
-        args.append(name)
+        if is_ptr:
+            decls.append(f"__gm__ {typ}* {name}")
+            args.append(name)
+        else:
+            entry_type, _, decoded = _scalar_launch_abi(typ, name)
+            decls.append(f"{entry_type} {name}")
+            args.append(decoded)
     sig = ", ".join(decls)
     call_args = ", ".join(args)
 
-    return f"__global__ AICORE void {kernel_name}({sig})\n{{\n    {kernel_name}_impl({call_args});\n}}\n"
+    return (
+        f"__global__ {target.entry_qualifier} void {kernel_name}({sig})\n"
+        f"{{\n    {kernel_name}_impl({call_args});\n}}\n"
+    )
 
 
 def _codegen_target_cce(
@@ -1275,7 +1291,7 @@ def _codegen_target_cce(
     arch: str,
     build_dir: str,
     target: ir.SectionKind,
-    declared_directions: dict[str, str] | None = None,
+    declared_directions: dict[int, TensorDirection] | None = None,
     required_dynamic_ub_size: int = 0,
 ) -> CodegenResult:
     """CCE codegen for one target-specific Program.
@@ -1428,9 +1444,9 @@ def _parse_and_codegen_targets(
         )
         requires_simt = requires_simt or kernel_def.requires_simt
         max_vec_tile_end = max(max_vec_tile_end, kernel_def.max_vec_tile_end)
-    # pl.Input/pl.Output annotation markers (param name -> "in"/"out"); these are
-    # the sole source of tensor direction — params without a marker default to "in".
-    declared_directions = dict(kernel_def.last_param_directions)
+    # Tensor directions are keyed by stable source parameter index; unspecified
+    # tensor parameters default to TensorDirection.INPUT.
+    declared_directions = kernel_def.last_param_directions
 
     if not any(matched.values()):
         matched = {
@@ -1668,7 +1684,7 @@ def _build_jit_so(
     # CCE: kernel.cpp holds only `<name>_impl`; define the __global__ entry that forwards to it.
     global_entry = ""
     if cg.needs_global_entry:
-        global_entry = _make_global_entry(cg.kernel_name, cg.entry_params)
+        global_entry = _make_global_entry(cg.kernel_name, cg.entry_params, target=target)
 
     caller_content = _generate_caller_cpp(
         kernel_params=cg.kernel_params,
