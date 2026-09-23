@@ -69,7 +69,7 @@ def _select_tile_with_if_else(true_tile, false_tile, choose_true):
     return selected_tile
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def mixed_width_groups_kernel(
     source: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
     output: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -147,7 +147,7 @@ L0B_K_WIDE = 256
 L0B_N = 128
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def cube_vector_multi_id_kernel(
     a: pl.Tensor[[CUBE_M, CUBE_N], pl.DT_FP32],
     b: pl.Tensor[[CUBE_M, CUBE_K], pl.DT_FP16],
@@ -205,7 +205,7 @@ def cube_vector_multi_id_kernel(
         pl.store(out, vec_group[3], [row_offset, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def overlap_groups_add_kernel(
     a: pl.Tensor[[DYN_FULL_ROWS, TILE_COLS], pl.DT_FP16],
     b: pl.Tensor[[DYN_FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -226,7 +226,7 @@ def overlap_groups_add_kernel(
             pl.store(out, tile_a, [row, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def dynamic_offset_subscript_kernel(
     a: pl.Tensor[[DYN_FULL_ROWS, TILE_COLS], pl.DT_FP16],
     b: pl.Tensor[[DYN_FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -247,7 +247,7 @@ def dynamic_offset_subscript_kernel(
             pl.store(out, tile_a, [row, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def pure_iterative_subscript_kernel(
     a: pl.Tensor[[PURE_FULL_ROWS, TILE_COLS], pl.DT_FP16],
     out: pl.Tensor[[PURE_FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -264,7 +264,7 @@ def pure_iterative_subscript_kernel(
             pl.store(out, tile, [row, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def pure_constant_subscript_kernel(
     a: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
     b: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
@@ -282,7 +282,7 @@ def pure_constant_subscript_kernel(
         pl.store(out, tile_a, [0, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def same_group_overlapping_slots_kernel(
     a: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
     b: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
@@ -300,7 +300,7 @@ def same_group_overlapping_slots_kernel(
         pl.store(out, tile_a, [0, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def control_flow_multi_id_groups_kernel(
     a: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
     out: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -321,7 +321,7 @@ def control_flow_multi_id_groups_kernel(
             pl.store(out, tile, [row, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def subfunction_tile_if_else_kernel(
     true_source: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
     false_source: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -346,7 +346,7 @@ def subfunction_tile_if_else_kernel(
             pl.store(out, output_tile, [row, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def tuple_mutex_ids_kernel(
     a: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
     b: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
@@ -364,7 +364,7 @@ def tuple_mutex_ids_kernel(
         pl.store(out, tile_a, [0, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def explicit_depth_discrete_addrs_kernel(
     a: pl.Tensor[[EXPLICIT_FULL_ROWS, TILE_COLS], pl.DT_FP16],
     out: pl.Tensor[[EXPLICIT_FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -386,7 +386,7 @@ def explicit_depth_discrete_addrs_kernel(
             pl.store(out, tile, [row, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def next_and_subscript_mixed_kernel(
     a: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
     out: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -564,7 +564,7 @@ def test_next_and_subscript_mixed():
     torch.testing.assert_close(out.cpu().float(), golden, rtol=3e-3, atol=3e-3)
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def l0a_l0b_overlap_multi_id_kernel(
     a: pl.Tensor[[L0A_M, L0A_K_WIDE], pl.DT_FP16],
     b: pl.Tensor[[L0B_K_WIDE, L0B_N], pl.DT_FP16],

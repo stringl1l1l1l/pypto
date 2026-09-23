@@ -37,8 +37,8 @@ import pytest
 import torch
 
 pytestmark = pytest.mark.skipif(
-    get_platform_info().arch != "a5",
-    reason="PyPTO Pro only supports arch 'a5'",
+    get_platform_info().arch != "3510",
+    reason="PyPTO Pro only supports arch '3510'",
 )
 
 

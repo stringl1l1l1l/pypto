@@ -38,7 +38,7 @@ def future_config():
 @pytest.mark.parametrize("arch,npu_arch,memory", [
     ("a2", "dav-2201", "-DMEMORY_BASE"),
     ("a3", "dav-2201", "-DMEMORY_BASE"),
-    ("a5", "dav-3510", "-DREGISTER_BASE"),
+    ("3510", "dav-3510", "-DREGISTER_BASE"),
 ])
 @pytest.mark.parametrize("cube,vector,qualifier,cores,kernel_type", [
     (True, False, "__cube__", (1, 0), 0),
@@ -77,12 +77,12 @@ def test_asc_targets_keep_entry_profiling_and_launch_geometry_consistent(
 
 
 def test_simt_launcher_bakes_inferred_dynamic_ub_into_generated_caller():
-    target = get_jit_compile_config().resolve_kernel_target("a5", has_cube=False, has_vector=True)
+    target = get_jit_compile_config().resolve_kernel_target("3510", has_cube=False, has_vector=True)
     caller = jit._generate_caller_cpp(
         [], "kernel.cpp", "probe", target=target, required_dynamic_ub_size=16 * 1024,
     )
     flags = jit._build_bisheng_flags(
-        "/toolkit", "a5", target, has_cross_sync=False, enable_print_debug=False,
+        "/toolkit", "3510", target, has_cross_sync=False, enable_print_debug=False,
     )
     assert "uint32_t dynamicUbSize" not in caller
     assert 'call_kernel(uint32_t blockDim, void* stream)' in caller
@@ -93,7 +93,7 @@ def test_simt_launcher_bakes_inferred_dynamic_ub_into_generated_caller():
 
 def test_architecture_specific_mixed_geometry_is_independent(future_config):
     """A future 1:1 target must not overwrite the 1:2 rule of an existing architecture."""
-    a5 = future_config.resolve_kernel_target(" A5 ", has_cube=True, has_vector=True)
+    a5 = future_config.resolve_kernel_target(" 3510 ", has_cube=True, has_vector=True)
     future = future_config.resolve_kernel_target("future", has_cube=True, has_vector=True)
     assert (a5.aic_per_block, a5.aiv_per_block) == (1, 2)
     assert (future.aic_per_block, future.aiv_per_block) == (1, 1)
@@ -115,18 +115,18 @@ def test_missing_kernel_mode_is_not_replaced_with_mixed_target(future_config):
 def test_empty_kernel_is_rejected_before_selecting_flags():
     """The old default arch variant could hide a kernel with neither execution engine."""
     with pytest.raises(RuntimeFailure, match="add a target section"):
-        get_jit_compile_config().resolve_kernel_target("a5", has_cube=False, has_vector=False)
+        get_jit_compile_config().resolve_kernel_target("3510", has_cube=False, has_vector=False)
 
 
 @pytest.mark.parametrize("cube,vector,missing", [(True, False, "vector"), (False, True, "cube")])
 def test_cross_sync_still_requires_both_engines(cube, vector, missing):
     """Switching flag generation to a descriptor must retain the incomplete-sync diagnostic."""
-    target = get_jit_compile_config().resolve_kernel_target("a5", has_cube=cube, has_vector=vector)
+    target = get_jit_compile_config().resolve_kernel_target("3510", has_cube=cube, has_vector=vector)
     with pytest.raises(ValueError, match=f"{missing} code is missing"):
-        jit._build_bisheng_flags("/toolkit", "a5", target, has_cross_sync=True, enable_print_debug=False)
+        jit._build_bisheng_flags("/toolkit", "3510", target, has_cross_sync=True, enable_print_debug=False)
 
 
-@pytest.mark.parametrize("arch,cores", [("a5", (1, 2)), ("future", (1, 1))])
+@pytest.mark.parametrize("arch,cores", [("3510", (1, 2)), ("future", (1, 1))])
 def test_shared_library_and_caller_use_the_same_resolved_target(monkeypatch, tmp_path, future_config, arch, cores):
     """Capture a real build command and caller; independently resolving either half would permit ABI drift."""
     target = future_config.resolve_kernel_target(arch, has_cube=True, has_vector=True)
@@ -181,12 +181,12 @@ def test_compilation_preserves_target_for_cached_launch_and_debug(monkeypatch, t
     monkeypatch.setattr(jit, "_codegen", lambda *_args, **_kwargs: cg)
     build = MagicMock(return_value="/tmp/test-kernel.so")
     monkeypatch.setattr(jit, "_build_jit_so", build)
-    kernel = jit._TileJitKernel(lambda: None, arch="a5", compile_timeout=30)
+    kernel = jit._TileJitKernel(lambda: None, arch="3510", compile_timeout=30)
     monkeypatch.setattr(kernel, "to_kernel_def", lambda *_args, **_kwargs: None)
     compiled = kernel._compile_variant(None, (None, None, None, None), None, ())
-    resolve.assert_called_once_with("a5", has_cube=True, has_vector=True)
+    resolve.assert_called_once_with("3510", has_cube=True, has_vector=True)
     assert compiled.target is build.call_args.kwargs["target"]
-    assert compiled.target is config.kernel_targets["a5"]["cube_vec"]
+    assert compiled.target is config.kernel_targets["3510"]["cube_vec"]
 
 
 def test_debug_command_reuses_compiled_target_without_resolving(monkeypatch, tmp_path):
@@ -196,7 +196,7 @@ def test_debug_command_reuses_compiled_target_without_resolving(monkeypatch, tmp
     monkeypatch.setenv("ASCEND_WORK_PATH", str(tmp_path))
     monkeypatch.setenv("ASCEND_HOME_PATH", "/toolkit")
     monkeypatch.setenv("ASCEND_TOOLKIT_HOME", "/toolkit")
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
     monkeypatch.setattr(dump.shutil, "which", lambda _: "/toolkit/bin/bisheng")
     monkeypatch.setattr(
         JitCompileConfig, "resolve_kernel_target", MagicMock(side_effect=AssertionError("Already resolved")),

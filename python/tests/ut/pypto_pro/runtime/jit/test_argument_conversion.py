@@ -672,7 +672,7 @@ def test_direct_call_launches_with_auto_sentinel(monkeypatch):
     monkeypatch.setattr(_jit, "ctypes", _CtypesProxy(lib))
     compiled = CompiledKernel(lib_path="<fake>", param_specs=[])
     monkeypatch.setattr(_jit, "_launch", MagicMock())
-    kernel = _jit._TileJitKernel(lambda: None, arch="a5")
+    kernel = _jit._TileJitKernel(lambda: None, arch="3510")
     monkeypatch.setattr(kernel, "_validate_launch_arch", lambda: None)
     monkeypatch.setattr(kernel, "_ensure_compiled", lambda *_args, **_kwargs: compiled)
     kernel()
@@ -703,7 +703,7 @@ def test_explicit_stream_validated_once_at_launcher_creation(monkeypatch):
         _as_parameter_ = 0xDEAD
 
     monkeypatch.setattr(_torch_mock.npu, "Stream", NPUStream)
-    kernel = _jit._TileJitKernel(lambda: None, arch="a5")
+    kernel = _jit._TileJitKernel(lambda: None, arch="3510")
     with pytest.raises(TypeError, match="stream must be torch.npu.Stream or None"):
         kernel[ForeignStream(), 8]
 

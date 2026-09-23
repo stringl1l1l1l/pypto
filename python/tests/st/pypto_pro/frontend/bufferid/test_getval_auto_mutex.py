@@ -45,7 +45,7 @@ def _require_a5(device):
         pytest.skip(f"Current device is {name}, not A5 (Ascend950). Skip.")
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def getval_setval_am_kernel(a: pl.Tensor[[64, 128], pl.DT_FP16]):
     tt = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
     a_db = pl.make_tile_group(type=tt, addrs=[0x00000], mutex_ids=[20])
@@ -60,7 +60,7 @@ def getval_setval_am_kernel(a: pl.Tensor[[64, 128], pl.DT_FP16]):
         pl.store(a, t, [0, 0])  # MTE3 consumer
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def getval_while_condition_am_kernel(
     a: pl.Tensor[[64, 128], pl.DT_FP16],
     out: pl.Tensor[[1], pl.DT_INT64],

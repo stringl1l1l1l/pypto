@@ -17,7 +17,7 @@ import pypto_pro.language as pl
 def _compile_cube(kernel) -> str:
     from pypto_pro.runtime.jit import _assemble_cv_source, _parse_and_codegen_targets
 
-    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), "3510", "")
     source = _assemble_cv_source(cube, vector).content
     return source.split("#if defined(__DAV_VEC__)")[0]
 

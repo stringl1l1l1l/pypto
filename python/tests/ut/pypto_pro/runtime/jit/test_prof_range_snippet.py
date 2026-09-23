@@ -49,7 +49,7 @@ def test_output_annotation_sets_direction():
             pl.store(out, ta, [0, 0])
 
     kernel_def = marked_kernel.to_kernel_def()
-    cube, vector = _parse_and_codegen_targets(kernel_def, "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel_def, "3510", "")
     cg = cube or vector
     assert kernel_def.last_param_directions == {1: pl.Output}
     assert cg.param_specs[0].direction is pl.Input
@@ -112,7 +112,7 @@ def test_omitted_direction_defaults_to_input():
         with pl.section_vector():
             pl.store(out, ta, [0, 0])
 
-    cube, vector = _parse_and_codegen_targets(unmarked_kernel.to_kernel_def(), "a5", "")
+    cube, vector = _parse_and_codegen_targets(unmarked_kernel.to_kernel_def(), "3510", "")
     cg = cube or vector
     assert cg.param_specs[0].direction is pl.Input
 
@@ -182,10 +182,10 @@ def test_caller_embeds_metadata_around_launch_static():
             pl.add(tc, ta, ta)
             pl.store(out, tc, [0, 0])
 
-    cube, vector = _parse_and_codegen_targets(static_kernel.to_kernel_def(), "a5", "")
+    cube, vector = _parse_and_codegen_targets(static_kernel.to_kernel_def(), "3510", "")
     from pypto_pro.runtime.compile_config import get_jit_compile_config
 
-    target = get_jit_compile_config().resolve_kernel_target("a5", has_cube=cube is not None,
+    target = get_jit_compile_config().resolve_kernel_target("3510", has_cube=cube is not None,
                                                             has_vector=vector is not None)
     cg = cube or vector
     content = _generate_caller_cpp(
@@ -220,10 +220,10 @@ def test_metadata_checks_collection_and_capture_independently():
             pl.add(tc, ta, ta)
             pl.store(out, tc, [0, 0])
 
-    cube, vector = _parse_and_codegen_targets(bare_kernel.to_kernel_def(), "a5", "")
+    cube, vector = _parse_and_codegen_targets(bare_kernel.to_kernel_def(), "3510", "")
     from pypto_pro.runtime.compile_config import get_jit_compile_config
 
-    target = get_jit_compile_config().resolve_kernel_target("a5", has_cube=cube is not None,
+    target = get_jit_compile_config().resolve_kernel_target("3510", has_cube=cube is not None,
                                                             has_vector=vector is not None)
     cg = cube or vector
     content = _generate_caller_cpp(

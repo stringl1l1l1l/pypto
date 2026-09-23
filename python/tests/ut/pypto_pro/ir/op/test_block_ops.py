@@ -1066,7 +1066,7 @@ def test_make_tile_addr_from_constant_expression():
 @pytest.mark.parametrize("memory", [pl.MemorySpace.Left, pl.MemorySpace.Right, pl.MemorySpace.Acc])
 @pytest.mark.parametrize("layout", [pl.ZZ, pl.NN])
 def test_a5_rejects_zz_nn_for_cube_buffers(monkeypatch, memory, layout):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
 
     with pytest.raises(InvalidVal, match="do not support"):
 
@@ -1084,7 +1084,7 @@ def test_a5_rejects_zz_nn_for_cube_buffers(monkeypatch, memory, layout):
 
 
 def test_a5_allows_regular_cube_buffer_layouts(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
 
     @pl.jit(auto_mutex=False)
     def create_tile(_jit_entry: pl.DT_INT64):
@@ -1124,7 +1124,7 @@ def test_high_dimensional_nz_load_store_use_last_two_axes_by_default():
 
 
 def test_store_and_store_tile_with_scaling_tile_use_store_op(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
 
     @pl.jit(auto_mutex=False)
     def main(out: pl.Tensor[[64, 64], pl.DT_INT8]):

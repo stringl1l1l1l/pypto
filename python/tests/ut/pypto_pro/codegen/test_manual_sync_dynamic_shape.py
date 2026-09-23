@@ -38,7 +38,7 @@ class _ManualSyncTilingKey:
 def _compile_to_cce(kernel_def) -> str:
     from pypto_pro.runtime.jit import _assemble_cv_source, _parse_and_codegen_targets
 
-    cube, vector = _parse_and_codegen_targets(kernel_def, "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel_def, "3510", "")
     return _assemble_cv_source(cube, vector).content
 
 

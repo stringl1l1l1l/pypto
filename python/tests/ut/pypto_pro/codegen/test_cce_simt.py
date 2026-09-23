@@ -17,7 +17,7 @@ import pypto_pro.language as pl
 import pytest
 
 
-def _compile_to_cce(kernel, arch: str = "a5") -> str:
+def _compile_to_cce(kernel, arch: str = "3510") -> str:
     from pypto_pro.runtime.jit import _assemble_cv_source, _parse_and_codegen_targets
 
     cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), arch, "")

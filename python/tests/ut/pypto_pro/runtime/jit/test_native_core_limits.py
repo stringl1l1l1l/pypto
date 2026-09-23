@@ -88,11 +88,11 @@ static void RecordLaunch(uint32_t dim, void*, int64_t* = nullptr)
         "future": {"cube_vec": jit.KernelTarget("test-mixed-1-1", 1, 1, True)},
     })
     modes = {
-        "cube": ("a5", True, False, False),
-        "vector": ("a5", False, True, False),
-        "mixed": ("a5", True, True, False),
+        "cube": ("3510", True, False, False),
+        "vector": ("3510", False, True, False),
+        "mixed": ("3510", True, True, False),
         "mixed_1_1": ("future", True, True, False),
-        "sync": ("a5", True, True, True),
+        "sync": ("3510", True, True, True),
     }
     for name, (arch, has_cube, has_vec, cross_sync) in modes.items():
         caller = jit._generate_caller_cpp(
