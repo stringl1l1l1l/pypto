@@ -48,7 +48,7 @@ FP32 = pypto.DT_FP32
 
 # 所有 dualdst kernel 共用同一份 jit 配置: 提前固化, 避免每个 kernel 重复 3 行装饰器。
 _DUALDST_JIT = pypto.frontend.jit(
-    debug_options={"runtime_debug_mode": 0, "compile_debug_mode": 0}, pass_options={"auto_mix_partition": 1}
+    debug_options={"runtime_debug_mode": 0, "compile_debug_mode": 0}
 )
 
 
@@ -96,6 +96,7 @@ def dual_dst_split_n_kernel(
     单 cube tile 覆盖 M/K/N: 一次 matmul 产出唯一一份 L0C tensor,
     它的两个 L0C_COPY_UB consumer 才是 dual_dst 候选对。
     """
+    pypto.experimental.auto_mix_partition(1)
     upper, lower = _split_n_prologue_64(a_tensor, b_tensor)
     upper = _online_softmax_exp(upper, 64, 64)
     lower = _online_softmax_exp(lower, 64, 64)
@@ -149,6 +150,7 @@ def dual_dst_split_m_kernel(
     out1_tensor: pypto.Tensor([pypto.STATIC, pypto.STATIC], FP32),
 ):
     """matmul -> L0C -> M 轴二分 -> 两条独立 add-scalar vector chain (SplitM 方向)。"""
+    pypto.experimental.auto_mix_partition(1)
     pypto.set_cube_tile_shapes([128, 128], [64, 64], [64, 64])
     mm = pypto.matmul(a_tensor, b_tensor, b_trans=True, out_dtype=FP32)
     half_m = mm.shape[0] // 2
@@ -199,6 +201,7 @@ def dual_dst_chained_ops_kernel(
 
     验证 dualdst 融合后下游多步依赖链仍正确。
     """
+    pypto.experimental.auto_mix_partition(1)
     upper, lower = _split_n_prologue_64(a_tensor, b_tensor)
     upper = _online_softmax_exp(upper, 64, 64)
     lower = _online_softmax_exp(lower, 64, 64)
@@ -248,6 +251,7 @@ def dual_dst_asymmetric_scale_kernel(
 
     验证两个 AIV core 实际执行不同语义但共享同一份 L0C 数据。
     """
+    pypto.experimental.auto_mix_partition(1)
     upper, lower = _split_n_prologue_64(a_tensor, b_tensor)
     upper = _online_softmax_exp(upper, 64, 64)
     lower = _online_softmax_exp(lower, 64, 64)
@@ -325,6 +329,7 @@ def dual_dst_max_gain_kernel(
     相邻 (偶,奇) 子块被 dualdst 合并, 累计 N_PAIRS 对融合。
     所有切片边界都是 python int 常量。
     """
+    pypto.experimental.auto_mix_partition(1)
     pypto.set_cube_tile_shapes([GAIN_M, GAIN_M], [GAIN_K, GAIN_K], [2 * GAIN_HALF_N, 2 * GAIN_HALF_N])
     mm = pypto.matmul(a_tensor, b_tensor, b_trans=True, out_dtype=FP32)
     for j in range(2 * N_PAIRS):
@@ -393,6 +398,7 @@ def dual_dst_long_chain_kernel(
 
     每条 chain 跟 ADDS_CHAIN_DEPTH 步 ADDS 形成长依赖链。
     """
+    pypto.experimental.auto_mix_partition(1)
     pypto.set_cube_tile_shapes([MM_M, MM_M], [MM_K, MM_K], [MM_N, MM_N])
     # 上半 / 下半 chain 各自的 ADDS scalar 序列; sum 用于 golden 累加。
     upper_scalars = [0.5, 1.0, 1.5, 2.0]  # len == ADDS_CHAIN_DEPTH
@@ -504,6 +510,7 @@ def dual_dst_link_chain_kernel(
     每个 ws 各自独立, 避开 "同一 GM tensor 多 slice 读写" 的 pypto IR 环路;
     最后一步直接写 out_a / out_b。
     """
+    pypto.experimental.auto_mix_partition(1)
     pypto.set_cube_tile_shapes([LINK_M, LINK_M], [LINK_K, LINK_K], [LINK_N, LINK_N])
     # 中间步 workspace: 每个独立 LogicalTensor, 写一次/读一次, 不与最终 out_a/out_b 共享。
     # 用普通 for 循环 (而非 list comprehension) 收集: pypto parser 不进入 list comp 的
@@ -637,6 +644,7 @@ def dual_dst_mega_kernel(
     out_a_tensor:  [MEGA_TOTAL_MM * MEGA_M, MEGA_HALF_N] AIV0 chain 输出沿 M 拼
     out_b_tensor:  [MEGA_TOTAL_MM * MEGA_M, MEGA_HALF_N] AIV1 chain 输出沿 M 拼
     """
+    pypto.experimental.auto_mix_partition(1)
     pypto.set_cube_tile_shapes([MEGA_M, MEGA_M], [MEGA_K, MEGA_K], [MEGA_N, MEGA_N])
     # 外循环 s = 并行分支 idx, 内循环 i = 单分支内串行 mm idx;
     # 外内嵌套保证 IR op 顺序上 branch_0 的 10 个 mm 聚在一起 (串行语义), 而
