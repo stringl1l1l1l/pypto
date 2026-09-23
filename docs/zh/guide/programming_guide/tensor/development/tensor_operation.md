@@ -14,13 +14,11 @@ PyPTO为张量计算提供了一套全面的操作，旨在为用户提供高效
     # 加法
     result = pypto.add(a, b)
     result = pypto.add(a, scalar)  # 将标量添加到张量
-    result = pypto.add(a, b, alpha=2.0)  # a + 2.0 * b
     result = a + b
 
     # 减法
     result = pypto.sub(a, b)
     result = pypto.sub(a, scalar)
-    result = pypto.sub(a, b, alpha=2.0)  # a - 2.0 * b
     result = a - b
 
     # 乘法
