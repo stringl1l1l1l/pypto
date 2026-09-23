@@ -869,7 +869,7 @@ def _build_launch_entry(compiled: "CompiledKernel"):
         # calls and Python dict/loop work. Errors return before any device launch.
         actual_block_dim = call_kernel(block_dim, stream._as_parameter_, *abi_args)
         if actual_block_dim < 0:
-            raise RuntimeFailure(f"Kernel launch failed with error code {actual_block_dim}")
+            raise RuntimeFailure(_launch_error_message(actual_block_dim, block_dim, compiled))
         # The capture probe only feeds these two log lines; skip it when neither can emit.
         if logger.isEnabledFor(logging.INFO):
             try:
@@ -1722,6 +1722,35 @@ def _setup_arch_env(arch: str) -> str:
         raise NotSupported(f"PyPTO Pro only supports arch 'a5', got {arch!r}")
     os.environ["PYPTOPRO_JIT_ARCH"] = arch
     return arch
+
+
+def _launch_error_message(error_code: int, requested_block_dim: int, compiled: "CompiledKernel | None") -> str:
+    """Decode the native -(kind << 32 | detail) launch error into a readable message.
+
+    The raw code stays in the message for log grepping; the appended text explains
+    the rejection in terms the caller can act on. ``requested_block_dim`` is the
+    value handed to the launcher (0 only for the auto sentinel, which is never
+    rejected as an over-budget request).
+    """
+    code = -int(error_code)
+    kind, detail = code >> 32, code & 0xFFFFFFFF
+    prefix = f"Kernel launch failed with error code {error_code}"
+    if kind == 5:
+        return f"{prefix}: requested block_dim {requested_block_dim} exceeds the stream budget of {detail} block(s)"
+    if kind in (1, 2):
+        engine = "cube" if kind == 1 else "vector"
+        target = getattr(compiled, "target", None)
+        per_block = (target.aic_per_block if kind == 1 else target.aiv_per_block) if target else 0
+        if per_block:
+            return (
+                f"{prefix}: the stream's {engine} budget of {detail} core(s) cannot host one block "
+                f"of {per_block} {engine} core(s)"
+            )
+        return f"{prefix}: the stream's {engine} budget of {detail} core(s) cannot host one block"
+    if kind in (3, 4):
+        engine = "cube" if kind == 3 else "vector"
+        return f"{prefix}: querying the stream's {engine} budget failed with ACL error {detail:#x}"
+    return f"{prefix} (kind={kind}, detail={detail:#x})"
 
 
 def _launch(compiled: "CompiledKernel", args: tuple, block_dim: int, stream):

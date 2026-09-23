@@ -659,7 +659,7 @@ def test_launch_propagates_native_errors(monkeypatch, kind, detail):
     config_lookup = MagicMock(side_effect=AssertionError("Reporting a native error must not need core usage"))
     monkeypatch.setattr(_jit, "get_jit_compile_config", config_lookup)
     compiled = CompiledKernel(lib_path="<fake>", param_specs=[], has_cube=True, has_vector=True)
-    with pytest.raises(RuntimeError, match=f"Kernel launch failed with error code {lib.call_kernel.result}$"):
+    with pytest.raises(RuntimeError, match=f"Kernel launch failed with error code {lib.call_kernel.result}"):
         _jit._launch(compiled, (), 8, _FAKE_STREAM)
     assert lib.call_kernel.restype is ctypes.c_int64
     _torch_mock.npu.get_stream_limit.assert_not_called()

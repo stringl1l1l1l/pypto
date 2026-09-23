@@ -111,7 +111,11 @@ def test_insufficient_mixed_budget_rejects_without_device_writes(stream):
     torch.npu.synchronize()
     launcher = KERNELS[2][stream, 2]
     torch.npu.set_stream_limit(stream, 4, 1)
-    with pytest.raises(RuntimeError, match=f"Kernel launch failed with error code {-0x200000001}$"):
+    with pytest.raises(
+        RuntimeError,
+        match=f"Kernel launch failed with error code {-0x200000001}: "
+        "the stream's vector budget of 1 core\\(s\\) cannot host one block of 2 vector core\\(s\\)",
+    ):
         launcher(*outputs)
     stream.synchronize()
     assert all(torch.count_nonzero(t.cpu()).item() == 0 for t in outputs)
