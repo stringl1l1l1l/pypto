@@ -1312,7 +1312,7 @@ def _codegen_target_cce(
         if wrapper is None:
             raise
         raise wrapper(str(exc), span=span_of_spec_message(str(exc))) from None
-    if "ffts_cross_core_sync" in cpp_code and arch == "a5":
+    if "ffts_cross_core_sync" in cpp_code and arch == "3510":
         extra_headers = "#include <pto/npu/a5/custom/TSyncCVID.hpp>"
         guard = {
             ir.SectionKind.Cube: "#if defined(__DAV_CUBE__)",
@@ -1722,7 +1722,7 @@ def _build_jit_so(
 
 def get_current_arch() -> str:
     """Return the arch configured in the current process environment."""
-    return os.environ.get("PYPTOPRO_JIT_ARCH", "a5")
+    return os.environ.get("PYPTOPRO_JIT_ARCH", "3510")
 
 
 def _setup_arch_env(arch: str) -> str:
@@ -1730,8 +1730,8 @@ def _setup_arch_env(arch: str) -> str:
     if not arch:
         raise InvalidVal("arch must not be empty")
     arch = arch.strip().lower()
-    if arch != "a5":
-        raise NotSupported(f"PyPTO Pro only supports arch 'a5', got {arch!r}")
+    if arch != "3510":
+        raise NotSupported(f"PyPTO Pro only supports arch '3510', got {arch!r}")
     os.environ["PYPTOPRO_JIT_ARCH"] = arch
     return arch
 
@@ -1960,7 +1960,7 @@ def jit(
     performs lazy compilation on first call and supports bracket-launch syntax.
 
     Args:
-        arch: Target architecture ("a5", or None for auto-detect).
+        arch: Target architecture ("3510", or None for auto-detect).
         auto_mutex: Boolean flag to enable automatic mutex lock/unlock insertion.
         name: Custom kernel name for build artifact path isolation.
         pipeline: PipelineConfig for automatic preload pipeline transformation.
@@ -1968,7 +1968,7 @@ def jit(
 
     Usage (Tile-programming kernel with bracket-launch)::
 
-        @pl.jit(arch="a5")
+        @pl.jit(arch="3510")
         def add_kernel(
             x: pl.Tensor[[64, 128], pl.DT_FP16],
             y: pl.Tensor[[64, 128], pl.DT_FP16],

@@ -157,7 +157,7 @@ _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
             "cube": KernelTarget("dav-2201", aic_per_block=1, aiv_per_block=0, fat_object=False),
             "vec": KernelTarget("dav-2201", aic_per_block=0, aiv_per_block=1, fat_object=False),
         },
-        "a5": {
+        "3510": {
             "cube_vec": KernelTarget("dav-3510", aic_per_block=1, aiv_per_block=2, fat_object=True),
             "cube": KernelTarget("dav-3510", aic_per_block=1, aiv_per_block=0, fat_object=False),
             "vec": KernelTarget("dav-3510", aic_per_block=0, aiv_per_block=1, fat_object=False),
@@ -165,7 +165,7 @@ _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
     },
     memory_arch_flags={
         "a2a3": "-DMEMORY_BASE",
-        "a5": "-DREGISTER_BASE",
+        "3510": "-DREGISTER_BASE",
     },
     arch_flags=("--npu-arch={npu_arch}",),
     # ASC derives fat objects from the explicit __mix__ entry qualifier.
@@ -211,7 +211,7 @@ _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
             "-Werror",
             "-Wno-cce-compat",
         ),
-        "a5": (
+        "3510": (
             "-mllvm",
             "-tile-fusion-skip-reduceop-fusion=true",
             "-mllvm",

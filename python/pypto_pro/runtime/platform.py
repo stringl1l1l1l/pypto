@@ -37,8 +37,10 @@ logger = logging.getLogger(__name__)
 _ARCH_MAP = {
     "DAV_1001": "a3",  # 910
     "DAV_2201": "a3",  # 910B/910C
-    "DAV_3510": "a5",  # 950
+    "DAV_3510": "3510",  # 950
 }
+# Canonical arch -> legacy string still expected by the C++ side (CCECodegen / GetMemoryLimitForArch).
+_ARCH_TO_CPP_ARCH = {"3510": "a5"}
 
 
 @dataclass
@@ -58,7 +60,7 @@ class PlatformInfo:
         """Infer compilation arch from SOC version string.
 
         Returns:
-            "a5" for DAV_3510 (950 series), "a3" for DAV_2201/DAV_1001, "" if unknown.
+            "3510" for DAV_3510 (950 series), "a3" for DAV_2201/DAV_1001, "" if unknown.
         """
         if not self.soc_version:
             return ""
@@ -132,7 +134,7 @@ def get_memory_limit(arch: str, memory_space: str) -> int:
     """Query on-chip buffer capacity (bytes) for the target arch.
 
     Args:
-        arch: Compilation arch ("a5", from PYPTOPRO_JIT_ARCH).
+        arch: Compilation arch ("3510", from PYPTOPRO_JIT_ARCH).
         memory_space: pypto_pro MemorySpace name (e.g. "Vec"/"Mat"/"Left"/
               "Right"/"Acc") of the buffer to query.
 
@@ -142,7 +144,7 @@ def get_memory_limit(arch: str, memory_space: str) -> int:
     try:
         from pypto import pypto_impl
 
-        return pypto_impl.GetMemoryLimitForArch(arch, str(memory_space))
+        return pypto_impl.GetMemoryLimitForArch(_ARCH_TO_CPP_ARCH.get(arch, arch), str(memory_space))
     except (ImportError, AttributeError, RuntimeError) as e:
         logger.debug("pypto_impl memory-limit query not available: %s", e)
         return 0
