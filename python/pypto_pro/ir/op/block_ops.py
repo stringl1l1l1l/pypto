@@ -1572,12 +1572,12 @@ def _apply_default_layout(tt: "TileType") -> None:
     from pypto_pro.runtime.jit import get_current_arch
 
     arch = get_current_arch()
-    layout_dict = _DEFAULT_LAYOUTS_A5 if arch == "a5" else _DEFAULT_LAYOUTS_A3
+    layout_dict = _DEFAULT_LAYOUTS_A5 if arch == "3510" else _DEFAULT_LAYOUTS_A3
     default_layout = layout_dict.get(tt.target_memory)
 
     if tt.target_memory in (MemorySpace.ScaleLeft, MemorySpace.ScaleRight):
         if default_layout is None:
-            raise InvalidVal(f"{tt.target_memory.name} is only supported on A5, got architecture '{arch}'")
+            raise InvalidVal(f"{tt.target_memory.name} is only supported on 3510, got architecture '{arch}'")
 
     if default_layout is None:
         return
@@ -1601,7 +1601,7 @@ def _apply_default_layout(tt: "TileType") -> None:
         allowed_layouts = {_DEFAULT_LAYOUTS_A3[MemorySpace.Left], _DEFAULT_LAYOUTS_A5[MemorySpace.Left]}
     elif tt.target_memory == MemorySpace.Mat:
         allowed_layouts.add(TensorLayout.ZN)
-        if arch == "a5":
+        if arch == "3510":
             allowed_layouts.update({TensorLayout.ND, TensorLayout.DN})
         elif tt.dtype in (DataType.UINT64, DataType.INT64):
             allowed_layouts.add(TensorLayout.ND)
@@ -1609,7 +1609,7 @@ def _apply_default_layout(tt: "TileType") -> None:
             allowed_layouts.update({TensorLayout.ZZ, TensorLayout.NN})
 
     if (
-        arch == "a5"
+        arch == "3510"
         and tt.target_memory in (MemorySpace.Left, MemorySpace.Right, MemorySpace.Acc)
         and tt.layout in _REJECTED_LAYOUTS_ON_A5
     ):
@@ -2043,7 +2043,7 @@ _A5_MATMUL_DTYPE_COMBOS = (
 
 
 _MATMUL_DTYPE_COMBOS = {
-    "a5": _A5_MATMUL_DTYPE_COMBOS,
+    "3510": _A5_MATMUL_DTYPE_COMBOS,
 }
 
 
@@ -2965,18 +2965,18 @@ _A5_INSERT_QUANT_COMBOS = (
 )
 
 _LAYOUT_DTYPE_COMBOS = {
-    "load": {"a5": _A5_LOAD_COMBOS},
-    "load_tile": {"a5": _A5_LOAD_COMBOS},
-    "store": {"a5": _A5_STORE_COMBOS, "a5_quant": _A5_STORE_QUANT_COMBOS},
-    "store_tile": {"a5": _A5_STORE_COMBOS, "a5_quant": _A5_STORE_QUANT_COMBOS},
+    "load": {"3510": _A5_LOAD_COMBOS},
+    "load_tile": {"3510": _A5_LOAD_COMBOS},
+    "store": {"3510": _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
+    "store_tile": {"3510": _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
     "move": {
-        "a5": _A5_MOVE_COMBOS,
-        "a5_quant": _A5_MOVE_QUANT_COMBOS,
+        "3510": _A5_MOVE_COMBOS,
+        "3510_quant": _A5_MOVE_QUANT_COMBOS,
     },
-    "extract": {"a5": _A5_ACC_NZ_TO_MAT_NZ_COMBOS, "a5_quant": _A5_INSERT_QUANT_COMBOS},
+    "extract": {"3510": _A5_ACC_NZ_TO_MAT_NZ_COMBOS, "3510_quant": _A5_INSERT_QUANT_COMBOS},
     "insert": {
-        "a5": _A5_INSERT_COMBOS,
-        "a5_quant": _A5_INSERT_QUANT_COMBOS,
+        "3510": _A5_INSERT_COMBOS,
+        "3510_quant": _A5_INSERT_QUANT_COMBOS,
     },
 }
 
