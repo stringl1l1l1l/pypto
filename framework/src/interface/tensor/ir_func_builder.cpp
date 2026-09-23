@@ -358,8 +358,13 @@ void RootFunctionBuilder::ComputeIncast(Function& pathFunc,
                                         const std::unordered_set<std::shared_ptr<LogicalTensor>>& allInputs,
                                         const std::unordered_set<std::shared_ptr<LogicalTensor>>& definedOutputs)
 {
+    std::vector<std::shared_ptr<LogicalTensor>> sortedInputs(allInputs.begin(), allInputs.end());
+    std::sort(sortedInputs.begin(), sortedInputs.end(),
+              [](const std::shared_ptr<LogicalTensor>& lhs, const std::shared_ptr<LogicalTensor>& rhs) {
+                  return lhs->GetMagic() < rhs->GetMagic();
+              });
     std::unordered_set<std::shared_ptr<LogicalTensor>> incastPtrs;
-    for (auto& input : allInputs) {
+    for (auto& input : sortedInputs) {
         if (definedOutputs.find(input) == definedOutputs.end() && incastPtrs.find(input) == incastPtrs.end()) {
             incastPtrs.insert(input);
             pathFunc.AddOriginIncast(input);

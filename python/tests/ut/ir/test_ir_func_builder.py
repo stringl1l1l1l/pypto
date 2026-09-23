@@ -15,7 +15,7 @@ from pathlib import Path
 import pypto
 from pypto import ir, pil
 
-from .test_common import check_snapshot
+from .test_common import check_snapshot, run_root_function
 
 _GOLDEN_DIR = Path(__file__).parent / "test_ir_func_builder_data"
 
@@ -374,3 +374,47 @@ def test_create_tensor():
 
     prog = ir.Pass.create_root_functions()(prog)
     _assert_func_counts(prog, 2)
+
+
+def test_compute_incast_deterministic_order():
+    """ComputeIncast must add hiddenfunc incasts in ascending tensor magic
+    order so the hiddenfunc signature (and with it the function hash and the
+    generated CCE file name) is identical across processes.
+
+    std::unordered_set iteration order depends on the heap addresses of its
+    shared_ptr elements, which vary with ASLR between runs.  A loop-body
+    segment whose ops consume six distinct params feeds six unordered inputs
+    to ComputeIncast; without the magic sort the incast order changed from
+    run to run.
+    """
+
+    def kern(a0, a1, a2, a3, a4, a5, out):
+        pypto.set_vec_tile_shapes(16, 16)
+        for i in pypto.loop(2):
+            v0 = pypto.view(a0, [16, 16], [i * 16, 0])
+            v1 = pypto.view(a1, [16, 16], [i * 16, 0])
+            v2 = pypto.view(a2, [16, 16], [i * 16, 0])
+            v3 = pypto.view(a3, [16, 16], [i * 16, 0])
+            v4 = pypto.view(a4, [16, 16], [i * 16, 0])
+            v5 = pypto.view(a5, [16, 16], [i * 16, 0])
+            total = v0 + v1 + v2 + v3 + v4 + v5
+            pypto.assemble(total, [i * 16, 0], out)
+
+    tensors = [pypto.Tensor([32, 16], pypto.DT_FP32, name=f"a{i}") for i in range(6)]
+    out = pypto.Tensor([32, 16], pypto.DT_FP32, name="out")
+    prog = run_root_function(kern, *tensors, out)
+
+    _assert_func_counts(prog, 1)
+    hidden = next(f for name, f in prog.functions.items() if "_hiddenfunc" in name)
+
+    # Snapshot pins the whole hiddenfunc signature, incast order included.
+    check_snapshot(hidden, _GOLDEN_DIR / "test_compute_incast_deterministic_order.pypto")
+
+    # Magics are assigned sequentially at tensor creation, so the sorted order
+    # equals the kernel arg order: a0..a5 (incasts), then out.  Params carry a
+    # version suffix (e.g. a0_1) — compare the base names.
+    param_names = [p.name for p in hidden.params]
+    base_names = [n.rsplit("_", 1)[0] for n in param_names]
+    assert base_names == [f"a{i}" for i in range(6)] + ["out"], (
+        f"hiddenfunc incast order is not magic-sorted: {param_names}"
+    )
