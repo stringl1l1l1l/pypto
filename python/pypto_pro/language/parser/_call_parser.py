@@ -1694,8 +1694,10 @@ class CallParserMixin:
         # 1. Build unique_refs: scan args for slot.tile mutex refs, dedup by slot,
         #    then drop Acc tiles when a phase-aware matmul/FixPipe op carries the
         #    unit_flag (the hardware handshake replaces the software mutex there).
-        scan_args = call.args
-        tilerefs = [self._try_resolve_tileref(arg) for arg in scan_args]
+        tilerefs = (
+            [self._try_resolve_tileref(arg) for arg in call.args]
+            + [self._try_resolve_tileref(kw.value) for kw in call.keywords]
+        )
         unique_refs = []
         seen = set()
         for tref in tilerefs:

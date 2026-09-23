@@ -218,6 +218,27 @@ def test_auto_mutex_single_tile():
     assert re.search(r'mutex_id_owner_indices(?:="mutex_id_owner_indices":|=)\s*\[0\]', ir_str), ir_str
 
 
+def test_auto_mutex_locks_scale_kwarg_tile(monkeypatch):
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+
+    @pl.jit(auto_mutex=True)
+    def k(out: pl.Tensor[[64, 64], pl.DT_INT8]):
+        acc_tt = pl.TileType(
+            shape=[64, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc, layout=pl.NZ, fractal=1024
+        )
+        fp_tt = pl.TileType(shape=[1, 64], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Scaling)
+        acc_g = pl.make_tile_group(type=acc_tt, addrs=0, mutex_ids=[0])
+        fp_g = pl.make_tile_group(type=fp_tt, addrs=0, mutex_ids=[1])
+        pl.store(out, acc_g[0], [0, 0], scale=fp_g[0])
+
+    ir_str = _ir_to_str(k.to_kernel_def().parse_target_program(ir.SectionKind.Cube)[0])
+    assert "block.store" in ir_str, ir_str
+    assert ir_str.count("system.mutex_lock_dyn") == 2, ir_str
+    assert ir_str.count("system.mutex_unlock_dyn") == 2, ir_str
+    assert re.search(r'mutex_ids(?:="mutex_ids":|=)\s*\[0\]', ir_str), ir_str
+    assert re.search(r'mutex_ids(?:="mutex_ids":|=)\s*\[1\]', ir_str), ir_str
+
+
 def test_auto_mutex_group_loop():
     @pl.jit(auto_mutex=True)
     def k(gm_q: pl.Tensor[[128, 32], pl.DT_FP16]):

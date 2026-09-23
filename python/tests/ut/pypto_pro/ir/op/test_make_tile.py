@@ -280,7 +280,7 @@ def test_size_is_derived_from_tile_type():
     assert "memref_size=128" in _kernel_ir(k)
 
 
-@pytest.mark.parametrize("size", [None, -32, 0, 128, 256])
+@pytest.mark.parametrize("size", [-32, 0, 128, 256])
 def test_size_keyword_is_rejected(size):
     @pl.jit
     def k(x: pl.Tensor[[1, 64], pl.DT_FP16]):

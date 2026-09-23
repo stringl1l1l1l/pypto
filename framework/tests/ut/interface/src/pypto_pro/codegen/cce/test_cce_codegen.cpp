@@ -789,12 +789,8 @@ TEST(CCECodegenTest, MergesArrayTuplePhiThroughOneBackingArray)
     EXPECT_EQ(generated.find("selected__item_0"), std::string::npos);
 }
 
-TEST(CCECodegenTest, RejectsHomogeneousTupleOfTuples)
+TEST(CCECodegenTest, DoesNotMaterializeHomogeneousTupleOfTuples)
 {
-    // A homogeneous tuple whose elements are themselves tuples selects the array
-    // representation by type, but a tuple has no C++ element spelling. Diagnose it
-    // explicitly rather than silently degrading to flattened leaf slots.
-    auto scalar_type = std::make_shared<const ir::ScalarType>(ir::DataType::INT64);
     auto inner_value = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{MakeConstInt(1), MakeConstInt(2)},
                                                              ir::Span::Unknown());
     auto outer_value = std::make_shared<const ir::MakeTuple>(std::vector<ir::ExprPtr>{inner_value, inner_value},
@@ -805,7 +801,10 @@ TEST(CCECodegenTest, RejectsHomogeneousTupleOfTuples)
         ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    EXPECT_THROW((void)codegen.GenerateSingle(MakeProgram(body), "a5"), std::exception);
+    std::string generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+
+    EXPECT_EQ(generated.find("nested[]"), std::string::npos);
+    EXPECT_EQ(generated.find("nested[2]"), std::string::npos);
 }
 
 TEST(CCECodegenTest, FlattensAggregateTuplePhiIntoLeafSlots)

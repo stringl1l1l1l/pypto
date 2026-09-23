@@ -1371,7 +1371,10 @@ bool CCECodegen::IsArrayTuple(const ir::TupleTypePtr& tt) const
 {
     if (!tt || tt->types_.empty())
         return false;
-    return GetTupleTypeInfo(tt) == nullptr && IsHomogeneousTuple(tt);
+    if (GetTupleTypeInfo(tt) != nullptr || !IsHomogeneousTuple(tt))
+        return false;
+    auto elem_tuple = ir::As<ir::TupleType>(tt->types_[0]);
+    return !elem_tuple || GetStructName(elem_tuple) != nullptr;
 }
 
 void CCECodegen::EmitFullPhiIf(const ir::IfStmtPtr& op)
@@ -1493,12 +1496,6 @@ void CCECodegen::EmitTupleVariable(const std::string& name, const ir::TupleTypeP
     // `initialize` means this is a fresh slot: define it and take ownership of its storage.
     if (IsArrayTuple(type)) {
         const auto& elem_type = type->types_[0];
-        // A C++ array needs a single element spelling. Elements are basic types or registered
-        // structs; a plain nested tuple would need a second dimension, which is not supported.
-        auto elem_tuple = ir::As<ir::TupleType>(elem_type);
-        PRO_CODEGEN_CHECK(ExternalError::INVALID_SHAPE, !elem_tuple || GetStructName(elem_tuple) != nullptr)
-            << "Only one-dimensional array tuples are supported, but '" << name << "' has tuple elements at "
-            << span.ToString();
 
         if (initialize) {
             // The declaration depends only on the type; only the initial value comes from source.
