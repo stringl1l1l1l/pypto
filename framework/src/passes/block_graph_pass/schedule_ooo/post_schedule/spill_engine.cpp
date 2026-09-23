@@ -32,6 +32,14 @@ constexpr int32_t DEFAULT_LATENCY = 511;
 
 namespace {
 
+bool WritesMemId(Operation* op, int memId)
+{
+    const auto& outs = op->GetOOperands();
+    return std::any_of(outs.begin(), outs.end(), [memId](const LogicalTensorPtr& out) {
+        return out != nullptr && out->memoryrange.memId == memId;
+    });
+}
+
 // 写后写冲突判据: 同一块地 + 都在写 + 区域重叠, 不按 opcode 名字判。
 bool ConflictsWith(const LogicalTensorPtr& reloaded, Operation* op, int memId)
 {
@@ -433,6 +441,9 @@ bool SpillEngine::CanReplayOffset(const std::vector<OpImmediate>& offset)
 // 认 opcode 不认 format: format 默认就是 ND, 按它判会放行 NZ->NZ, 二次分形静默错值。
 bool SpillEngine::IsLayoutMove(Operation* op) { return op != nullptr && op->GetOpcode() == Opcode::OP_UB_COPY_ND2NZ; }
 
+// 回载 copyin 会不会重做分形: 只有 L1 目标的 copyin 带 copyInMode 重分形, UB 原样搬字节。
+bool SpillEngine::ReloadReappliesLayout(MemoryType memType) { return memType == MemoryType::MEM_L1; }
+
 // 只搬不算的写才能穿过去上溯: 算子的输出是算出来的, 它的输入里没有这份数据。
 // 白名单而非反查通路表 —— 放行一条得先确认这一跳 shape 语义一致、偏移读得出来。
 // OP_ASSEMBLE 不收: 同级的不进调度, 穿过它可能溯回同一块 buffer, 等于没换级。
@@ -458,7 +469,7 @@ bool SpillEngine::HasLayoutWrite(LogicalTensorPtr tensor)
     return false;
 }
 
-// 能不能就地落盘: 已经在 DDR, 或有 DDR 通路且排布在回载侧复现得出来。
+// 能不能原样落盘: 已在 DDR, 或有 DDR 通路且不含随路排布变换 (镜像存什么回载就是什么)。
 bool SpillEngine::CanSaveTensorToDDR(LogicalTensorPtr tensor)
 {
     if (tensor->GetMemoryTypeOriginal() == MemoryType::MEM_DEVICE_DDR) {
@@ -497,6 +508,7 @@ SpillKind SpillEngine::DispatchSpill(LogicalTensorPtr spillTensor)
     if (writes.size() == 1 && IsReadFromDDR(writes[0])) {
         return SpillKind::ReuseDDR;
     }
+    // 落不了原样盘 (带随路排布变换) 就上溯到变换前的 ND, 镜像里存干净 ND。
     if (!CanSaveTensorToDDR(spillTensor)) {
         return SpillKind::WalkUp;
     }
@@ -586,10 +598,15 @@ LogicalTensorPtr SpillEngine::WalkUpOneHop(Operation* writeOp, SpillPlan& plan)
         return nullptr;
     }
     LogicalTensorPtr source = writeOp->GetInputOperand(0);
-    std::vector<Operation*> writes = CollectDataWrites(source);
-    if (writes.size() == 1 && IsLayoutMove(writes[0])) {
+    // 分形可能就在这一跳 (直接写者是 ND2NZ), 也可能藏在上一跳; 两种都要溯到变换前的 ND。
+    if (IsLayoutMove(writeOp)) {
         plan.crossedNd2nz = true;
-        source = writes[0]->GetInputOperand(0);
+    } else {
+        std::vector<Operation*> writes = CollectDataWrites(source);
+        if (writes.size() == 1 && IsLayoutMove(writes[0])) {
+            plan.crossedNd2nz = true;
+            source = writes[0]->GetInputOperand(0);
+        }
     }
     // 溯到 DDR 就放弃: 复用它得让镜像认别人的地, 落位和生命期都不再由这次 spill 说了算。
     if (source->GetMemoryTypeOriginal() == MemoryType::MEM_DEVICE_DDR) {
@@ -1115,9 +1132,13 @@ Status SpillEngine::ReloadIntoNewBuffer(int spillMemId, LogicalTensorPtr spillTe
     Operation* allocOp = CreateAllocOp(localTensor);
     RegisterTensorAllocOp(allocOp);
     OpMemIdMap opMemIdMap = {{allocOp, {localTensor->memoryrange.memId}}};
+    // 镜像存的是变换前 ND, 回载目标又不原生重分形 (UB) 时, 得两段式补一条 ND2NZ, 否则下游按 NZ 读到错值。
+    bool needReFractal = plan.crossedNd2nz && !ReloadReappliesLayout(localTensor->GetMemoryTypeOriginal());
     Operation* wholeCopyin = nullptr;
     if (plan.kind == SpillKind::InPlacePartial) {
         CreatePartialReloads(spillTensor, localTensor, gmTensor, plan.partialWrites, opMemIdMap);
+    } else if (needReFractal) {
+        wholeCopyin = CreateReFractalReload(gmTensor, localTensor, plan, opMemIdMap);
     } else {
         wholeCopyin = CreateWholeReload(gmTensor, localTensor, plan);
         opMemIdMap.push_back({wholeCopyin, {localTensor->memoryrange.memId}});
@@ -1127,12 +1148,18 @@ Status SpillEngine::ReloadIntoNewBuffer(int spillMemId, LogicalTensorPtr spillTe
         return FAILED;
     }
     ctx.newAllocOps.push_back(allocOp);
-    // 分片回载下 created.copyinOp 为空, opMemIdMap 才记全了本轮产物。
+    // reloadCopyinOps 只收写目标 buffer 的搬运: 两段式里中间 copyin 写的是中间 buffer, 不算。
+    int targetMemId = localTensor->memoryrange.memId;
     for (const auto& entry : opMemIdMap) {
-        if (entry.first == allocOp || USE_LESS_OPS.count(entry.first->GetOpcode()) != 0) {
+        Operation* op = entry.first;
+        if (op == allocOp || USE_LESS_OPS.count(op->GetOpcode()) != 0) {
             continue;
         }
-        plan.reloadCopyinOps.push_back(entry.first);
+        if (state_.schedInfoMap[op].isAlloc) {
+            ctx.newAllocOps.push_back(op);
+        } else if (WritesMemId(op, targetMemId)) {
+            plan.reloadCopyinOps.push_back(op);
+        }
     }
     plan.created.Record(nullptr, allocOp, wholeCopyin, gmTensor);
     return SUCCESS;
@@ -1148,6 +1175,56 @@ Operation* SpillEngine::CreateWholeReload(LogicalTensorPtr gmTensor, LogicalTens
     }
     std::vector<OpImmediate> fromOffset = MirrorOffset(plan.reloadOffset, gmTensor);
     return CreateCopyinOp(gmTensor, localTensor, fromOffset, plan.crossedNd2nz);
+}
+
+// 存端已把 NZ 摊成逻辑 ND 落进 GM 镜像, 中间 buffer 认镜像同一套 ND shape 才与之对称。
+LogicalTensorPtr SpillEngine::CreateNdMidTensor(LogicalTensorPtr gmTensor, LogicalTensorPtr localTensor)
+{
+    LogicalTensorPtr midTensor = irBuilder_.CreateTensorVar(gmTensor->Datatype(), gmTensor->GetShape(),
+                                                            std::vector<SymbolicScalar>{}, TileOpFormat::TILEOP_ND);
+    midTensor->SetMemoryTypeToBe(localTensor->GetMemoryTypeOriginal());
+    midTensor->SetMemoryTypeOriginal(localTensor->GetMemoryTypeOriginal());
+    midTensor->UpdateDynValidShape(gmTensor->GetDynValidShape());
+    midTensor->tensor->rawshape = gmTensor->tensor->rawshape;
+    midTensor->memoryrange.memId = midTensor->GetRawTensor()->GetRawMagic();
+    midTensor->offset = std::vector<int64_t>(midTensor->GetShape().size(), 0);
+    APASS_LOG_DEBUG_F(Elements::Operation, "Spill: Create nd mid tensor[%d].", midTensor->memoryrange.memId);
+    return midTensor;
+}
+
+Operation* SpillEngine::CreateFractalOp(LogicalTensorPtr iOperand, LogicalTensorPtr oOperand)
+{
+    Operation& fractalOp = irBuilder_.CreateTensorOpStmt(function_, Opcode::OP_UB_COPY_ND2NZ, {iOperand}, {oOperand});
+    fractalOp.UpdateLatency(DEFAULT_LATENCY);
+    fractalOp.SetAttribute(OpAttributeKey::isCube, false);
+    APASS_LOG_DEBUG_F(Elements::Operation, "Spill: Create %s", state_.GetOpInfo(&fractalOp).c_str());
+    return &fractalOp;
+}
+
+// 两段式回载: copyin 把镜像 ND 搬进中间 UB (纯 ND2ND), 再 ND2NZ 重分形进目标 NZ buffer。
+Operation* SpillEngine::CreateReFractalReload(LogicalTensorPtr gmTensor, LogicalTensorPtr localTensor,
+                                              const SpillPlan& plan, OpMemIdMap& opMemIdMap)
+{
+    LogicalTensorPtr midTensor = CreateNdMidTensor(gmTensor, localTensor);
+    RegisterLocalBuffer(midTensor);
+    Operation* midAllocOp = CreateAllocOp(midTensor);
+    RegisterTensorAllocOp(midAllocOp);
+    int midMemId = midTensor->memoryrange.memId;
+    int dstMemId = localTensor->memoryrange.memId;
+    std::vector<OpImmediate> fromOffset = MirrorOffset(plan.reloadOffset, gmTensor);
+    Operation* copyinOp = CreateCopyinOp(gmTensor, midTensor, fromOffset);
+    Operation* fractalOp = CreateFractalOp(midTensor, localTensor);
+    opMemIdMap.push_back({midAllocOp, {midMemId}});
+    opMemIdMap.push_back({copyinOp, {midMemId}});
+    opMemIdMap.push_back({fractalOp, {midMemId, dstMemId}});
+    // 中间 buffer 不经 remap 建账, 手起 refcount = 引用它的 op-req 数, 与全量 InitBufRefCount 对齐,
+    // 否则调度 free 时减不到 0 而永不释放。
+    int midRefCount = 0;
+    for (const auto& entry : opMemIdMap) {
+        midRefCount += static_cast<int>(std::count(entry.second.begin(), entry.second.end(), midMemId));
+    }
+    state_.bufRefCount[midMemId] = midRefCount;
+    return fractalOp;
 }
 
 // assemble 上挂着的 alloc 认的是分片视图, 而未执行的写马上按整块改指向, alloc 得跟着认整块。

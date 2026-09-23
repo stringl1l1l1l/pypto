@@ -151,6 +151,7 @@ private:
     int ComputeCopyoutExecOrder(const SpillSource& source, Operation* copyoutOp);
     static bool IsPureMove(Operation* op);
     static bool IsLayoutMove(Operation* op);
+    static bool ReloadReappliesLayout(MemoryType memType);
     bool HasLayoutWrite(LogicalTensorPtr tensor);
     bool CanSaveTensorToDDR(LogicalTensorPtr tensor);
     static std::vector<OpImmediate> GetSaveOffset(Operation* writeOp);
@@ -164,6 +165,10 @@ private:
     Status ReloadIntoNewBuffer(int spillMemId, LogicalTensorPtr spillTensor, Operation* spillOp,
                                Operation* spillAllocOp, SpillPlan& plan, SpillContext& ctx);
     Operation* CreateWholeReload(LogicalTensorPtr gmTensor, LogicalTensorPtr localTensor, const SpillPlan& plan);
+    Operation* CreateReFractalReload(LogicalTensorPtr gmTensor, LogicalTensorPtr localTensor, const SpillPlan& plan,
+                                     OpMemIdMap& opMemIdMap);
+    LogicalTensorPtr CreateNdMidTensor(LogicalTensorPtr gmTensor, LogicalTensorPtr localTensor);
+    Operation* CreateFractalOp(LogicalTensorPtr iOperand, LogicalTensorPtr oOperand);
     void NormalizeAssembleAllocOutput(LogicalTensorPtr spillTensor);
     void CreatePartialReloads(LogicalTensorPtr spillTensor, LogicalTensorPtr localTensor, LogicalTensorPtr gmTensor,
                               const std::vector<SpillPartialWrite>& partialWrites, OpMemIdMap& opMemIdMap);

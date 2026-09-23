@@ -1540,6 +1540,29 @@ TEST_F(ScheduleOoOTest, TestSpillWalkUpThroughSkipOps)
     EXPECT_LT(at(graph.GetOp("viewType")), at(copyout));
 }
 
+// 直接写者就是 ND2NZ 时, WalkUp 第一跳要认出跨分形 (旧逻辑只查第二跳, crossedNd2nz 漏置为假)。
+TEST_F(ScheduleOoOTest, TestSpillWalkUpFirstHopIsNd2nz)
+{
+    ComputationalGraphBuilder graph;
+    graph.AddTensors(DT_FP32, {16, 32}, {MEM_DEVICE_DDR, MEM_UB, MEM_UB, MEM_L1}, {"ddr", "nd", "nz", "l1"});
+    graph.AddOp(Opcode::OP_UB_ALLOC, {}, {"nd"}, "allocNd");
+    graph.AddOp(Opcode::OP_COPY_IN, {"ddr"}, {"nd"}, "write");
+    graph.AddOp(Opcode::OP_UB_ALLOC, {}, {"nz"}, "allocNz");
+    graph.AddOp(Opcode::OP_UB_COPY_ND2NZ, {"nd"}, {"nz"}, "nd2nz");
+    graph.AddOp(Opcode::OP_L1_ALLOC, {}, {"l1"}, "allocL1");
+    graph.AddOp(Opcode::OP_UB_COPY_L1, {"nz"}, {"l1"}, "copyL1");
+
+    OoOScheduler scheduler(*graph.GetFunction());
+    ASSERT_EQ(scheduler.Init(graph.GetFunction()->Operations().DuplicatedOpList()), SUCCESS);
+    scheduler.state_.schedInfoMap[graph.GetOp("write")].isRetired = true;
+
+    SpillPlan plan;
+    ASSERT_EQ(scheduler.spillEngine_.CollectWalkUpSources(graph.GetTensor("nz"), plan), SUCCESS);
+    EXPECT_TRUE(plan.crossedNd2nz);
+    ASSERT_EQ(plan.sources.size(), 1u);
+    EXPECT_EQ(plan.sources[0].tensor, graph.GetTensor("nd"));
+}
+
 TEST_F(ScheduleOoOTest, TestSpillWalkUpPreservesSymbolicReloadOffset)
 {
     ComputationalGraphBuilder graph;
