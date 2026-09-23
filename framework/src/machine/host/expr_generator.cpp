@@ -436,10 +436,19 @@ void ExprBatchGenerator::GenerateLinkScript() const
         ASSERT(DevCommonErr::FILE_ERROR, false) << "File merge.link open failed!";
         return;
     }
+    // Orphan .eh_frame is not dumped into the AOT bin, but ld places it at 0x10000
+    // and shifts .pypto off the page. The pool base is 4K-aligned, so adrp/lo12
+    // then miss .rodata.cst16. ALIGN keeps .pypto on a page boundary.
     file << "SECTIONS\n{\n"
-         << "    . = 0x10000;\n" // align 4K
-         << "    _start = .;\n"
-         << "    .pypto : { *(.pypto.entry) *(.pypto.func) *(.rodata.*) }\n}\n";
+         << "    . = 0x10000;\n"
+         << "    .pypto : ALIGN(4096)\n"
+         << "    {\n"
+         << "        _start = .;\n"
+         << "        *(.pypto.entry)\n"
+         << "        *(.pypto.func)\n"
+         << "        *(.rodata.*)\n"
+         << "    }\n"
+         << "}\n";
     file.close();
 }
 size_t totalExprs_;
