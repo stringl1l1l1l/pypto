@@ -115,7 +115,7 @@ def test_cube_and_vector_facts_are_aggregated_for_one_kernel(monkeypatch):
 
     monkeypatch.setattr(jit, "_codegen_target_cce", fake_codegen)
 
-    jit._parse_and_codegen_targets(FakeKernelDef(), "a5", "unused")
+    jit._parse_and_codegen_targets(FakeKernelDef(), "3510", "unused")
 
     assert recorded_dynamic_ub == {
         ir.SectionKind.Cube: 208 * 1024,

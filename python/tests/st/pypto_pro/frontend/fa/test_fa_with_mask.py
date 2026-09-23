@@ -910,7 +910,7 @@ def compute_gu(ctx_gu, pv_vec_db, exp_corr_db, global_sum_buf, running_o, o_f16,
 # ================================================================
 #  Kernel with NBuffer + auto_mutex
 # ================================================================
-@pl.jit(arch="a5", auto_mutex=True, compile_timeout=200)
+@pl.jit(arch="3510", auto_mutex=True, compile_timeout=200)
 def fa_tnd_with_mask_kernel(
     q: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
     k: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],

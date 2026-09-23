@@ -69,7 +69,7 @@ def _select_tile_with_if_else(true_tile, false_tile, choose_true):
     return selected_tile
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def mixed_width_groups_kernel(
     source: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
     output: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -139,7 +139,7 @@ L0B_K_WIDE = 256
 L0B_N = 128
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def cube_vector_multi_id_kernel(
     a: pl.Tensor[[CUBE_M, CUBE_N], pl.DT_FP32],
     b: pl.Tensor[[CUBE_M, CUBE_K], pl.DT_FP16],
@@ -197,7 +197,7 @@ def cube_vector_multi_id_kernel(
         pl.store(out, vec_group[3], [row_offset, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def dynamic_multi_id_patterns_kernel(
     a: pl.Tensor[[DYN_FULL_ROWS, TILE_COLS], pl.DT_FP16],
     b: pl.Tensor[[DYN_FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -230,7 +230,7 @@ def dynamic_multi_id_patterns_kernel(
             pl.store(offset_out, offset_tile_a, [row, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def same_group_overlapping_slots_kernel(
     a: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
     b: pl.Tensor[[TILE_ROWS, TILE_COLS], pl.DT_FP16],
@@ -248,7 +248,7 @@ def same_group_overlapping_slots_kernel(
         pl.store(out, tile_a, [0, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def subfunction_tile_if_else_kernel(
     true_source: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
     false_source: pl.Tensor[[FULL_ROWS, TILE_COLS], pl.DT_FP16],
@@ -338,7 +338,7 @@ def test_subfunction_tile_if_else():
     torch.testing.assert_close(out.cpu().float(), golden, rtol=3e-3, atol=3e-3)
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def l0a_l0b_overlap_same_id_kernel(
     a: pl.Tensor[[L0A_M, L0A_K_WIDE], pl.DT_FP16],
     b: pl.Tensor[[L0B_K_WIDE, L0B_N], pl.DT_FP16],
