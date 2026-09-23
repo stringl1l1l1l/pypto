@@ -513,7 +513,8 @@ struct FunctionControlFlowExecution {
 
 constexpr int EXEC_DUMP_LEVEL_OPERATION = 1;
 constexpr int EXEC_DUMP_LEVEL_TENSOR = 2;
-const std::unordered_set<Opcode> MIX_PATH_OPS = {Opcode::OP_UB_COPY_L1, Opcode::OP_L0C_COPY_UB, Opcode::OP_COPY_OUT};
+const std::unordered_set<Opcode> MIX_PATH_OPS = {Opcode::OP_UB_COPY_L1, Opcode::OP_L0C_COPY_UB, Opcode::OP_COPY_OUT,
+                                                 Opcode::OP_RESHAPE};
 
 enum class OpInfoCsvHeader {
     num = 0,
@@ -1168,7 +1169,14 @@ struct FunctionInterpreter {
             if (op->GetOpcode() == Opcode::OP_INDEX_ADD && i > 0) {
                 continue;
             }
-            if (auto index = op->GetInplaceIndex(i); index != -1) {
+            // Mix-split cross-component outputs must be published to mixGlobalTensorDict before the inplace
+            // handling: pipe/copy ops (UB_COPY_L1 / L0C_COPY_UB / COPY_OUT) are never inplace, while view-like
+            // inplace ops (e.g. RESHAPE with op_attr_isInplace=true) would otherwise be intercepted below and
+            // their outputs would never be registered for sibling mix-split leaves.
+            if (frame.callop != nullptr && IsMixSplitCallOp(frame.callop) && MIX_PATH_OPS.count(op->GetOpcode()) > 0) {
+                auto callopAttr = std::static_pointer_cast<CallOpAttribute>(frame.callop->GetOpAttribute());
+                oOpDataList.push_back(AllocateOrReuseMixGlobalOutputDataView(frame, oop, callopAttr->wrapId));
+            } else if (auto index = op->GetInplaceIndex(i); index != -1) {
                 ExecuteInplaceOperation(frame, *op, i, iOpDataList, oOpDataList);
             } else if (op->GetOpcode() == Opcode::OP_BIND_TENSOR) {
                 ExecuteBindTensor(frame, *op, iOpDataList, oOpDataList);
@@ -1180,10 +1188,6 @@ struct FunctionInterpreter {
                         dtype = DataType::DT_FP32;
                     }
                     oOpDataList.push_back(AllocateDataView(frame, oop, dtype));
-                } else if (frame.callop != nullptr && IsMixSplitCallOp(frame.callop) &&
-                           MIX_PATH_OPS.count(op->GetOpcode()) > 0) {
-                    auto callopAttr = std::static_pointer_cast<CallOpAttribute>(frame.callop->GetOpAttribute());
-                    oOpDataList.push_back(AllocateOrReuseMixGlobalOutputDataView(frame, oop, callopAttr->wrapId));
                 } else {
                     oOpDataList.push_back(AllocateDataView(frame, oop));
                 }

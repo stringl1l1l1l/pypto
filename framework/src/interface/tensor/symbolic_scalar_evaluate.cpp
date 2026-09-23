@@ -150,6 +150,15 @@ ScalarImmediateType EvaluateSymbolicCallRuntimeIsLoopEnd(EvaluateSymbol* evaluat
     return ret;
 }
 
+ScalarImmediateType EvaluateSymbolicCallRuntimeTernaryOP(EvaluateSymbol* evaluateSymbol,
+                                                         const std::vector<ScalarImmediateType>& dataList)
+{
+    UNUSED(evaluateSymbol);
+    FE_ASSERT(dataList.size() == SIZE_THREE);
+    // Matches RUNTIME_TernaryOP(cond, lhs, rhs) in aicpu_runtime.h: ((cond) ? (lhs) : (rhs))
+    return dataList[0] != 0 ? dataList[1] : dataList[2];
+}
+
 ScalarImmediateType EvaluateSymbolicCallRuntimeGetViewValidShapeDim(EvaluateSymbol* evaluateSymbol,
                                                                     const std::vector<ScalarImmediateType>& dataList)
 {
@@ -219,6 +228,7 @@ ScalarImmediateType EvaluateSymbol::EvaluateSymbolicCall(const std::string& name
         {"RUNTIME_GetInputData", EvaluateSymbolicCallRuntimeGetInputData},
         {"RUNTIME_IsLoopBegin", EvaluateSymbolicCallRuntimeIsLoopBegin},
         {"RUNTIME_IsLoopEnd", EvaluateSymbolicCallRuntimeIsLoopEnd},
+        {"RUNTIME_TernaryOP", EvaluateSymbolicCallRuntimeTernaryOP},
         {"RUNTIME_GetViewValidShapeDim", EvaluateSymbolicCallRuntimeGetViewValidShapeDim},
         {"RUNTIME_GetTensorDataInt32Dim1", EvaluateSymbolicCallRuntimeGetTensorDataInt32Dim1},
         {"RUNTIME_GetTensorDataInt32Dim2", EvaluateSymbolicCallRuntimeGetTensorDataInt32Dim2},

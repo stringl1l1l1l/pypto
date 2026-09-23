@@ -125,6 +125,22 @@ TEST_F(TestSymbolicScalarEvaluate, EvaluateSymbolicCallRuntimeIsLoopEnd)
     EXPECT_EQ(ret, 0);
 }
 
+TEST_F(TestSymbolicScalarEvaluate, EvaluateSymbolicCallRuntimeTernaryOP)
+{
+    EvaluateSymbol evaluator;
+    std::vector<ScalarImmediateType> dataList = {1, 7, 9};
+    auto ret = evaluator.EvaluateSymbolicCall("RUNTIME_TernaryOP", dataList, {});
+    EXPECT_EQ(ret, 7);
+
+    dataList = {0, 7, 9};
+    ret = evaluator.EvaluateSymbolicCall("RUNTIME_TernaryOP", dataList, {});
+    EXPECT_EQ(ret, 9);
+
+    dataList = {3, 7, 9};
+    ret = evaluator.EvaluateSymbolicCall("RUNTIME_TernaryOP", dataList, {});
+    EXPECT_EQ(ret, 7);
+}
+
 TEST_F(TestSymbolicScalarEvaluate, EvaluateSymbolicCallRuntimeGetViewValidShapeDim)
 {
     EvaluateSymbol evaluator;
