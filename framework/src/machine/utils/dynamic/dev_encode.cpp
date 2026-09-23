@@ -1404,19 +1404,14 @@ struct EncodeDevAscendFunctionInfo {
             return;
         }
         if (cellMatchStride[0] > MAX_CELLMATCHSSTRIDE) {
-            MACHINE_LOGE(
-                ProgEncodeErr::ASSEMBLE_STITCH_MEMORY_EXCESS,
-                "Assemble out-cast %d raw %d stitch results in excessive memory consumption "
-                "Please appropriately configure the view shape and tile shape, and ensure aligned with the input "
-                "shape, cellMatchStride[0]=%lu, MAX_CELLMATCHSSTRIDE=%lu",
-                tensor->magic, tensor->GetRawMagic(), static_cast<unsigned long>(cellMatchStride[0]),
-                static_cast<unsigned long>(MAX_CELLMATCHSSTRIDE));
+            MACHINE_LOGD("Cell-match table exceeds limit: cell_shape=%s cellMatchStride=%s table_entries=%lu limit=%lu",
+                         DumpShape(cellMatchShape).c_str(), DumpStride(cellMatchStride).c_str(),
+                         static_cast<unsigned long>(cellMatchStride[0]),
+                         static_cast<unsigned long>(MAX_CELLMATCHSSTRIDE));
+            MACHINE_LOGE(ProgEncodeErr::ASSEMBLE_STITCH_MEMORY_EXCESS,
+                         "Excessive memory consumption due to insufficient tile shapes. "
+                         "Consider increasing tile shapes (e.g. set_vec_tile_shapes).");
         }
-        ASSERT(DevCommonErr::PARAM_CHECK_FAILED, cellMatchStride[0] < MAX_CELLMATCHSSTRIDE)
-            << " Assemble outcast " << tensor->magic << " raw " << tensor->GetRawMagic()
-            << " stitch results in excessive memory consumption,"
-            << " Please appropriately configure the view shape and tile shape, and ensure aligned with the input "
-               "shape.";
     }
 
     void RecordRawTensor(const std::shared_ptr<LogicalTensor>& tensor)

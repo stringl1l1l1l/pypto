@@ -27,6 +27,7 @@
 #include "machine/runtime/memory_utils/memory_pool.h"
 #include "machine/utils/dynamic/dev_encode_function_stitch.h"
 #include "tilefwk/error_code.h"
+#include "tilefwk/pypto_fwk_log.h"
 
 namespace npu::tile_fwk::dynamic {
 
@@ -201,11 +202,15 @@ void ValidateDynamicCellMatchTableMemBudget(const DyndevFunctionAttribute& dynAt
         // Validate every launch-meta slot that encode marked stitchCtrlBitMask != 0 (via NeedAlloc/budget).
         const auto* desc = reinterpret_cast<const DevCellMatchTableDesc*>(cfgBytes + launchMeta.descOffset);
         const uint64_t cellMatchStride0 = desc->stride.dimStride[0];
-        ASSERT(DevCommonErr::PARAM_CHECK_FAILED, cellMatchStride0 < static_cast<uint64_t>(MAX_CELLMATCHSSTRIDE))
-            << "Dynamic cell match slot=" << launchMeta.slotIndex << " stitch results in excessive memory consumption,"
-            << " cellMatchStride0=" << cellMatchStride0 << ", maxAllowed=" << MAX_CELLMATCHSSTRIDE
-            << ". Please appropriately configure the view shape and tile shape, and ensure it is aligned with the "
-               "input shape.";
+        if (cellMatchStride0 > static_cast<uint64_t>(MAX_CELLMATCHSSTRIDE)) {
+            MACHINE_LOGD("Cell-match table exceeds limit: cell_shape=%s cellMatchStride=%s table_entries=%lu limit=%lu",
+                         DumpShape(desc->cellShape).c_str(), DumpStride(desc->stride).c_str(),
+                         static_cast<unsigned long>(cellMatchStride0),
+                         static_cast<unsigned long>(MAX_CELLMATCHSSTRIDE));
+            MACHINE_LOGE(ProgEncodeErr::ASSEMBLE_STITCH_MEMORY_EXCESS,
+                         "Excessive memory consumption due to insufficient tile shapes. "
+                         "Consider increasing tile shapes (e.g. set_vec_tile_shapes).");
+        }
     }
 }
 
