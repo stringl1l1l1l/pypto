@@ -97,7 +97,7 @@ INLINE void DrcoBusyBackOff()
 constexpr uint16_t SYNC_MODE_SHIFT_VALUE = 4;
 constexpr uint16_t SYNC_FLAG_SHIFT_VALUE = 8;
 constexpr uint32_t BATCH_PUSH_BUF_SIZE = 6;
-constexpr uint32_t HUB_STACK_SIZE = 64;
+constexpr uint32_t HUB_STACK_SIZE = 2;
 
 __aicore__ inline uint16_t GetffstMsg(uint16_t mode, uint16_t flagId)
 {
@@ -677,6 +677,49 @@ INLINE void DrcoFlushBatchTasks(DrcoEntryState* state, __gm__ npu::tile_fwk::Drc
     }
 }
 
+// 尝试把单个兜底 hub 任务 CAS 写入全核共享矩阵：从 (push 核行 + start) 起逐行抢占空槽，
+// 成功返回 true 并推进 start（后续改投行分散、减少竞争）；起点跳过 push 核自己的行——
+// producer 正忙于解依赖无暇 pop 本行，落其他行空闲核立即可并行消费
+// slot 存 DRCO_ENCODE_TASK 的 taskId（0 = 空闲），与 local matrix 同款编码
+INLINE static bool DrcoHubTaskMatrixTryPush(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+                                            uint32_t taskId, uint32_t& start)
+{
+    __gm__ npu::tile_fwk::DrcoGlobalHubTaskMatrix* matrix = rootFuncList->hubTaskMatrix;
+    if (matrix == nullptr) {
+        // host 恒分配（InitDrcoRootFuncList），null 即内部状态错误，显性失败优于静默丢任务
+        Trap();
+        return false;
+    }
+    uint32_t rowCnt = state->ctx.aicCoreNum * DRCO_ALL_CORES_PER_AIC;
+    uint32_t coreTypeIdx = BlockDescBlockIdx(state->blockDesc);
+    uint32_t colIdx = coreTypeIdx % npu::tile_fwk::DrcoGlobalHubTaskMatrix::COL_SIZE;
+    for (uint32_t i = 0; i < rowCnt; i++) {
+        uint32_t rowIdx = (coreTypeIdx + start + i) % rowCnt;
+        __gm__ uint32_t* slot = &matrix->hubTaskList[rowIdx].slot[colIdx];
+        uint32_t prev = DrcoAtomicCasToU32(slot, 0, DRCO_ENCODE_TASK(taskId));
+        if (prev == 0) {
+            start = start + i + 1;
+            return true;
+        }
+    }
+    return false;
+}
+
+// 矩阵整满时自旋重试：全核在 fetch 循环无条件扫 hub 矩阵，矩阵内任务被消费必有进展；
+// 超时 Trap 兜底，杜绝静默丢任务导致的挂死（同 ResolveHubMixTask 的 C2V push 模式）
+INLINE void DrcoHubTaskMatrixPush(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+                                  uint32_t taskId)
+{
+    uint32_t start = 1;
+    uint64_t pushStart = get_sys_cnt();
+    while (!DrcoHubTaskMatrixTryPush(state, rootFuncList, taskId, start)) {
+        if (get_sys_cnt() - pushStart > AICORE_LEAF_TASK_RUN_TIMEOUT) {
+            Trap();
+        }
+        DrcoBusyBackOff();
+    }
+}
+
 INLINE void DrcoResolveDependOnce(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                                   uint32_t succTaskId, uint32_t hubStack[], int32_t& hubStackTop,
                                   uint32_t succTaskIdListCoreList[][BATCH_PUSH_BUF_SIZE],
@@ -695,16 +738,15 @@ INLINE void DrcoResolveDependOnce(DrcoEntryState* state, __gm__ npu::tile_fwk::D
         if (hubStackTop + 1 < HUB_STACK_SIZE) {
             hubStack[++hubStackTop] = succTaskId;
         } else {
-            // hub 链超深溢出：改投本类型 local matrix/queue，被任意同类型核取走后由
-            // IsHubTask 分支就地解依赖（不执行不计数）
-            uint32_t overflowTaskId = succTaskId;
-            DrcoDynFuncDataListPushBatch(state, rootFuncList, &overflowTaskId, 1, DRCO_CORE_TYPE);
+            // hub 链超深溢出：改投全核共享 hub 矩阵（不再落本类型 local 队列），被任意核
+            // fetch 时 pop 就地解依赖（不执行不计数）；own-type 队列因此只含可执行 leaf
+            DrcoHubTaskMatrixPush(state, rootFuncList, succTaskId);
         }
     }
 }
 
 // stitch 节点 defer 消费侧专用：stitch 后继不出现 hub，无需 hubStack 分支，
-// 按核类型 batch push 即可（类型越界走本类型 local 队列兜底，防数组越界）
+// 按核类型 batch push 即可（类型越界改投全核共享 hub 矩阵兜底，防数组越界）
 INLINE void DrcoResolveDependOnceCore(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                                       uint32_t succTaskId, uint32_t succTaskIdListCoreList[][BATCH_PUSH_BUF_SIZE],
                                       uint32_t succTaskIdListSizeCoreList[])
@@ -719,9 +761,9 @@ INLINE void DrcoResolveDependOnceCore(DrcoEntryState* state, __gm__ npu::tile_fw
             DrcoFlushBatchTasks(state, rootFuncList, succTaskIdListCoreList, succTaskIdListSizeCoreList);
         }
     } else {
-        // 类型越界兜底：同 hub 溢出路径改投本类型 local matrix/queue
-        uint32_t fallbackTaskId = succTaskId;
-        DrcoDynFuncDataListPushBatch(state, rootFuncList, &fallbackTaskId, 1, DRCO_CORE_TYPE);
+        // 类型越界兜底：同 hub 溢出路径改投全核共享 hub 矩阵（pop 后就地解依赖，不执行不计数），
+        // own-type 队列因此只含可执行 leaf，ExecDrcoReadyQueueTasks 无需 FIN/hub 预判
+        DrcoHubTaskMatrixPush(state, rootFuncList, succTaskId);
     }
 }
 
@@ -1095,6 +1137,32 @@ INLINE void DrcoDynFuncDataListFetchResolveStitchNodeMatrix(DrcoEntryState* stat
     DrcoStitchNodeMatrixPopResolve(state, rootFuncList, stitchNodeMatrix, blockIdx);
 }
 
+// 消费本核行上的兜底 hub 任务（hubStack 溢出/stitch 类型越界改投）：与 DrcoStitchNodeMatrixPopResolve
+// 相同的两阶段 CAS 抢占（CAS(0,0) 原子读 → CAS(val,0) 独占），pop 后经 DrcoResolveDepend 就地
+// 解依赖（不执行不计数）；fetch 循环每轮无条件调用（帮忙模式含）——矩阵内任务必被消费，
+// 消除"溢出 hub 落本类型队列 + 本类型 flag 已置位核跳过 pop"的 stranded 死锁死角
+INLINE void DrcoHubTaskMatrixPopResolve(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+                                        uint32_t rowIdx)
+{
+    __gm__ npu::tile_fwk::DrcoGlobalHubTaskMatrix* matrix = rootFuncList->hubTaskMatrix;
+    if (matrix == nullptr) {
+        return;
+    }
+    for (uint32_t col = 0; col < npu::tile_fwk::DrcoGlobalHubTaskMatrix::COL_SIZE; col++) {
+        __gm__ uint32_t* slot = &matrix->hubTaskList[rowIdx].slot[col];
+        uint32_t encoded = DrcoAtomicCasToU32(slot, 0, 0);
+        if (encoded == 0) {
+            continue;
+        }
+        if (DrcoAtomicCasToU32(slot, encoded, 0) != encoded) {
+            continue;
+        }
+        uint32_t taskId = DRCO_DECODE_TASK(encoded);
+        DRCO_LOG(&state->ctx, "hub matrix resolve=%u", taskId);
+        DrcoResolveDepend(state, rootFuncList, &taskId);
+    }
+}
+
 INLINE bool DrcoDynFuncDataListFetchTaskMixHubC2VReadyQueue(DrcoEntryState* state,
                                                             __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                                                             uint32_t& resultCoreType,
@@ -1250,6 +1318,9 @@ INLINE uint32_t DrcoDynFuncDataListFetchTask(DrcoEntryState* state,
         }
 
         DrcoDynFuncDataListFetchResolveStitchNodeMatrix(state, rootFuncList, blockIdx);
+        // 兜底 hub 矩阵扫描同样无条件（帮忙模式含）：pop 后就地解依赖，pop 出的任务
+        // 不进 taskIdList（不执行不计数），own-type 批因此恒为纯 leaf 批
+        DrcoHubTaskMatrixPopResolve(state, rootFuncList, blockIdx);
 
         // 本类型 leaf 全部认领/执行完（flag 置位）后跳过本类型 leaf 矩阵/队列/mixhub 消费
         // （必然空，省 CAS 竞争——mixhub 任务的写入方即本类型核，全部完成后不再有新任务），
@@ -1420,47 +1491,28 @@ INLINE void ExecDrcoPerCoreTasks(DrcoEntryState* state, __gm__ npu::tile_fwk::Pe
     }
 }
 
-// 兜底专用判断：hub 栈溢出/stitch 类型越界改投本类型 local 队列的 HUB 任务，被取出后就地
-// 解依赖（不执行不计数）；HUB_MIX 不会经兜底入队——其恒被路由到 MIX 行，由
-// ExecDrcoReadyQueueTaskOnce 的 DRCO_QUEUE_MIX 分支（ResolveHubMixTask）消费，不经过此处
-INLINE bool IsHubTask(DrcoEntryState* state, uint32_t taskId)
-{
-    (void)state;
-    return npu::tile_fwk::DrcoTaskCoreTypeOf(taskId) == static_cast<uint32_t>(npu::tile_fwk::CoreType::HUB);
-}
-
-// 返回本任务是否执行了 leaf（FIN 标记 / hub 任务只解依赖不计数）。
-// executedCount 前移到执行前（notify before run）：非 hub_mix/hub 的可执行 leaf 在执行前
-// 逐个计数——计数到 size 即本类型所有 leaf 已被认领，末批执行期间其它核可并行退出
-// fetch 自旋，消除整批执行完才广播的尾部空隙
-INLINE bool ExecDrcoReadyQueueTaskOnce(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
+// 执行单个就绪任务，恒执行恰好一个 leaf：own-type 批任务即本类型可执行 leaf（hubStack 溢出/
+// stitch 类型越界兜底已改投全核共享 hub 矩阵，fetch 无条件 pop 就地解依赖）；MIX 行任务为
+// hub_mix 节点，经 ResolveHubMixTask 解析后就地执行其唯一 AIC 后继（编码侧
+// ValidateWrapGroupConsistency 断言每个 wrap 组恒为 1 AIC + 1~2 AIV，hub_mix 恒有 AIC 后继）、
+// AIV 后继经 C2V 环投递配对 AIV——MIX 批的 taskId 原位覆写为实际执行的 AIC 后继，供调用方
+// 统一 resolve。executedCount 由调用方在执行循环前整批累加（notify before run）：计数到
+// size 即本类型所有 leaf 已被认领，末批执行期间其它核可并行退出 fetch 自旋，消除整批
+// 执行完才广播的尾部空隙
+INLINE void ExecDrcoReadyQueueTaskOnce(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
                                        [[maybe_unused]] __gm__ npu::tile_fwk::PerCorePendingQueue* perCoreQueue,
-                                       uint32_t taskId, uint32_t outCoreType, uint32_t& executedTaskId)
+                                       uint32_t& taskId, uint32_t outCoreType)
 {
 #if defined(__MIX__) && defined(__AIC__)
     if (outCoreType == npu::tile_fwk::DRCO_QUEUE_MIX) {
-        // mixhub 任务（来自 MIX 行 matrix/queue）不执行 leaf，仅解依赖派发
+        // mixhub 任务（来自 MIX 行 matrix/queue）不执行 leaf，仅解依赖派发：AIC 后继就地执行、
+        // AIV 后继 C2V 投递配对 AIV
         uint32_t aicTaskId = ResolveHubMixTask(state, taskId, perCoreQueue->mixHubC2VReadyQueue);
-        if (aicTaskId == static_cast<uint32_t>(AICORE_TASK_INIT)) {
-            // 无 AIC 后继：V 后继已在 ResolveHubMixTask 内经 C2V 派发完毕，hub_mix 节点
-            // 自身非可执行 leaf（不计入 executedCount），无事可做
-            return false;
-        }
         DRCO_LOG(&state->ctx, "MIX exec=%u", aicTaskId);
         taskId = aicTaskId;
     }
 #endif
-    if ((taskId & AICORE_FIN_MASK) != 0) {
-        return false;
-    }
-    if (IsHubTask(state, taskId)) {
-        DrcoResolveDepend(state, rootFuncList, &taskId);
-        return false;
-    }
-    DrcoNotifyTaskExecutedAdd(state, rootFuncList, 1);
     ExecLeafFunction(state, taskId);
-    executedTaskId = taskId;
-    return true;
 }
 
 INLINE void ExecDrcoReadyQueueTasks(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
@@ -1472,17 +1524,15 @@ INLINE void ExecDrcoReadyQueueTasks(DrcoEntryState* state, __gm__ npu::tile_fwk:
     uint32_t taskCount = DrcoDynFuncDataListFetchTask(state, rootFuncList, outCoreType, taskIdList);
     while (taskCount != static_cast<uint32_t>(AICORE_TASK_ALL_FINISH)) {
         PerfDevTaskFirstLeafTask(state);
-        uint32_t executedTaskIdList[LOCAL_GROUP_SIZE];
-        uint32_t resolveCount = 0;
+        // 每个取出的任务恒执行恰好一个 leaf（own-type 为纯 leaf 批；MIX 行 hub_mix 经解析后
+        // 就地执行其唯一 AIC 后继），执行循环前整批计数（notify before run）：计数到 size 即
+        // 本类型所有 leaf 已被认领，末批执行期间其它核可并行退出 fetch 自旋，消除整批执行完
+        // 才广播的尾部空隙；MIX 批解析后 taskIdList[i] 已原位覆写为实际执行的 AIC 后继
+        DrcoNotifyTaskExecutedAdd(state, rootFuncList, taskCount);
         for (uint32_t i = 0; i < taskCount; i++) {
-            if (ExecDrcoReadyQueueTaskOnce(state, rootFuncList, perCoreQueue, taskIdList[i], outCoreType,
-                                           executedTaskIdList[resolveCount])) {
-                resolveCount++;
-            }
+            ExecDrcoReadyQueueTaskOnce(state, rootFuncList, perCoreQueue, taskIdList[i], outCoreType);
         }
-        if (resolveCount > 0) {
-            DrcoResolveDepend(state, rootFuncList, executedTaskIdList, resolveCount);
-        }
+        DrcoResolveDepend(state, rootFuncList, taskIdList, taskCount);
         taskCount = DrcoDynFuncDataListFetchTask(state, rootFuncList, outCoreType, taskIdList);
     }
 }

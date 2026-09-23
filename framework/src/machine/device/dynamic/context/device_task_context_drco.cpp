@@ -97,6 +97,12 @@ void DeviceTaskContext::InitDrcoRootFuncList(DynDeviceTask* dyntask)
     rootFuncList->stitchNodeBase = (ctrlCache != nullptr && ctrlCache->IsRecording()) ?
                                        reinterpret_cast<uint64_t>(ctrlCache) :
                                        workspace_->GetStitchPoolBase();
+
+    // 全核共享 hub 任务矩阵（单实例）：承接 hubStack 溢出与 stitch 类型越界的兜底改投，
+    // 行 = 全局 blockIdx，任何核可 push 任意行、每核只 pop 自己行，fetch 循环无条件扫
+    auto* hubTaskMatrix = workspace_->AllocateDrcoHubTaskMatrix(sizeof(npu::tile_fwk::DrcoGlobalHubTaskMatrix));
+    new (hubTaskMatrix) npu::tile_fwk::DrcoGlobalHubTaskMatrix();
+    rootFuncList->hubTaskMatrix = hubTaskMatrix;
     rootFuncList->totalTaskCount = dyntask->devTask.coreFunctionCnt;
     rootFuncList->devTaskFinished = 0;
     new (&rootFuncList->devTaskFinishFlagList) npu::tile_fwk::DrcoDevTaskFinishFlagList();

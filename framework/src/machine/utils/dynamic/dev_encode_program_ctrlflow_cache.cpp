@@ -301,6 +301,12 @@ void DevControlFlowCache::DrcoReadyQueueDataRestore(DynDeviceTaskBase* base, uin
         (void)memset_s(stitchNodeMatrix->stitchNodeList, sizeof(stitchNodeMatrix->stitchNodeList), 0,
                        sizeof(stitchNodeMatrix->stitchNodeList));
     }
+    // 兜底 hub 矩阵槽内存 taskId，复位为 0，避免 cache 重放后残留任务
+    auto* hubTaskMatrix = base->drcoRootFuncList->hubTaskMatrix;
+    if (hubTaskMatrix != nullptr) {
+        (void)memset_s(hubTaskMatrix->hubTaskList, sizeof(hubTaskMatrix->hubTaskList), 0,
+                       sizeof(hubTaskMatrix->hubTaskList));
+    }
     base->drcoRootFuncList->devTaskFinished = 0;
     auto* finishFlagList = &base->drcoRootFuncList->devTaskFinishFlagList;
     (void)memset_s(reinterpret_cast<uint8_t*>(finishFlagList), sizeof(*finishFlagList), 0, sizeof(*finishFlagList));
@@ -1348,6 +1354,7 @@ void DevControlFlowCache::RelocDrcoRootFuncList(RelocRange& relocCtrlCache, DynD
         relocCtrlCache.Reloc(drcoRootFuncList->stitchNodeMatrix);
         // 基址与 stitch 节点指针同域，走同一平移；slot 内偏移相对基址，平移不变
         relocCtrlCache.Reloc(drcoRootFuncList->stitchNodeBase);
+        relocCtrlCache.Reloc(drcoRootFuncList->hubTaskMatrix);
     }
 }
 

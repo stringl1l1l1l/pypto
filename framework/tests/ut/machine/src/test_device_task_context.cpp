@@ -1001,6 +1001,14 @@ TEST_F(TestDeviceTaskContext, InitReadyQueues_EnableAicoreResolve_CreatesDrcoRoo
             EXPECT_EQ(stitchNodeMatrix->stitchNodeList[r].slot[c], 0U);
         }
     }
+    // 全核共享 hub 任务矩阵：承接 hubStack 溢出/类型越界兜底改投，初始全空
+    auto* hubTaskMatrix = dyntask->drcoRootFuncList->hubTaskMatrix;
+    ASSERT_NE(hubTaskMatrix, nullptr);
+    for (uint32_t r = 0; r < npu::tile_fwk::MAX_AICORE_NUM_FOR_QUEUE; ++r) {
+        for (uint32_t c = 0; c < npu::tile_fwk::DrcoGlobalHubTaskMatrix::COL_SIZE; ++c) {
+            EXPECT_EQ(hubTaskMatrix->hubTaskList[r].slot[c], 0U);
+        }
+    }
     for (size_t i = 0; i < READY_QUEUE_SIZE; ++i) {
         EXPECT_NE(dyntask->readyQueue[i], nullptr);
     }

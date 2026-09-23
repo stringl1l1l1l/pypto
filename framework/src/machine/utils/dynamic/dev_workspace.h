@@ -345,6 +345,8 @@ public:
 
     npu::tile_fwk::DrcoGlobalStitchNodeMatrix* AllocateDrcoStitchNodeMatrix(uint64_t size);
 
+    npu::tile_fwk::DrcoGlobalHubTaskMatrix* AllocateDrcoHubTaskMatrix(uint64_t size);
+
     void ResetAicpuMemCounter();
 
     void RewindMemoryDumper();

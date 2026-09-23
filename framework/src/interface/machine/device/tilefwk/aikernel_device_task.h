@@ -109,6 +109,32 @@ struct DrcoGlobalStitchNodeMatrix {
 #endif
 };
 
+// 全核共享 hub 任务矩阵：行 = 全局 blockIdx（AIC [0,nrValidAic) + AIV [nrValidAic,3*nrValidAic)），
+// 承接 hubStack 溢出与 stitch 类型越界的兜底改投——任何核可 push 任意行、每核只 pop 自己行，
+// fetch 循环无条件扫描（帮忙模式含），pop 后就地解依赖（不执行不计数）；own-type 就绪队列
+// 因此只含可执行 leaf，批量计数无需 FIN/hub 预判
+struct DrcoGlobalHubTaskMatrix {
+    enum {
+        COL_SIZE = 1,
+    };
+    // 每行独占一个 64B cache line：消除跨行 false sharing（同 DrcoGlobalStitchNodeMatrix）
+    struct alignas(64) Row {
+        uint32_t slot[COL_SIZE];
+        uint8_t pad[64 - sizeof(uint32_t) * COL_SIZE];
+    };
+    Row hubTaskList[MAX_AICORE_NUM_FOR_QUEUE];
+#ifdef __TILE_FWK_HOST__
+    DrcoGlobalHubTaskMatrix()
+    {
+        for (uint32_t i = 0; i < MAX_AICORE_NUM_FOR_QUEUE; i++) {
+            for (uint32_t j = 0; j < COL_SIZE; j++) {
+                hubTaskList[i].slot[j] = 0;
+            }
+        }
+    }
+#endif
+};
+
 struct DrcoDevTaskFinishFlagList {
     // 每类型共享一个完成标志（原每组一个）：本 coreType 全部 leaf task 计数到 size 后置 1，
     // 本类型全部核经 DrcoGmLoad（dcci 失效读）轮询同一 flag；广播只写单个 cacheline
@@ -159,6 +185,9 @@ struct DrcoRootFuncList {
     // stitch pool 基址（设备地址）：stitchNodeList 槽位偏移以此为原点还原节点地址，
     // 写入于 InitDrcoRootFuncList，cache 激活时随矩阵指针一同 reloc（偏移本身平移不变）
     uint64_t stitchNodeBase;
+    // 全核共享 hub 任务矩阵：hubStack 溢出/stitch 类型越界兜底任务的改投目的地，
+    // fetch 循环无条件扫（帮忙模式含），slot 存 DRCO_ENCODE_TASK 的 taskId（0 = 空闲）
+    __gm__ DrcoGlobalHubTaskMatrix* hubTaskMatrix;
 
     alignas(64) uint32_t totalTaskCount;
     alignas(64) uint32_t devTaskFinished;

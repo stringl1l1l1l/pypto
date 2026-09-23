@@ -236,7 +236,7 @@ uint64_t CalcStitchWorkspace(DevAscendProgram& devProg, bool aicoreResolve)
                                             1,
                                             aicoreResolve ? MAX_AICORE_NUM_FOR_QUEUE : 0,
                                             aicoreResolve ? DRCO_QUEUE_MAX * NUM_LOCAL_GROUPS : 0,
-                                            aicoreResolve ? DRCO_QUEUE_MAX * NUM_LOCAL_GROUPS + 1 : 0,
+                                            aicoreResolve ? DRCO_QUEUE_MAX * NUM_LOCAL_GROUPS + 2 : 0,
                                             aicoreResolve ? static_cast<uint32_t>(MAX_STITCH_FUNC_NUM) : 0};
     uint32_t slabSize = workspace.CalcStitchSlabMemObjmaxSize(slabCapacity);
     uint64_t stitchPoolSize = slabSize << 4;

@@ -561,6 +561,15 @@ npu::tile_fwk::DrcoGlobalStitchNodeMatrix* DeviceWorkspaceAllocator::AllocateDrc
     return allocation.As<npu::tile_fwk::DrcoGlobalStitchNodeMatrix>();
 }
 
+// 全核共享 hub 任务矩阵分配（单实例，与 localReadyMatrix/stitch 矩阵共用 LOCAL_READY_MATRIX 池），
+// 数量预算见 CalcStitchWorkspace 的 objUsedNum（LOCAL_READY_MATRIX 行）
+npu::tile_fwk::DrcoGlobalHubTaskMatrix* DeviceWorkspaceAllocator::AllocateDrcoHubTaskMatrix(uint64_t size)
+{
+    WsAllocation allocation = ControlFlowAllocateSlab(devProg_, size,
+                                                      SlabAlloc(size, WsAicpuSlabMemType::LOCAL_READY_MATRIX));
+    return allocation.As<npu::tile_fwk::DrcoGlobalHubTaskMatrix>();
+}
+
 void DeviceWorkspaceAllocator::ResetAicpuMemCounter()
 {
 #if DEBUG_MEM_DUMP_LEVEL >= DEBUG_MEM_DUMP_FULL
@@ -1077,11 +1086,13 @@ uint32_t DeviceWorkspaceAllocator::LocalReadyQueSlabMemObjSize()
 
 uint32_t DeviceWorkspaceAllocator::LocalReadyMatrixSlabMemObjSize()
 {
-    // LOCAL_READY_MATRIX 池承载 local ready matrix（N×N 槽位数组，随 LOCAL_GROUP_SIZE 增大）
-    // 与全局共享 stitch 节点矩阵（108 行 × 64B cacheline 对齐行），注册 objSize 取两者最大值
+    // LOCAL_READY_MATRIX 池承载 local ready matrix（N×N 槽位数组，随 LOCAL_GROUP_SIZE 增大）、
+    // 全局共享 stitch 节点矩阵与 hub 任务矩阵（108 行 × 64B cacheline 对齐行），
+    // 注册 objSize 取三者最大值
     uint32_t localMatrixSize = sizeof(npu::tile_fwk::DrcoLocalReadyMatrix);
     uint32_t stitchMatrixSize = sizeof(npu::tile_fwk::DrcoGlobalStitchNodeMatrix);
-    return std::max(localMatrixSize, stitchMatrixSize);
+    uint32_t hubMatrixSize = sizeof(npu::tile_fwk::DrcoGlobalHubTaskMatrix);
+    return std::max({localMatrixSize, stitchMatrixSize, hubMatrixSize});
 }
 
 uint32_t DeviceWorkspaceAllocator::PredCountSlabMemObjSize()
