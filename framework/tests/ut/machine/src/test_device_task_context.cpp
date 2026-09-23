@@ -1171,3 +1171,56 @@ TEST_F(TestDeviceTaskContext, DispatchDieReadyQueueToCores_DistributesDieTasks)
     EXPECT_GT(root->perCorePendingQueueArray[0]->size, 0U);
     EXPECT_GT(root->perCorePendingQueueArray[4]->size, 0U);
 }
+
+TEST_F(TestDeviceTaskContext, DispatchReadyQueueToCores_PrecountPerCoreExecutedCount)
+{
+    DeviceTaskContext taskContext;
+    DevStartArgsBase startArgs;
+    constexpr size_t kControlFlowCacheSize = 16 * 1024 * 1024;
+    auto controlFlowCacheBuf = std::make_unique<uint8_t[]>(kControlFlowCacheSize);
+
+    DevAscendProgram devProg;
+    CreateMockDevAscendProgram(&devProg, ArchInfo::DAV_3510);
+    devProg.stitchFunctionsize = 100;
+    devProg.devArgs.enableAicoreResolve = true;
+    devProg.devArgs.nrValidAic = 4;
+    devProg.controlFlowCache.cacheData = DevRelocVector<uint8_t>(kControlFlowCacheSize, controlFlowCacheBuf.get());
+    devProg.controlFlowCache.isRecording = true;
+
+    DeviceWorkspaceAllocator workspace(&devProg);
+    taskContext.InitAllocator(&devProg, workspace, &startArgs);
+
+    auto dyntask = std::make_unique<DynDeviceTask>(workspace);
+    CreateMockDynDeviceTask(dyntask.get(), 16);
+
+    ReadyCoreFunctionQueue* queues[READY_QUEUE_SIZE] = {};
+    ASSERT_EQ(taskContext.InitReadyQueues(dyntask.get(), &devProg, queues), DEVICE_MACHINE_OK);
+
+    // 2 个 AIC + 3 个 AIV 任务派发到 per-core 队列
+    const int aivIdx = DynDeviceTask::GetReadyQueueIndexByCoreType(CoreType::AIV);
+    const int aicIdx = DynDeviceTask::GetReadyQueueIndexByCoreType(CoreType::AIC);
+    dyntask->readyQueue[aicIdx]->UnsafeEnqueue(MakeTaskID(0, 0));
+    dyntask->readyQueue[aicIdx]->UnsafeEnqueue(MakeTaskID(1, 1));
+    dyntask->readyQueue[aivIdx]->UnsafeEnqueue(MakeTaskID(2, 2));
+    dyntask->readyQueue[aivIdx]->UnsafeEnqueue(MakeTaskID(2, 3));
+    dyntask->readyQueue[aivIdx]->UnsafeEnqueue(MakeTaskID(2, 4));
+
+    taskContext.DispatchReadyQueueToCores(dyntask.get(), &devProg);
+
+    auto* root = dyntask->drcoRootFuncList;
+    ASSERT_NE(root, nullptr);
+    // AIC size == 派发数（全静态认领，预累加即置完成 flag）；
+    // AIV size 大于派发数（模拟存在运行期解锁任务，剩余由设备侧逐个计数）
+    root->devTaskCountList.count[npu::tile_fwk::DRCO_QUEUE_AIC].size = 2;
+    root->devTaskCountList.count[npu::tile_fwk::DRCO_QUEUE_AIV].size = 8;
+
+    npu::tile_fwk::DrcoRootFuncListPrecountPerCoreTasks(root, devProg.devArgs.nrValidAic, dyntask->drcoPrecountExecuted,
+                                                        dyntask->drcoPrecountFinishFlag);
+
+    EXPECT_EQ(root->devTaskCountList.count[npu::tile_fwk::DRCO_QUEUE_AIC].executedCount, 2U);
+    EXPECT_EQ(root->devTaskCountList.count[npu::tile_fwk::DRCO_QUEUE_AIV].executedCount, 3U);
+    EXPECT_EQ(root->devTaskFinishFlagList.flag[npu::tile_fwk::DRCO_QUEUE_AIC].devTaskFinishFlag, 1U);
+    EXPECT_EQ(root->devTaskFinishFlagList.flag[npu::tile_fwk::DRCO_QUEUE_AIV].devTaskFinishFlag, 0U);
+    // MIX 恒为空类型（size == 0）：预累加即置完成 flag（对应原空队列通知置 flag 行为）
+    EXPECT_EQ(root->devTaskFinishFlagList.flag[npu::tile_fwk::DRCO_QUEUE_MIX].devTaskFinishFlag, 1U);
+}

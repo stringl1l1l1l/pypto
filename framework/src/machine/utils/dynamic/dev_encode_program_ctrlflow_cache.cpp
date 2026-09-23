@@ -268,7 +268,6 @@ void DevControlFlowCache::DrcoReadyQueueDataRestore(DynDeviceTaskBase* base, uin
     }
 
     __sync_synchronize();
-    // 完成计数表随 rootFuncList 缓存快照恢复：size 为程序静态属性保持，executedCount 复位
     for (uint32_t ct = 0; ct < npu::tile_fwk::DRCO_QUEUE_MAX; ct++) {
         base->drcoRootFuncList->devTaskCountList.count[ct].executedCount = 0;
     }

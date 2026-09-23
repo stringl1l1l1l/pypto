@@ -142,6 +142,10 @@ void DeviceExecuteContext::GELaunchRunCached(DevStartArgs* startArgs, PushTaskEn
         }
         devProg->ctrlFlowCacheAnchor->ReadyQueueDataPingPongSwap(dynTask, startArgs->nrValidAic);
         devProg->ctrlFlowCacheAnchor->DieReadyQueuePingPongSwap(dynTask, startArgs->nrValidAic);
+        if (dynTask->drcoRootFuncList != nullptr) {
+            npu::tile_fwk::DrcoRootFuncListRestorePrecount(dynTask->drcoRootFuncList, dynTask->drcoPrecountExecuted,
+                                                           dynTask->drcoPrecountFinishFlag);
+        }
         devProg->ctrlFlowCacheAnchor->MixTaskDataRestore(dynTask);
         taskContext.UpdateReadyTaskNum(dynTask->readyQueueBackup->readyTaskNum);
 

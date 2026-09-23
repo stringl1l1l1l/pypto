@@ -631,6 +631,26 @@ TEST(CtrlFlowCacheDrcoUt, DrcoReadyQueueDataRestore_WithMixWraps)
     for (uint32_t ct = 0; ct < DRCO_QUEUE_MAX; ++ct) {
         EXPECT_EQ(drco.root.devTaskCountList.count[ct].executedCount, 0U);
     }
+
+    // 协议回环：构建期 precount（顺带备份进 devTask）→ 模拟设备污染 → 重放侧恢复。
+    // AIC = 3 / AIV = 4；size 5 / 4（AIV 恰等于派发数置 flag，AIC 不置）
+    drco.root.devTaskCountList.count[DRCO_QUEUE_AIC].size = 5;
+    drco.root.devTaskCountList.count[DRCO_QUEUE_AIV].size = 4;
+    DrcoRootFuncListPrecountPerCoreTasks(root, 4, dyntask->drcoPrecountExecuted, dyntask->drcoPrecountFinishFlag);
+    EXPECT_EQ(dyntask->drcoPrecountExecuted[DRCO_QUEUE_AIC], 3U);
+    EXPECT_EQ(dyntask->drcoPrecountExecuted[DRCO_QUEUE_AIV], 4U);
+    EXPECT_EQ(dyntask->drcoPrecountFinishFlag[DRCO_QUEUE_AIC], 0U);
+    EXPECT_EQ(dyntask->drcoPrecountFinishFlag[DRCO_QUEUE_AIV], 1U);
+
+    drco.root.devTaskCountList.count[DRCO_QUEUE_AIC].executedCount = 100;
+    drco.root.devTaskCountList.count[DRCO_QUEUE_AIV].executedCount = 100;
+    drco.root.devTaskFinishFlagList.flag[DRCO_QUEUE_AIC].devTaskFinishFlag = 1;
+    drco.root.devTaskFinishFlagList.flag[DRCO_QUEUE_AIV].devTaskFinishFlag = 0;
+    DrcoRootFuncListRestorePrecount(root, dyntask->drcoPrecountExecuted, dyntask->drcoPrecountFinishFlag);
+    EXPECT_EQ(drco.root.devTaskCountList.count[DRCO_QUEUE_AIC].executedCount, 3U);
+    EXPECT_EQ(drco.root.devTaskCountList.count[DRCO_QUEUE_AIV].executedCount, 4U);
+    EXPECT_EQ(drco.root.devTaskFinishFlagList.flag[DRCO_QUEUE_AIC].devTaskFinishFlag, 0U);
+    EXPECT_EQ(drco.root.devTaskFinishFlagList.flag[DRCO_QUEUE_AIV].devTaskFinishFlag, 1U);
 }
 
 TEST(CtrlFlowCacheRelocUt, BuildIncastOutcastRelocTable_EmitsKindOrderedBatches)

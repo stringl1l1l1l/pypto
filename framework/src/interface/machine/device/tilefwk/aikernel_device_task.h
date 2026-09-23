@@ -133,7 +133,7 @@ struct DrcoDevTaskFinishFlagList {
 struct DrcoDevTaskCountList {
     struct CoreTypeCount {
         uint32_t size;          // 本 coreType leaf task 总数，host 初始化后只读
-        uint32_t executedCount; // 已执行 leaf 计数（原子加）
+        uint32_t executedCount; // leaf 计数：host 派发时预累加 per-core pending 数 + 设备侧原子加
         uint8_t pad[64 - 2 * sizeof(uint32_t)];
     };
     CoreTypeCount count[DRCO_QUEUE_MAX];
@@ -166,6 +166,43 @@ struct DrcoRootFuncList {
     alignas(64) DrcoDevTaskFinishFlagList devTaskFinishFlagList;
     alignas(64) uint8_t pad[64];
 };
+
+#ifdef __TILE_FWK_HOST__
+// per-core pending 计数预累加（设备侧 ExecDrcoPerCoreTasks 无需再原子累加），并把结果
+// 备份到出参（cache 重放经 RestorePrecount 恢复，不重算）；达到 size（含 size == 0
+// 空类型）即置完成 flag。仅构建路径派发完成后调用
+inline void DrcoRootFuncListPrecountPerCoreTasks(DrcoRootFuncList* rootFuncList, uint32_t nrValidAic,
+                                                 uint32_t* executedBackup, uint32_t* finishFlagBackup)
+{
+    for (uint32_t i = 0; i < MAX_AICORE_NUM_FOR_QUEUE; i++) {
+        PerCorePendingQueue* queue = rootFuncList->perCorePendingQueueArray[i];
+        if (queue == nullptr || queue->size == 0) {
+            continue;
+        }
+        // 核归属与设备侧 DrcoGetCoreTypedIdx 一致：编号 < nrValidAic 为 AIC，其余为 AIV
+        uint32_t coreType = (i < nrValidAic) ? DRCO_QUEUE_AIC : DRCO_QUEUE_AIV;
+        rootFuncList->devTaskCountList.count[coreType].executedCount += queue->size;
+    }
+    for (uint32_t ct = 0; ct < DRCO_QUEUE_MAX; ct++) {
+        DrcoDevTaskCountList::CoreTypeCount* cnt = &rootFuncList->devTaskCountList.count[ct];
+        executedBackup[ct] = cnt->executedCount;
+        if (cnt->executedCount >= cnt->size) {
+            rootFuncList->devTaskFinishFlagList.flag[ct].devTaskFinishFlag = 1;
+        }
+        finishFlagBackup[ct] = rootFuncList->devTaskFinishFlagList.flag[ct].devTaskFinishFlag;
+    }
+}
+
+// cache 重放侧恢复构建期备份的 precount；须在 DrcoReadyQueueDataRestore 的计数复位之后
+inline void DrcoRootFuncListRestorePrecount(DrcoRootFuncList* rootFuncList, const uint32_t* executedCount,
+                                            const uint32_t* finishFlag)
+{
+    for (uint32_t ct = 0; ct < DRCO_QUEUE_MAX; ct++) {
+        rootFuncList->devTaskCountList.count[ct].executedCount = executedCount[ct];
+        rootFuncList->devTaskFinishFlagList.flag[ct].devTaskFinishFlag = finishFlag[ct];
+    }
+}
+#endif
 
 constexpr int32_t DEVICE_TASK_QUEUE_SIZE = 64;
 struct DrcoDeviceTask {

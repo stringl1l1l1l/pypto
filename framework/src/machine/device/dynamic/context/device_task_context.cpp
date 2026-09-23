@@ -573,6 +573,9 @@ int DeviceTaskContext::BuildDeviceTaskDataAndReadyQueue(DynDeviceTask* dyntask, 
     if (enableAicoreResolve_) {
         DispatchReadyQueueToCores(dyntask, devProg);
         DispatchDieReadyQueueToCores(dyntask, devProg);
+        npu::tile_fwk::DrcoRootFuncListPrecountPerCoreTasks(dyntask->drcoRootFuncList, devProg->devArgs.nrValidAic,
+                                                            dyntask->drcoPrecountExecuted,
+                                                            dyntask->drcoPrecountFinishFlag);
         DEV_IF_NONDEVICE { __atomic_store_n(&dyntask->drcoRootFuncList->devTaskFinished, 1u, __ATOMIC_RELEASE); }
     }
 

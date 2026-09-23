@@ -106,6 +106,9 @@ struct DynDeviceTaskBase {
     DeviceTask devTask;
     DynFuncHeader* dynFuncDataList{nullptr};
     npu::tile_fwk::DrcoRootFuncList* drcoRootFuncList{nullptr};
+    // DRCO precount 备份：构建期写入，cache 重放时恢复到 rootFuncList（不重算）
+    uint32_t drcoPrecountExecuted[npu::tile_fwk::DRCO_QUEUE_MAX]{};
+    uint32_t drcoPrecountFinishFlag[npu::tile_fwk::DRCO_QUEUE_MAX]{};
 
     ReadyCoreFunctionQueue* readyQueue[READY_QUEUE_SIZE];
     DynFuncDataCache dynFuncDataCacheList[MAX_STITCH_FUNC_NUM];

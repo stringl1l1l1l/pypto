@@ -1411,7 +1411,6 @@ INLINE void ExecDrcoPerCoreTasks(DrcoEntryState* state, __gm__ npu::tile_fwk::Pe
 {
     uint32_t perCoreQueueSize = DrcoGmLoad(&perCoreQueue->size);
     uint32_t perCoreQueueHead = DrcoGmLoad(&perCoreQueue->head);
-    DrcoNotifyTaskExecutedAdd(state, rootFuncList, perCoreQueueSize);
     while (perCoreQueueSize > perCoreQueueHead) {
         uint32_t taskId = DrcoGmLoadArray(perCoreQueue->taskList, perCoreQueueHead);
         PerfDevTaskFirstLeafTask(state);
