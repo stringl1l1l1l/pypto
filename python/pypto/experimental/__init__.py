@@ -20,5 +20,6 @@ from .operation import (
     set_operation_options,  # noqa: F401
     transposed_batchmatmul,  # noqa: F401
 )
+from .pass_config import auto_mix_partition  # noqa: F401
 from .runtime import get_runtime_options, set_runtime_options  # noqa: F401
 from .shmem import shmem_load, shmem_store  # noqa: F401

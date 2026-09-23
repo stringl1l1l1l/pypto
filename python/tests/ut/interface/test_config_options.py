@@ -237,55 +237,39 @@ def test_sg_set_atomic_scope():
 
 
 def test_auto_mix_partition():
-    # level names round-trip: get returns the configured form
-    pypto.set_pass_options(auto_mix_partition="high")
-    pass_option = pypto.get_pass_options()
-    assert pass_option["auto_mix_partition"] == 'high'
+    # 0/1 accepted via the experimental entry
+    pypto.experimental.auto_mix_partition(1)
+    pypto.experimental.auto_mix_partition(0)
 
-    pypto.set_pass_options(auto_mix_partition="default")
-    pass_option = pypto.get_pass_options()
-    assert pass_option["auto_mix_partition"] == 'default'
-
-    pypto.set_pass_options(auto_mix_partition="off")
-    pass_option = pypto.get_pass_options()
-    assert pass_option["auto_mix_partition"] == 'off'
-
-    # legacy int 1 keeps high-level behavior (backward compatible), reads back 'high'
-    pypto.set_pass_options(auto_mix_partition=1)
-    pass_option = pypto.get_pass_options()
-    assert pass_option["auto_mix_partition"] == 'high'
-
-    # legacy int 0 keeps off behavior, reads back 'off'
-    pypto.set_pass_options(auto_mix_partition=0)
-    pass_option = pypto.get_pass_options()
-    assert pass_option["auto_mix_partition"] == 'off'
-
-    # int values other than legacy 0/1 are rejected (custom op-limit config is not exposed)
+    # int values other than 0/1 are rejected (default/custom op-limit config is not exposed)
     for invalid_value in (-5, -1, 2, 3, 50, 100, 101, 200):
         try:
-            pypto.set_pass_options(auto_mix_partition=invalid_value)
+            pypto.experimental.auto_mix_partition(invalid_value)
             assert False, "Should raise ValueError"
         except ValueError as e:
             assert "Invalid auto_mix_partition" in str(e)
 
-    # invalid string
-    try:
-        pypto.set_pass_options(auto_mix_partition="middle")
-        assert False, "Should raise ValueError"
-    except ValueError as e:
-        assert "Invalid auto_mix_partition" in str(e)
+    # invalid strings (level names are removed)
+    for invalid_str in ("high", "default", "off", "middle"):
+        try:
+            pypto.experimental.auto_mix_partition(invalid_str)
+            assert False, "Should raise ValueError"
+        except ValueError as e:
+            assert "Invalid auto_mix_partition" in str(e)
 
     # invalid type
     try:
-        pypto.set_pass_options(auto_mix_partition=1.5)
+        pypto.experimental.auto_mix_partition(1.5)
         assert False, "Should raise ValueError"
     except ValueError as e:
         assert "Invalid auto_mix_partition" in str(e)
 
-    # after reset the default level applies and reads back 'default'
-    pypto.reset_options()
-    pass_option = pypto.get_pass_options()
-    assert pass_option["auto_mix_partition"] == 'default'
+    # bool is rejected (bool is a subclass of int)
+    try:
+        pypto.experimental.auto_mix_partition(True)
+        assert False, "Should raise ValueError"
+    except ValueError as e:
+        assert "Invalid auto_mix_partition" in str(e)
 
     pypto.reset_options()
 

@@ -245,37 +245,6 @@ def set_print_options(
     pypto_impl.SetPrintOptions(edgeitems, precision, threshold, linewidth)
 
 
-# auto_mix_partition 档位名的整数编码, 与 C++ 侧档位语义保持一致:
-# 'high'=1 为旧值兼容(旧版本 =1 开启即 high 上限), 'default'=2 为推荐收紧档(内部编码, 对外不暴露)
-_AUTO_MIX_PARTITION_LEVELS = {'off': 0, 'high': 1, 'default': 2}
-
-
-def _encode_auto_mix_partition(value: Union[int, str]) -> int:
-    """Normalize auto_mix_partition: string levels map to int encodings, legacy ints 0/1 pass through."""
-    if isinstance(value, str):
-        level = _AUTO_MIX_PARTITION_LEVELS.get(value)
-        if level is None:
-            raise ValueError(
-                f"Invalid auto_mix_partition: '{value}'. Expected 'off', 'default' or 'high'."
-            )
-        return level
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"Invalid auto_mix_partition: '{value}'. Expected 'off', 'default' or 'high'.")
-    if value not in (0, 1):
-        raise ValueError(
-            f"Invalid auto_mix_partition: {value}. Expected 'off', 'default' or 'high'."
-        )
-    return value
-
-
-_AUTO_MIX_PARTITION_LEVEL_NAMES = {code: name for name, code in _AUTO_MIX_PARTITION_LEVELS.items()}
-
-
-def _decode_auto_mix_partition(value: int) -> Union[int, str]:
-    """Decode the stored int config back to the user-facing level name."""
-    return _AUTO_MIX_PARTITION_LEVEL_NAMES.get(value, value)
-
-
 def set_pass_options(
     *,
     vec_nbuffer_setting: Optional[Dict[Union[int, str], int]] = None,
@@ -285,7 +254,6 @@ def set_pass_options(
     sg_set_ooo_scope: Optional[int] = None,
     experimental: Optional[Dict[str, int]] = None,
     ooo_sched_mode: Optional[str] = None,
-    auto_mix_partition: Optional[Union[int, str]] = None,
     sg_set_tunevf_mode: Optional[int] = None,
     enable_slice: Optional[bool] = None,
 ) -> None:
@@ -332,15 +300,6 @@ def set_pass_options(
           * allow_parallel_merge: bool, enable parallel branch merging
           * allow_cross_scope_merge: bool, allow supernode with scope to merge with others
 
-    auto_mix_partition : Union[int, str]
-        Control the auto mix partition behavior in ReduceCopyMerge pass.
-        'off' disables auto CV Mix graph merging; 'high' enables it with high
-        op limits (Cube ops <= 2000 and Vector ops <= 2240 per merged
-        subgraph); 'default' enables it with tighter op limits (Cube ops <=
-        1700 and Vector ops <= 400, the default when not configured).
-        Ints 0 and 1 are accepted as legacy equivalents of 'off' and 'high'.
-        get_pass_options reads back the configured level name.
-
     sg_set_tunevf_mode : int
         Control the VF (Vector Fusion) tuning pass behavior.
         - 0: default behavior (no change)
@@ -381,8 +340,6 @@ def set_pass_options(
         pass_options['cube_l1_reuse_setting'] = cube_l1_reuse_setting
     if cube_nbuffer_setting is not None:
         pass_options['cube_nbuffer_setting'] = cube_nbuffer_setting
-    if auto_mix_partition is not None:
-        pass_options['auto_mix_partition'] = _encode_auto_mix_partition(auto_mix_partition)
     if sg_set_tunevf_mode is not None:
         if sg_set_tunevf_mode not in (0, 1, 2):
             raise ValueError(f"Invalid sg_set_tunevf_mode: '{sg_set_tunevf_mode}'. Expected 0, 1 or 2.")
@@ -454,7 +411,6 @@ def get_pass_options() -> Dict[str, Union[str, int, bool, List[int], Dict[int, i
     }
     val = rst.get("sg_set_scope", (-1, False, False))
     result['sg_set_scope'] = (int(val[0]), bool(val[1]), bool(val[2]))
-    result['auto_mix_partition'] = _decode_auto_mix_partition(rst.get('auto_mix_partition', 2))
     # sg_set_ooo_scope is stored as the sg_set_atomic_scope config key (converted at set time).
     scope_val = _decode_scope_id(rst.get('sg_set_atomic_scope', [0]))
     result['sg_set_ooo_scope'] = scope_val
