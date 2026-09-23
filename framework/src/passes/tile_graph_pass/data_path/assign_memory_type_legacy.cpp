@@ -1094,11 +1094,14 @@ Status AssignMemoryType::InferReshapeMemoryType(Operation& operation)
                                                                               inputOriginal);
     MemoryType outputOriginal = output->GetMemoryTypeOriginal();
     RETURN_IF_NOT_SUCCESS(MemoryPathUtils::InferReshapeOutputFromRequirement(inserter, output, outputOriginal));
-    if (KeepSplitReshapeUb(operation, input, output)) {
+    bool isConv1DGroupReshape = false;
+    operation.GetAttr(OpAttributeKey::groupReshapeNoSplit, isConv1DGroupReshape);
+    if (KeepSplitReshapeUb(operation, input, output) && !isConv1DGroupReshape) {
         return SUCCESS;
     }
     bool isDynamic = MemoryPathUtils::IsDynamicReshape(operation, output);
-    bool canUseUb = MemoryPathUtils::CanUseUbForReshape(input, output, inputRequirement, outputOriginal);
+    bool canUseUb = MemoryPathUtils::CanUseUbForReshape(input, output, inputRequirement, outputOriginal) &&
+                    !isConv1DGroupReshape;
     return MemoryPathUtils::ApplyReshapeMemoryType(inserter, operation, input, output, isDynamic, canUseUb);
 }
 
