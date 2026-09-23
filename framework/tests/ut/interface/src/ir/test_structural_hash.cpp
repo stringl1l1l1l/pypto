@@ -410,12 +410,15 @@ TEST_F(IRStructHashTest, TestHashTileTypeWithHardwareInfo)
     HardwareInfo hw1(TileLayout::row_major, TileLayout::none_box, 512, TilePad::null);
     HardwareInfo hw2(TileLayout::row_major, TileLayout::none_box, 512, TilePad::null);
     HardwareInfo hw3(TileLayout::col_major, TileLayout::none_box, 512, TilePad::null);
+    HardwareInfo hw4(TileLayout::row_major, TileLayout::none_box, 512, TilePad::null, CompactMode::normal);
 
     auto t1 = std::make_shared<TileType>(std::vector<ExprPtr>{d16}, DataType::FP32, std::nullopt, std::nullopt, hw1);
     auto t2 = std::make_shared<TileType>(std::vector<ExprPtr>{d16}, DataType::FP32, std::nullopt, std::nullopt, hw2);
     auto t3 = std::make_shared<TileType>(std::vector<ExprPtr>{d16}, DataType::FP32, std::nullopt, std::nullopt, hw3);
+    auto t4 = std::make_shared<TileType>(std::vector<ExprPtr>{d16}, DataType::FP32, std::nullopt, std::nullopt, hw4);
     EXPECT_EQ(structural_hash(t1), structural_hash(t2));
     EXPECT_NE(structural_hash(t1), structural_hash(t3));
+    EXPECT_NE(structural_hash(t1), structural_hash(t4));
 }
 
 TEST_F(IRStructHashTest, TestHashTupleType)

@@ -4234,6 +4234,8 @@ def _ir_matmul_acc(
     _check_tile_memory_space("matmul_acc", "lhs_tile", lhs, MemorySpace.Left, "L0A (Left)")
     _check_tile_memory_space("matmul_acc", "rhs_tile", rhs, MemorySpace.Right, "L0B (Right)")
     _check_matmul_dtype("matmul_acc", dst, lhs, rhs, acc=acc)
+    if not _ir_core.structural_equal(dst.type, acc.type, enable_auto_mapping=False):
+        raise InvalidType("matmul_acc: acc_tile type must match dst_tile type")
     kwargs: dict[str, Any] = {}
     if phase is not None:
         kwargs["phase"] = phase
@@ -4364,36 +4366,22 @@ def _check_mx_operands(
             f"got ({a_dtype},{b_dtype},{dst_dtype})."
         )
 
-    dst_shape = _tile_shape_ints(dst.type)
     lhs_shape = _tile_shape_ints(lhs.type)
     rhs_shape = _tile_shape_ints(rhs.type)
     lhs_k = lhs_shape[1] if lhs_shape is not None else None
     rhs_k = rhs_shape[0] if rhs_shape is not None else None
 
-    if lhs_k is not None and rhs_k is not None and lhs_k != rhs_k:
-        raise InvalidShape(f"{op_name}: lhs and rhs K dimensions must match, got lhs K={lhs_k}, rhs K={rhs_k}.")
     for name, k_value in (("lhs", lhs_k), ("rhs", rhs_k)):
         if k_value is not None and k_value % 64 != 0:
             raise InvalidShape(
                 f"{op_name}: K dimension must be a multiple of 64 for MX matmul, got {name} K={k_value}."
             )
 
-    if dst_shape is not None and lhs_shape is not None and rhs_shape is not None:
-        expected_shape = [lhs_shape[0], rhs_shape[1]]
-        if dst_shape != expected_shape:
-            raise InvalidType(
-                f"{op_name}: dst_tile shape must be [lhs M, rhs N], "
-                f"expected {expected_shape}, got {dst_shape}."
-            )
     if acc is not None:
-        acc_shape = _tile_shape_ints(acc.type)
-        if dst_shape is not None and acc_shape is not None and acc_shape != dst_shape:
-            raise InvalidShape(
-                f"{op_name}: acc_tile shape must match dst_tile shape, "
-                f"got acc_tile={acc_shape}, dst_tile={dst_shape}."
-            )
         if acc.type.dtype != DataType.FP32:
             raise InvalidType(f"{op_name}: acc_tile must use FP32 dtype, got {acc.type.dtype}.")
+        if not _ir_core.structural_equal(dst.type, acc.type, enable_auto_mapping=False):
+            raise InvalidType(f"{op_name}: acc_tile type must match dst_tile type")
 
     _check_mx_scale_tile(op_name, scale_a, lhs, is_left=True)
     _check_mx_scale_tile(op_name, scale_b, rhs, is_left=False)

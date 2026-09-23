@@ -773,6 +773,9 @@ bool StructuralEqualImpl<AssertMode>::EqualType(const TypePtr& lhs, const TypePt
             if (lhs_hw.pad != rhs_hw.pad) {
                 return IRAssert({}, "HardwareInfo pad mismatch");
             }
+            if (lhs_hw.compact != rhs_hw.compact) {
+                return IRAssert({}, "HardwareInfo compact mismatch");
+            }
         }
         return true;
     } else if (auto lhs_tuple = As<TupleType>(lhs)) {

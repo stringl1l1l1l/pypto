@@ -222,6 +222,14 @@ TEST_F(IRStructEqTypeTest, TestTensorAndTileTypeEqual)
     EXPECT_TRUE(structural_equal(tl1, tl2));
     EXPECT_FALSE(structural_equal(tl1, std::make_shared<TileType>(std::vector<ExprPtr>{d16a}, DataType::FP16)));
     EXPECT_FALSE(structural_equal(tl1, std::make_shared<TileType>(std::vector<ExprPtr>{d16a, d16a}, DataType::FP32)));
+
+    HardwareInfo compactNull(TileLayout::row_major, TileLayout::none_box, 512, TilePad::null, CompactMode::null);
+    HardwareInfo compactNormal(TileLayout::row_major, TileLayout::none_box, 512, TilePad::null, CompactMode::normal);
+    auto compactNullTile = std::make_shared<TileType>(std::vector<ExprPtr>{d16a}, DataType::FP32, std::nullopt,
+                                                      std::nullopt, compactNull);
+    auto compactNormalTile = std::make_shared<TileType>(std::vector<ExprPtr>{d16a}, DataType::FP32, std::nullopt,
+                                                        std::nullopt, compactNormal);
+    EXPECT_FALSE(structural_equal(compactNullTile, compactNormalTile));
 }
 
 TEST_F(IRStructEqTypeTest, TestTupleAndOtherTypes)

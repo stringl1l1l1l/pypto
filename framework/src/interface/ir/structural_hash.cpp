@@ -402,6 +402,7 @@ StructuralHasher::ResultType StructuralHasher::HashType(const TypePtr& type)
             h = HashCombine(h, static_cast<ResultType>(hw.slayout));
             h = HashCombine(h, static_cast<ResultType>(hw.fractal));
             h = HashCombine(h, static_cast<ResultType>(hw.pad));
+            h = HashCombine(h, static_cast<ResultType>(hw.compact));
         } else {
             h = HashCombine(h, static_cast<ResultType>(0));
         }

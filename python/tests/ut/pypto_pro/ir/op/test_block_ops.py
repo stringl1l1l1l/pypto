@@ -48,6 +48,46 @@ def test_coordinate_apis_use_sequence_parameters():
     assert list(inspect.signature(pl.set_validshape).parameters) == ["tile", "shape"]
 
 
+def test_matmul_acc_rejects_mismatched_acc_shape():
+    with pytest.raises(InvalidType, match=r"acc_tile type must match dst_tile type"):
+
+        @pl.jit(auto_mutex=False)
+        def main(_jit_entry: pl.DT_INT64):
+            dst_type = pl.TileType(
+                shape=[64, 64],
+                dtype=pl.DT_FP32,
+                target_memory=pl.MemorySpace.Acc,
+                layout=pl.NZ,
+                fractal=1024,
+            )
+            acc_type = pl.TileType(
+                shape=[32, 64],
+                dtype=pl.DT_FP32,
+                target_memory=pl.MemorySpace.Acc,
+                layout=pl.NZ,
+                fractal=1024,
+            )
+            lhs_type = pl.TileType(
+                shape=[64, 64],
+                dtype=pl.DT_FP16,
+                target_memory=pl.MemorySpace.Left,
+                layout=pl.NZ,
+            )
+            rhs_type = pl.TileType(
+                shape=[64, 64],
+                dtype=pl.DT_FP16,
+                target_memory=pl.MemorySpace.Right,
+                layout=pl.ZN,
+            )
+            dst = pl.make_tile(dst_type, addr=0x0000)
+            acc = pl.make_tile(acc_type, addr=0x0000)
+            lhs = pl.make_tile(lhs_type, addr=0x0000)
+            rhs = pl.make_tile(rhs_type, addr=0x0000)
+            pl.matmul_acc(dst, acc, lhs, rhs)
+
+        main.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
+
+
 def test_manual_add():
     @pl.jit(auto_mutex=False)
     def main(

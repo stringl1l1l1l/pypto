@@ -115,26 +115,47 @@ def test_matmul_mx_checks_dtype_before_shape():
         _ir_matmul_mx(t["dst"], t["lhs"], t["rhs"], t["scale_a"], t["scale_b"])
 
 
-def test_matmul_mx_rejects_mismatched_k():
+def test_matmul_mx_allows_physical_k_selected_by_valid_shape():
     t = _mx_tiles(k=64)
     t["rhs"] = _tile("rhs", [128, 64], DataType.FP8E5M2, ir.MemorySpace.Right)
-    with pytest.raises(ValueError, match=r"K dimensions must match, got lhs K=64, rhs K=128"):
-        _ir_matmul_mx(t["dst"], t["lhs"], t["rhs"], t["scale_a"], t["scale_b"])
+    t["scale_b"] = _tile("scale_b", [4, 64], DataType.FP8E8M0, ir.MemorySpace.ScaleRight)
+
+    call = _ir_matmul_mx(t["dst"], t["lhs"], t["rhs"], t["scale_a"], t["scale_b"])
+
+    assert call.name == "block.matmul_mx"
 
 
-def test_matmul_mx_rejects_mismatched_output_shape():
+def test_matmul_mx_allows_output_shape_selected_by_valid_shape():
     t = _mx_tiles()
-    t["dst"] = _tile("dst", [32, 64], DataType.FP32, ir.MemorySpace.Acc)
+    # set_validshape updates descriptor state rather than TileType.shape, so the
+    # builder must not infer the logical output window from the input physical shapes.
+    t["dst"] = _tile("dst", [32, 16], DataType.FP32, ir.MemorySpace.Acc)
 
-    with pytest.raises(InvalidType, match=r"dst_tile shape must be \[lhs M, rhs N\]"):
-        _ir_matmul_mx(t["dst"], t["lhs"], t["rhs"], t["scale_a"], t["scale_b"])
+    call = _ir_matmul_mx(t["dst"], t["lhs"], t["rhs"], t["scale_a"], t["scale_b"])
+
+    assert call.name == "block.matmul_mx"
 
 
 def test_matmul_mx_acc_rejects_mismatched_acc_shape():
     t = _mx_tiles()
     t["acc"] = _tile("acc", [64, 32], DataType.FP32, ir.MemorySpace.Acc)
 
-    with pytest.raises(ValueError, match=r"acc_tile shape must match dst_tile shape"):
+    with pytest.raises(InvalidType, match=r"acc_tile type must match dst_tile type"):
+        _ir_matmul_mx_acc(t["dst"], t["acc"], t["lhs"], t["rhs"], t["scale_a"], t["scale_b"])
+
+
+def test_matmul_mx_acc_rejects_mismatched_acc_fractal():
+    t = _mx_tiles()
+    t["dst"] = _tile(
+        "dst", [64, 64], DataType.FP32, ir.MemorySpace.Acc,
+        layout=ir.TensorLayout.NZ, fractal=1024,
+    )
+    t["acc"] = _tile(
+        "acc", [64, 64], DataType.FP32, ir.MemorySpace.Acc,
+        layout=ir.TensorLayout.NZ, fractal=512,
+    )
+
+    with pytest.raises(InvalidType, match=r"acc_tile type must match dst_tile type"):
         _ir_matmul_mx_acc(t["dst"], t["acc"], t["lhs"], t["rhs"], t["scale_a"], t["scale_b"])
 
 
