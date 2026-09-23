@@ -47,7 +47,7 @@ $$
 
 ### Warp执行与分支
 
-Warp是硬件在线程块内组织执行的单位，当前A5的Warp Size为32，线程按块内线性编号划分到Warp；线程总数不是32的整数倍时，最后一个Warp只有部分线程有效。
+Warp是硬件在线程块内组织执行的单位，Warp Size为32，线程按块内线性编号划分到Warp；线程总数不是32的整数倍时，最后一个Warp只有部分线程有效。
 
 同一Warp中的线程可以根据数据进入不同分支，但分支发散会降低执行效率，线程数取32的整数倍是可考虑的性能选择。
 
@@ -90,7 +90,7 @@ def copy_by_index(
     output[0, global_idx] = source[0, global_idx]
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def copy_kernel(
     source: pl.Tensor[[1, 24], pl.DT_FP32],
     output: pl.Tensor[[1, 24], pl.DT_FP32],
@@ -122,7 +122,7 @@ PyPTO Pro支持SIMT入口函数和SIMT辅助函数。入口函数描述Thread Bl
 | SIMT入口函数 | @pypto_pro.language.vector_function(mode="simt", max_threads=N) | 定义每个Thread执行的完整计算，结果写入传入的Tile或Tensor。 | 由外层JIT Kernel通过`simt_func[threads](...)`调用。 |
 | SIMT辅助函数 | @pypto_pro.language.vector_function(mode="simt") | 封装可复用的逐Thread计算，可以不返回值或返回一个Scalar。 | 由SIMT入口函数或其他辅助函数调用。 |
 
-Host先启动外层@pypto_pro.language.jit(arch="a5") Kernel，再由外层Kernel在Vector执行域中启动SIMT入口函数；入口函数可以继续调用辅助函数。辅助函数在调用它的线程中执行，不创建新线程。具体定义和调用方式见[SIMT计算](../../development/vector_computation/simt_computation.md)。
+Host先启动外层@pypto_pro.language.jit(arch="3510") Kernel，再由外层Kernel在Vector执行域中启动SIMT入口函数；入口函数可以继续调用辅助函数。辅助函数在调用它的线程中执行，不创建新线程。具体定义和调用方式见[SIMT计算](../../development/vector_computation/simt_computation.md)。
 
 **图2 SIMD/SIMT混合模式启动关系**
 
