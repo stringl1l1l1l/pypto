@@ -29,6 +29,10 @@ unsqueeze(input: Tensor, dim: int) -> Tensor
 | input   | 输入      | 源操作数。<br>支持的数据类型为：PyPTO支持的数据类型<br>不支持空Tensor；Shape Size不大于2147483647（即INT32_MAX）。 |
 | dim     | 输入      | 指定插入新维度的位置（索引）。<br>支持负索引。<br>需在 [-input.dim - 1, input.dim] 范围内。 |
 
+## 约束说明
+
+输入Tensor不支持动态轴，即input的shape中的任何轴都不能标记为`pypto.DYNAMIC`。
+
 ## 返回值说明
 
 返回在指定维度dim处新增大小为1的维度的输出Tensor，与输入Tensor共享数据且属性一致。
