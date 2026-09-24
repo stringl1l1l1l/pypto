@@ -300,11 +300,10 @@ TILEOP void IndexAddLastAxisCompute(dstGlobalData dstGlobal, tmpTileDefine tmpTi
     if (abs(static_cast<float>(alpha) - 1) > TileOp::EPSILON) {
         if constexpr (Std::is_same_v<Scalar, half>) { // half
             float mulsResult = static_cast<float>(src1Addr[src1Offset]) * static_cast<float>(alpha);
-            tmpAddr[0] = static_cast<half>(mulsResult);
+            tmpAddr[0] = mulsResult;
         } else if constexpr (Std::is_same_v<Scalar, bfloat16_t>) { // bf16
             float mulsResult = src1Addr[src1Offset] * TileOp::Bf16ToFp32(alpha);
-            bfloat16_t mulsResBf16 = TileOp::Fp32ToBf16R(mulsResult);
-            tmpAddr[0] = TileOp::Bf16ToFp32(mulsResBf16);
+            tmpAddr[0] = mulsResult;
         } else { // int8,int16,int32,float32
             Scalar mulsResult = static_cast<Scalar>(src1Addr[src1Offset]) * alpha;
             tmpAddr[0] = mulsResult;
@@ -341,6 +340,112 @@ TILEOP size_t GetTileOffset(size_t dstStrides[], size_t idx[], __ubuf__ typename
     }
     return dstOffset;
 }
+
+// A5 SIMT atomic scatter, one valid source row per launch.
+#if defined(__DAV_V310)
+template <int axis, typename T0, typename T1, typename T2, typename T3, typename T4, typename C, typename Scalar>
+TILEOP void TIndexAddSimt(T0 dst, T1 src0, T2 src, T3 indices, T4 tmp, C coord, Scalar alpha)
+{
+    (void)src0;
+    using ValueType = typename T2::Type;
+    using IndexType = typename T3::Type;
+    constexpr auto tileW = TileOp::GetTensorTileShapeDim<T2, DIM_5TH, MAX_DIMS>();
+    constexpr auto tmpW = TileOp::GetTensorTileShapeDim<T4, DIM_5TH, MAX_DIMS>();
+    using ValueTile = pto::Tile<pto::TileType::Vec, ValueType, 1, tileW, pto::BLayout::RowMajor, -1, -1>;
+    using OffsetTile = pto::Tile<pto::TileType::Vec, IndexType, 1, tileW, pto::BLayout::RowMajor, -1, -1>;
+    using TableShape = pto::Shape<1, 1, 1, 1, -1>;
+    using TableStride = pto::Stride<-1, -1, -1, -1, 1>;
+    using TableGlobal = pto::GlobalTensor<ValueType, TableShape, TableStride>;
+    const auto dstLayout = dst.GetLayout();
+    const auto srcLayout = src.GetLayout();
+    size_t dstShapes[] = {
+        dstLayout.template GetShapeDim<DIM_1ST, MAX_DIMS>(), dstLayout.template GetShapeDim<DIM_2ND, MAX_DIMS>(),
+        dstLayout.template GetShapeDim<DIM_3RD, MAX_DIMS>(), dstLayout.template GetShapeDim<DIM_4TH, MAX_DIMS>(),
+        dstLayout.template GetShapeDim<DIM_5TH, MAX_DIMS>()};
+    size_t dstStrides[] = {
+        dstLayout.template GetStrideDim<DIM_1ST, MAX_DIMS>(), dstLayout.template GetStrideDim<DIM_2ND, MAX_DIMS>(),
+        dstLayout.template GetStrideDim<DIM_3RD, MAX_DIMS>(), dstLayout.template GetStrideDim<DIM_4TH, MAX_DIMS>(),
+        dstLayout.template GetStrideDim<DIM_5TH, MAX_DIMS>()};
+    size_t srcShapes[] = {
+        srcLayout.template GetShapeDim<DIM_1ST, MAX_DIMS>(), srcLayout.template GetShapeDim<DIM_2ND, MAX_DIMS>(),
+        srcLayout.template GetShapeDim<DIM_3RD, MAX_DIMS>(), srcLayout.template GetShapeDim<DIM_4TH, MAX_DIMS>(),
+        srcLayout.template GetShapeDim<DIM_5TH, MAX_DIMS>()};
+    size_t srcStrides[] = {
+        srcLayout.template GetStrideDim<DIM_1ST, MAX_DIMS>(), srcLayout.template GetStrideDim<DIM_2ND, MAX_DIMS>(),
+        srcLayout.template GetStrideDim<DIM_3RD, MAX_DIMS>(), srcLayout.template GetStrideDim<DIM_4TH, MAX_DIMS>(),
+        srcLayout.template GetStrideDim<DIM_5TH, MAX_DIMS>()};
+    for (size_t dim = 0; dim < MAX_DIMS; ++dim) {
+        if (dstShapes[dim] == 0 || srcShapes[dim] == 0) {
+            return;
+        }
+    }
+    auto dstAddr = (__gm__ ValueType*)dst.GetAddr() + dstLayout.template GetGmOffset<C, MAX_DIMS>(coord);
+    auto srcAddr = (__ubuf__ ValueType*)src.GetAddr();
+    auto idxAddr = (__ubuf__ IndexType*)indices.GetAddr();
+    auto offsetAddr = (__ubuf__ IndexType*)tmp.GetAddr();
+    auto valueAddr = (__ubuf__ ValueType*)((__ubuf__ float*)tmp.GetAddr() + tmpW);
+    const unsigned validCol = static_cast<unsigned>(srcShapes[DIM_5TH]);
+    ValueTile valuesTile(1U, validCol);
+    ValueTile scaledTile(1U, validCol);
+    OffsetTile offsetTile(1U, validCol);
+    OffsetTile indicesTile(1U, validCol);
+    pto::TASSIGN(offsetTile, (uint64_t)offsetAddr);
+    pto::TASSIGN(scaledTile, (uint64_t)valueAddr);
+    // OP_INDEX_ADD exposes MTE3 to the scheduler; bridge input readiness to V/S.
+    set_flag(PIPE_MTE3, PIPE_V, EVENT_ID0);
+    wait_flag(PIPE_MTE3, PIPE_V, EVENT_ID0);
+    if constexpr (axis != DIM_5TH) {
+        set_flag(PIPE_MTE3, PIPE_S, EVENT_ID0);
+        wait_flag(PIPE_MTE3, PIPE_S, EVENT_ID0);
+    }
+    if constexpr (axis == DIM_5TH) {
+        pto::TASSIGN(indicesTile, (uint64_t)idxAddr);
+        pto::TMULS(offsetTile, indicesTile, static_cast<IndexType>(dstStrides[DIM_5TH]));
+    } else {
+        pto::TCI<OffsetTile, IndexType, 0>(offsetTile, static_cast<IndexType>(0));
+        // A5 TCI writes UB on the scalar pipe; TMULS consumes it on the vector pipe.
+        set_flag(PIPE_S, PIPE_V, EVENT_ID0);
+        wait_flag(PIPE_S, PIPE_V, EVENT_ID0);
+        pto::TMULS(offsetTile, offsetTile, static_cast<IndexType>(dstStrides[DIM_5TH]));
+    }
+    float alphaValue;
+    if constexpr (Std::is_same_v<Scalar, bfloat16_t>) {
+        alphaValue = TileOp::Bf16ToFp32(alpha);
+    } else {
+        alphaValue = static_cast<float>(alpha);
+    }
+    // MSCATTER Elem uses flat element offsets and ignores GlobalTensor strides.
+    const auto rowSpan = (dstShapes[DIM_5TH] - 1) * dstStrides[DIM_5TH] + 1;
+    for (LoopVar i = 0; i < srcShapes[0]; ++i) {
+        for (LoopVar j = 0; j < srcShapes[1]; ++j) {
+            for (LoopVar k = 0; k < srcShapes[DIM_3RD]; ++k) {
+                for (LoopVar l = 0; l < srcShapes[DIM_4TH]; ++l) {
+                    size_t row[] = {i, j, k, l};
+                    auto dstOffset = GetTileOffset<axis, T3>(dstStrides, row, idxAddr);
+                    auto srcOffset = GetTileOffset<DIM_5TH, T3>(srcStrides, row, idxAddr);
+                    TableGlobal tableGM(dstAddr + dstOffset, TableShape(1, 1, 1, 1, rowSpan),
+                                        TableStride(rowSpan, rowSpan, rowSpan, rowSpan, 1));
+                    pto::TASSIGN(valuesTile, (uint64_t)(srcAddr + srcOffset));
+                    // Vector and SIMT work share V; keep row-buffer dependencies on that pipe.
+                    if (alphaValue != 1.0f) {
+                        pto::TMULS(scaledTile, valuesTile, alpha);
+                    }
+                    if (alphaValue != 1.0f) {
+                        pto::MSCATTER<pto::Coalesce::Elem, pto::ScatterAtomicOp::Add, pto::ScatterOOB::Skip,
+                                      pto::ScatterConflict::Default>(tableGM, scaledTile, offsetTile);
+                    } else {
+                        pto::MSCATTER<pto::Coalesce::Elem, pto::ScatterAtomicOp::Add, pto::ScatterOOB::Skip,
+                                      pto::ScatterConflict::Default>(tableGM, valuesTile, offsetTile);
+                    }
+                }
+            }
+        }
+    }
+    // Publish completion of vector/SIMT work on the scheduler-visible output pipe.
+    set_flag(PIPE_V, PIPE_MTE3, EVENT_ID0);
+    wait_flag(PIPE_V, PIPE_MTE3, EVENT_ID0);
+}
+#endif
 
 /*
 dst: dst in GM

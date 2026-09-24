@@ -19,6 +19,7 @@
 #include "interface/configs/config_manager.h"
 #include "interface/operation/operation.h"
 #include "tilefwk/data_type.h"
+#include "tilefwk/platform.h"
 #include "codegen/npu/cloudnpu/codegen_cloudnpu.h"
 #include "test_codegen_common.h"
 #include "test_codegen_utils.h"
@@ -135,4 +136,59 @@ TEST_F(TestCodegenDynIndexAdd, TestIndexAddLayout)
         R"!!!(TIndexAdd<3>(gmTensor_4, gmTensor_6, ubTensor_0, ubTensor_2, ubTensor_5, Coord2Dim(0, 0), (float)1.f);)!!!";
     CheckStringExist(expect, res);
 }
+class TestCodegenDynIndexAddSimt : public TestCodegenDynIndexAdd,
+                                   public testing::WithParamInterface<std::tuple<NPUArch, DataType, DataType, int>> {
+public:
+    void SetUp() override
+    {
+        TestCodegenDynIndexAdd::SetUp();
+        savedArch_ = Platform::Instance().GetSoc().GetNPUArch();
+        Platform::Instance().GetSoc().SetNPUArch(std::get<0>(GetParam()));
+    }
+
+    void TearDown() override
+    {
+        Platform::Instance().GetSoc().SetNPUArch(savedArch_);
+        TestCodegenDynIndexAdd::TearDown();
+    }
+
+private:
+    NPUArch savedArch_ = NPUArch::DAV_UNKNOWN;
+};
+
+TEST_P(TestCodegenDynIndexAddSimt, SelectImplementation)
+{
+    auto [arch, dtype, indexType, axis] = GetParam();
+    config::SetCodeGenConfig(KEY_CODEGEN_SUPPORT_TILE_TENSOR, true);
+    TileShape::Current().SetVecTile({4, 16});
+    Tensor target(dtype, {9, 33}, "target");
+    Tensor source(dtype, axis == 0 ? Shape{7, 33} : Shape{9, 19}, "source");
+    Tensor indices(indexType, {source.GetShape()[axis]}, "indices");
+    const std::string funcName = "IndexAddSimtLayout";
+    FUNCTION(funcName, {target, source, indices}, {target})
+    {
+        LOOP(funcName, FunctionType::DYNAMIC_LOOP, i, LoopRange(1))
+        {
+            (void)i;
+            IndexAdd_(target, source, indices, axis, Element(dtype, 2));
+        }
+    }
+    auto function = Program::GetInstance().GetFunctionByRawName(FUNCTION_PREFIX + funcName + SUB_FUNC_SUFFIX +
+                                                                HIDDEN_FUNC_SUFFIX);
+    auto code = GenCodeByFunction(*function);
+    bool useSimt = arch == NPUArch::DAV_3510 && indexType != DT_INT64 && dtype != DT_INT32;
+    CheckStringExist(std::string(useSimt ? "TIndexAddSimt<" : "TIndexAdd<") + std::to_string(axis + 3) + ">", code);
+    if (!useSimt) {
+        EXPECT_EQ(code.find("TIndexAddSimt<"), std::string::npos);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(A5AndFallback, TestCodegenDynIndexAddSimt,
+                         testing::Values(std::make_tuple(NPUArch::DAV_3510, DT_FP32, DT_INT32, 0),
+                                         std::make_tuple(NPUArch::DAV_3510, DT_FP16, DT_INT32, 1),
+                                         std::make_tuple(NPUArch::DAV_3510, DT_BF16, DT_INT32, 1),
+                                         std::make_tuple(NPUArch::DAV_3510, DT_FP32, DT_INT64, 1),
+                                         std::make_tuple(NPUArch::DAV_3510, DT_INT32, DT_INT32, 0),
+                                         std::make_tuple(NPUArch::DAV_2201, DT_FP32, DT_INT32, 1)));
+
 } // namespace npu::tile_fwk

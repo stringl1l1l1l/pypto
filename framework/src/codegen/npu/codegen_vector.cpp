@@ -786,8 +786,10 @@ std::string CodeGenOpNPU::GenIndexAddOp() const
     std::string scalarTmpBuffer = FormatScalarLiteral(alpha);
     tileOpParamList.emplace_back("(" + std::string(DataType2CCEStr(alpha.GetDataType())) + ")" + scalarTmpBuffer);
     std::ostringstream oss;
-    oss << tileOpName << WrapParamByAngleBrackets(templateParamList) << WrapParamByParentheses(tileOpParamList)
-        << STMT_END;
+    bool requiresSimt = false;
+    GetOpAttr(OP_ATTR_PREFIX + "requires_simt", requiresSimt);
+    oss << (requiresSimt ? "TIndexAddSimt" : tileOpName) << WrapParamByAngleBrackets(templateParamList)
+        << WrapParamByParentheses(tileOpParamList) << STMT_END;
     return oss.str();
 }
 

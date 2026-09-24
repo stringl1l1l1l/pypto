@@ -283,12 +283,23 @@ void IndexAddExpandFunc(Function& function, const IndexAddPara& indexaddPara, In
     Shape tmpShape(NUM_VALUE_2, 1);
     auto alignSize = BLOCK_SIZE / BytesOf(srcTile->Datatype());
     tmpShape[1] = AlignUp(srcTile->GetShape()[srcTile->GetShape().size() - 1], alignSize);
-    auto tmpTile = std::make_shared<LogicalTensor>(function, srcTile->Datatype(), tmpShape);
+    bool useSimt = Platform::Instance().GetSoc().GetNPUArch() == NPUArch::DAV_3510 &&
+                   (srcTile->Datatype() == DT_FP32 || srcTile->Datatype() == DT_FP16 ||
+                    srcTile->Datatype() == DT_BF16) &&
+                   indexTile->Datatype() == DT_INT32;
+    // Separate rows for element offsets and alpha-scaled values; both start at a block boundary.
+    if (useSimt) {
+        tmpShape[0] = NUM_VALUE_2;
+    }
+    auto tmpTile = std::make_shared<LogicalTensor>(function, useSimt ? DT_FP32 : srcTile->Datatype(), tmpShape);
 
     auto& op = function.AddOperation(Opcode::OP_INDEX_ADD, {selfTile, srcTile, indexTile}, {dstTile, tmpTile});
     op.SetAttribute(OpAttributeKey::inplaceIdx, 0);
     op.SetAttribute(OP_ATTR_PREFIX + "axis", axis);
     op.SetAttribute(OpAttributeKey::scalar, indexaddPara.alpha);
+    if (useSimt) {
+        op.SetAttribute(OP_ATTR_PREFIX + "requires_simt", true);
+    }
 }
 
 using TileCache = std::unordered_map<int64_t, std::pair<LogicalTensorPtr, LogicalTensorPtr>>;

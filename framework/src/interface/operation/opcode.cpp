@@ -825,12 +825,13 @@ void OpcodeManager::RegisterVector()
                  {MemoryType::MEM_UB, MemoryType::MEM_UB, MemoryType::MEM_UB}, {MemoryType::MEM_UB, MemoryType::MEM_UB},
                  {"TileOp::TIndexAddUB", PIPE_V, PIPE_V, CoreType::AIV}, OpCalcType::OTHER,
                  {OP_ATTR_PREFIX + "axis", OpAttributeKey::scalar}, TileShapeVerifier::Verify);
-    RegisterInfo(Opcode::OP_INDEX_ADD, OpCoreType::ANY, "INDEX_ADD",
-                 {MemoryType::MEM_DEVICE_DDR, MemoryType::MEM_UB, MemoryType::MEM_UB},
-                 {MemoryType::MEM_DEVICE_DDR, MemoryType::MEM_UB},
-                 {"TileOp::TIndexAdd", PIPE_MTE3, PIPE_MTE3, CoreType::AIV}, OpCalcType::MOVE_OUT,
-                 {OP_ATTR_PREFIX + "axis", OpAttributeKey::scalar, OpAttributeKey::inplaceIdx},
-                 TileShapeVerifier::Verify);
+    RegisterInfo(
+        Opcode::OP_INDEX_ADD, OpCoreType::ANY, "INDEX_ADD",
+        {MemoryType::MEM_DEVICE_DDR, MemoryType::MEM_UB, MemoryType::MEM_UB},
+        {MemoryType::MEM_DEVICE_DDR, MemoryType::MEM_UB}, {"TileOp::TIndexAdd", PIPE_MTE3, PIPE_MTE3, CoreType::AIV},
+        OpCalcType::MOVE_OUT,
+        {OP_ATTR_PREFIX + "axis", OpAttributeKey::scalar, OpAttributeKey::inplaceIdx, OP_ATTR_PREFIX + "requires_simt"},
+        TileShapeVerifier::Verify);
     RegisterInfo(Opcode::OP_WHERE_TT, OpCoreType::AIV, "WHERE_TT",
                  {MemoryType::MEM_UB, MemoryType::MEM_UB, MemoryType::MEM_UB}, {MemoryType::MEM_UB, MemoryType::MEM_UB},
                  {"TileOp::Where_TT", PIPE_V, PIPE_V, CoreType::AIV}, OpCalcType::ELMWISE, {},
