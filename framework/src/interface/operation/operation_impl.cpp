@@ -2011,6 +2011,9 @@ Tensor Reshape(const Tensor& operand, const std::vector<SymbolicScalar>& dstShap
     return dst;
 }
 
+constexpr int64_t GATHER_IN_UB_INDICES_LEADING_DIM = 1;
+constexpr int GATHER_IN_UB_SUPPORTED_AXIS = -2;
+
 void TiledGatherInUB(Function& function, const TileShape& tileShape, const LogicalTensorPtr& param,
                      const LogicalTensorPtr& indices, const LogicalTensorPtr& blockTable,
                      const LogicalTensorPtr& result, int blockSize)
@@ -2031,7 +2034,7 @@ void TiledGatherInUB(Function& function, const TileShape& tileShape, const Logic
         for (int64_t j = 0; j < result->GetShape()[1]; j += secondDimTileShape) {
             auto shape1 = std::min(result->GetShape()[1] - j, secondDimTileShape);
             auto paramTile = param->View(function, {param->GetShape()[0], shape1}, {0, j});
-            auto indicesTile = indices->View(function, {1, shape0}, {0, i});
+            auto indicesTile = indices->View(function, {GATHER_IN_UB_INDICES_LEADING_DIM, shape0}, {0, i});
             auto blockTableTile = blockTable->View(function, {blockTable->GetShape()[0], blockTable->GetShape()[1]},
                                                    {0, 0});
             auto resultTile = result->View(function, {shape0, shape1}, {i, j});
@@ -2059,9 +2062,10 @@ Tensor experimental::GatherInUB(const Tensor& params, const Tensor& indices, con
 
     CheckTensorDimRange(params.GetStorage(), NUM_VALUE_2, NUM_VALUE_2, "GatherInUB params");
     CheckTensorDimRange(indices.GetStorage(), NUM_VALUE_2, NUM_VALUE_2, "GatherInUB indices");
-    CHECK(VectorErrorCode::ERR_PARAM_INVALID, indices.GetShape()[0] == 1)
+    CHECK(VectorErrorCode::ERR_PARAM_INVALID, indices.GetShape()[0] == GATHER_IN_UB_INDICES_LEADING_DIM)
         << "GatherInUB requires indices with shape [1, c]; got first dimension " << indices.GetShape()[0] << ".";
-    CHECK(VectorErrorCode::ERR_PARAM_INVALID, axis == -2) << "GatherInUB only supports axis = -2; got " << axis << ".";
+    CHECK(VectorErrorCode::ERR_PARAM_INVALID, axis == GATHER_IN_UB_SUPPORTED_AXIS)
+        << "GatherInUB only supports axis = " << GATHER_IN_UB_SUPPORTED_AXIS << "; got " << axis << ".";
     Tensor result{params.GetStorage()->Datatype(), {indices.GetShape()[1], params.GetShape()[1]}};
     if (!indices.GetStorage()->GetDynValidShape().empty()) {
         result.GetStorage()->UpdateDynValidShape(
