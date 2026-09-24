@@ -364,10 +364,10 @@ size_t GetMemoryLimitForArch(const std::string& arch, const std::string& space)
 {
     // Arch (machine-level legacy name kept as pypto_pro API) -> standard soc_version ini.
     // PyPTO Pro only supports A5 (NPU_ARCH 3510, Ascend950 series).
-    static const std::unordered_map<std::string, std::string> archToIni = {
-        {"a5", "Ascend950PR_9579"},
+    static const std::unordered_map<NPUArch, std::string> archToIni = {
+        {NPUArch::DAV_3510, "Ascend950PR_9579"},
     };
-    const auto iniIt = archToIni.find(arch);
+    const auto iniIt = archToIni.find(ParseNPUArch(arch));
     if (iniIt == archToIni.end()) {
         return 0;
     }

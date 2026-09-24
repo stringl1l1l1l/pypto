@@ -35,6 +35,7 @@
 #include "ir/scalar_expr_ops.h"
 #include "ir/stmt.h"
 #include "ir/type.h"
+#include "tilefwk/platform.h"
 
 namespace pypto {
 
@@ -165,7 +166,7 @@ public:
     const TypeConverter& GetTypeConverter() const { return type_converter_; }
 
     /** \brief Get the target architecture */
-    const std::string& GetArch() const { return arch_; }
+    npu::tile_fwk::NPUArch GetArch() const { return arch_; }
 
     /** \brief Get the fixed Cube/Vector target selected for this generation. */
     ir::SectionKind GetTarget() const { return target_; }
@@ -589,13 +590,13 @@ private:
     std::map<std::string, std::string> tiling_headers_;          ///< Tiling struct headers (filename -> content)
     std::map<std::string, StructDefinition> struct_definitions_; ///< Struct type name ->definition
 
-    CodeEmitter emitter_;             ///< Code emitter for structured output
-    CodeContext context_;             ///< Context for variable tracking
-    TypeConverter type_converter_;    ///< Type converter
-    const backend::Backend* backend_; ///< CCE backend instance (for op info, core type)
-    std::string arch_ = "a3";         ///< Target architecture ("a2", "a3", "a5")
-    const ir::SectionKind target_;    ///< Fixed Cube/Vector target for this generator
-    bool in_vf_section_ = false;      ///< True only while emitting a nested VF section
+    CodeEmitter emitter_;                                            ///< Code emitter for structured output
+    CodeContext context_;                                            ///< Context for variable tracking
+    TypeConverter type_converter_;                                   ///< Type converter
+    const backend::Backend* backend_;                                ///< CCE backend instance (for op info, core type)
+    npu::tile_fwk::NPUArch arch_ = npu::tile_fwk::NPUArch::DAV_2201; ///< Target architecture
+    const ir::SectionKind target_;                                   ///< Fixed Cube/Vector target for this generator
+    bool in_vf_section_ = false;                                     ///< True only while emitting a nested VF section
     ir::FunctionType current_function_type_ = ir::FunctionType::OPAQUE;
     std::map<std::string, ir::FunctionPtr> simt_callees_;
     std::unordered_map<std::string, std::string> tensor_to_pointer_; ///< Tensor var name ->raw pointer expression

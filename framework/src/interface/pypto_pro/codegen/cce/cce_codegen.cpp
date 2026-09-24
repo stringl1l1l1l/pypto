@@ -631,7 +631,9 @@ std::string CCECodegen::GenerateSingle(const ir::ProgramPtr& program, const std:
         << "Cannot generate code for null program";
 
     ResetFunctionGenerationState();
-    arch_ = arch;
+    arch_ = npu::tile_fwk::ParseNPUArch(arch);
+    PRO_CODEGEN_CHECK(ExternalError::INVALID_VAL, arch_ != npu::tile_fwk::NPUArch::DAV_UNKNOWN)
+        << "unknown arch '" << arch << "'";
 
     // Parser-produced Programs always carry the tuple metadata table created at
     // the top-level parse entry. Codegen relies on absence *within* that table to
@@ -665,8 +667,8 @@ std::string CCECodegen::GenerateSingle(const ir::ProgramPtr& program, const std:
     if (!simt_funcs.empty() || !simt_callees_.empty()) {
         PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, target_ == ir::SectionKind::Vector)
             << "SIMT functions can only be generated for the Vector target";
-        PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, arch_ == "a5")
-            << "SIMT direct CCE generation currently requires arch='a5'";
+        PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, arch_ == npu::tile_fwk::NPUArch::DAV_3510)
+            << "SIMT direct CCE generation currently requires arch='3510'";
     }
 
     emitter_.Clear();
@@ -675,7 +677,7 @@ std::string CCECodegen::GenerateSingle(const ir::ProgramPtr& program, const std:
 
     // Detect cross-core sync (a5 uses hardware sync, not ffts)
     bool has_cross_sync = DetectCrossCoreSyncOps(kernel_func->body_);
-    bool needs_ffts = has_cross_sync && (arch_ != "a5");
+    bool needs_ffts = has_cross_sync && (arch_ != npu::tile_fwk::NPUArch::DAV_3510);
 
     for (const auto& simt_callee : OrderSimtCallees(simt_callees_)) {
         GenerateSimtFunction(simt_callee);
@@ -918,7 +920,7 @@ void CCECodegen::EmitSingleFunctionSignature(const ir::FunctionPtr& func, bool h
     if (has_cross_sync) {
         emitter_.EmitLine("set_ffts_base_addr((unsigned long)ffts_addr);");
     }
-    if (target_ == ir::SectionKind::Vector && arch_ == "a3") {
+    if (target_ == ir::SectionKind::Vector && arch_ == npu::tile_fwk::NPUArch::DAV_2201) {
         emitter_.EmitLine("set_mask_norm();");
         emitter_.EmitLine("set_vector_mask(-1, -1);");
     }
@@ -2821,7 +2823,7 @@ void CCECodegen::CollectMutexPipeInfo(const ir::StmtPtr& stmt)
 
 bool CCECodegen::ShouldSkipVPipeMutex(ir::PipeType pipe, const std::vector<int>& buf_ids) const
 {
-    if (pipe != ir::PipeType::V || arch_ != "a5")
+    if (pipe != ir::PipeType::V || arch_ != npu::tile_fwk::NPUArch::DAV_3510)
         return false;
     for (int bid : buf_ids) {
         auto it = mutex_pipes_.find(bid);

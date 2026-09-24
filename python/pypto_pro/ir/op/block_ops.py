@@ -42,6 +42,7 @@ from pypto.pypto_impl.ir import (
     TilePad,
 )
 from pypto.pypto_impl.ir import TileType as _IRTileType  # IR-level TileType (C++ binding);
+from pypto_pro._arch import NpuArch
 from pypto_pro.ir._utils import _is_int, _normalize_expr, _to_make_tuple
 
 from ..._errors import (
@@ -1572,7 +1573,7 @@ def _apply_default_layout(tt: "TileType") -> None:
     from pypto_pro.runtime.jit import get_current_arch
 
     arch = get_current_arch()
-    layout_dict = _DEFAULT_LAYOUTS_A5 if arch == "3510" else _DEFAULT_LAYOUTS_A3
+    layout_dict = _DEFAULT_LAYOUTS_A5 if arch == NpuArch.DAV_3510 else _DEFAULT_LAYOUTS_A3
     default_layout = layout_dict.get(tt.target_memory)
 
     if tt.target_memory in (MemorySpace.ScaleLeft, MemorySpace.ScaleRight):
@@ -1601,7 +1602,7 @@ def _apply_default_layout(tt: "TileType") -> None:
         allowed_layouts = {_DEFAULT_LAYOUTS_A3[MemorySpace.Left], _DEFAULT_LAYOUTS_A5[MemorySpace.Left]}
     elif tt.target_memory == MemorySpace.Mat:
         allowed_layouts.add(TensorLayout.ZN)
-        if arch == "3510":
+        if arch == NpuArch.DAV_3510:
             allowed_layouts.update({TensorLayout.ND, TensorLayout.DN})
         elif tt.dtype in (DataType.UINT64, DataType.INT64):
             allowed_layouts.add(TensorLayout.ND)
@@ -1609,7 +1610,7 @@ def _apply_default_layout(tt: "TileType") -> None:
             allowed_layouts.update({TensorLayout.ZZ, TensorLayout.NN})
 
     if (
-        arch == "3510"
+        arch == NpuArch.DAV_3510
         and tt.target_memory in (MemorySpace.Left, MemorySpace.Right, MemorySpace.Acc)
         and tt.layout in _REJECTED_LAYOUTS_ON_A5
     ):
@@ -2043,7 +2044,7 @@ _A5_MATMUL_DTYPE_COMBOS = (
 
 
 _MATMUL_DTYPE_COMBOS = {
-    "3510": _A5_MATMUL_DTYPE_COMBOS,
+    NpuArch.DAV_3510: _A5_MATMUL_DTYPE_COMBOS,
 }
 
 
@@ -2965,17 +2966,17 @@ _A5_INSERT_QUANT_COMBOS = (
 )
 
 _LAYOUT_DTYPE_COMBOS = {
-    "load": {"3510": _A5_LOAD_COMBOS},
-    "load_tile": {"3510": _A5_LOAD_COMBOS},
-    "store": {"3510": _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
-    "store_tile": {"3510": _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
+    "load": {NpuArch.DAV_3510: _A5_LOAD_COMBOS},
+    "load_tile": {NpuArch.DAV_3510: _A5_LOAD_COMBOS},
+    "store": {NpuArch.DAV_3510: _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
+    "store_tile": {NpuArch.DAV_3510: _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
     "move": {
-        "3510": _A5_MOVE_COMBOS,
+        NpuArch.DAV_3510: _A5_MOVE_COMBOS,
         "3510_quant": _A5_MOVE_QUANT_COMBOS,
     },
-    "extract": {"3510": _A5_ACC_NZ_TO_MAT_NZ_COMBOS, "3510_quant": _A5_INSERT_QUANT_COMBOS},
+    "extract": {NpuArch.DAV_3510: _A5_ACC_NZ_TO_MAT_NZ_COMBOS, "3510_quant": _A5_INSERT_QUANT_COMBOS},
     "insert": {
-        "3510": _A5_INSERT_COMBOS,
+        NpuArch.DAV_3510: _A5_INSERT_COMBOS,
         "3510_quant": _A5_INSERT_QUANT_COMBOS,
     },
 }
@@ -3166,7 +3167,7 @@ def _get_memory_capacity(target_memory: MemorySpace) -> int:
         import logging
 
         logging.getLogger(__name__).warning(
-            "Cannot determine %s capacity for arch %r; skipping tile capacity validation. "
+            "Cannot determine %s capacity for arch %s; skipping tile capacity validation. "
             "Check that pypto_impl is loaded and the arch maps to an installed platform ini.",
             target_memory,
             arch,
