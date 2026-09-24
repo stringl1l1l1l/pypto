@@ -75,7 +75,7 @@ static void probe_impl({signature})
     out[12] = *ffts_addr;
 }}
 """)
-    target = jit.get_jit_compile_config().resolve_kernel_target("a5", has_cube=False, has_vector=True)
+    target = jit.get_jit_compile_config().resolve_kernel_target("3510", has_cube=False, has_vector=True)
     entry = jit._make_global_entry("probe", entry_params, target=target)
     entry += """template<class... Args> void CheckLaunchSlots(Args... args)
 {
