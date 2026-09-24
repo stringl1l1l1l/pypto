@@ -31,16 +31,16 @@ from dataclasses import dataclass
 import logging
 from typing import Optional
 
+from .._arch import NpuArch, parse_arch  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 # NPUArch string → compilation arch mapping
 _ARCH_MAP = {
-    "DAV_1001": "a3",  # 910
-    "DAV_2201": "a3",  # 910B/910C
-    "DAV_3510": "3510",  # 950
+    "DAV_1001": NpuArch.DAV_1001,
+    "DAV_2201": NpuArch.DAV_2201,
+    "DAV_3510": NpuArch.DAV_3510,
 }
-# Canonical arch -> legacy string still expected by the C++ side (CCECodegen / GetMemoryLimitForArch).
-_ARCH_TO_CPP_ARCH = {"3510": "a5"}
 
 
 @dataclass
@@ -56,15 +56,16 @@ class PlatformInfo:
     vector_core_num: int = 0
 
     @property
-    def arch(self) -> str:
+    def arch(self) -> Optional[NpuArch]:
         """Infer compilation arch from SOC version string.
 
         Returns:
-            "3510" for DAV_3510 (950 series), "a3" for DAV_2201/DAV_1001, "" if unknown.
+            NpuArch.DAV_3510 for DAV_3510 (950 series), NpuArch.DAV_2201 for DAV_2201,
+            NpuArch.DAV_1001 for DAV_1001, None if unknown.
         """
         if not self.soc_version:
-            return ""
-        return _ARCH_MAP.get(self.soc_version, "a3")
+            return None
+        return _ARCH_MAP.get(self.soc_version, NpuArch.DAV_2201)
 
 
 _cached_info: Optional[PlatformInfo] = None
@@ -130,11 +131,11 @@ def _get_aiv_core_num() -> int:
         return 0
 
 
-def get_memory_limit(arch: str, memory_space: str) -> int:
+def get_memory_limit(arch: NpuArch, memory_space: str) -> int:
     """Query on-chip buffer capacity (bytes) for the target arch.
 
     Args:
-        arch: Compilation arch ("3510", from PYPTOPRO_JIT_ARCH).
+        arch: Compilation arch (NpuArch, from get_current_arch).
         memory_space: pypto_pro MemorySpace name (e.g. "Vec"/"Mat"/"Left"/
               "Right"/"Acc") of the buffer to query.
 
@@ -144,7 +145,7 @@ def get_memory_limit(arch: str, memory_space: str) -> int:
     try:
         from pypto import pypto_impl
 
-        return pypto_impl.GetMemoryLimitForArch(_ARCH_TO_CPP_ARCH.get(arch, arch), str(memory_space))
+        return pypto_impl.GetMemoryLimitForArch(str(arch), str(memory_space))
     except (ImportError, AttributeError, RuntimeError) as e:
         logger.debug("pypto_impl memory-limit query not available: %s", e)
         return 0
@@ -181,7 +182,7 @@ def get_platform_info(force_refresh: bool = False) -> PlatformInfo:
         logger.info(
             "Platform: %s (arch=%s), core_num=%d, cube_core_num=%d, vector_core_num=%d",
             info.soc_version,
-            info.arch,
+            info.arch if info.arch is not None else "unknown",
             info.core_num,
             info.cube_core_num,
             info.vector_core_num,

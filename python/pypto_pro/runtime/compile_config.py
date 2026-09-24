@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import os
 
 from .._errors import InvalidArgument, InvalidVal, NotSupported, RuntimeFailure
+from .platform import NpuArch, parse_arch
 
 CCE_BACKEND = "cce"
 
@@ -79,11 +80,10 @@ class JitCompileConfig:
         self,
         *,
         toolkit_home: str,
-        arch: str,
+        arch: NpuArch | int | str,
         target: KernelTarget,
         enable_print_debug: bool,
     ) -> list[str]:
-        arch = arch.strip().lower()
         variables = {
             "toolkit_home": toolkit_home,
             "mem_arch": self._resolve_memory_arch_flag(arch),
@@ -97,9 +97,8 @@ class JitCompileConfig:
             flags.extend(self._format_values(self.fatobj_flags, variables))
         return [*flags, *common]
 
-    def build_llvm_args(self, arch: str) -> list[str]:
-        arch = arch.strip().lower()
-        arch_key = self._resolve_arch_key(arch)
+    def build_llvm_args(self, arch: NpuArch | int | str) -> list[str]:
+        arch_key = self._arch_config_key(arch)
         arch_args = self.llvm_arch_args.get(arch_key)
         if arch_args is None:
             raise InvalidVal(f"JIT compile config does not define llvm_arch_args.{arch_key}")
@@ -123,11 +122,11 @@ class JitCompileConfig:
             link_args.append(library if library.startswith("-l") else f"-l{library}")
         return link_args
 
-    def resolve_kernel_target(self, arch: str, *, has_cube: bool, has_vector: bool) -> KernelTarget:
+    def resolve_kernel_target(self, arch: NpuArch | int | str, *, has_cube: bool, has_vector: bool) -> KernelTarget:
         """Resolve once so compiler flags and launch geometry consume the same ABI."""
         if not (has_cube or has_vector):
             raise RuntimeFailure("Cannot compile a kernel without cube or vector code; add a target section")
-        arch_key = self._resolve_arch_key(arch.strip().lower())
+        arch_key = self._arch_config_key(arch)
         arch_config = self.kernel_targets.get(arch_key)
         if arch_config is None:
             raise InvalidVal(f"JIT compile config does not define kernel_targets for arch '{arch}'")
@@ -137,16 +136,23 @@ class JitCompileConfig:
             raise InvalidVal(f"JIT compile config does not define kernel_targets.{arch_key}.{variant}")
         return target
 
-    def _resolve_memory_arch_flag(self, arch: str) -> str:
-        arch_key = self._resolve_arch_key(arch)
+    def _resolve_memory_arch_flag(self, arch: NpuArch | int | str) -> str:
+        arch_key = self._arch_config_key(arch)
         mem_arch = self.memory_arch_flags.get(arch_key)
         if mem_arch is None:
             raise InvalidVal(f"JIT compile config does not define memory_arch_flags for arch '{arch}'")
         return mem_arch
 
     @staticmethod
-    def _resolve_arch_key(arch: str) -> str:
-        return {"a2": "a2a3", "a3": "a2a3"}.get(arch, arch)
+    def _arch_config_key(arch: NpuArch | int | str) -> str:
+        """Config-table key for an arch value; unknown names pass through unchanged."""
+        if not isinstance(arch, NpuArch):
+            text = str(arch).strip().lower()
+            try:
+                arch = parse_arch(text)
+            except InvalidVal:
+                return text
+        return "3510" if arch is NpuArch.DAV_3510 else "a2a3"
 
 
 _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
