@@ -163,7 +163,7 @@ def test_kernel_type_from_target_uses_configured_core_ratio(aic_per_block, aiv_p
 def test_kernel_type_from_codegen_reuses_a5_target_config(has_cube, has_vector, expected):
     codegen_result = SimpleNamespace(has_cube=has_cube, has_vector=has_vector)
 
-    assert _kernel_type_from_codegen(codegen_result, "a5") is expected
+    assert _kernel_type_from_codegen(codegen_result, "3510") is expected
 
 
 @pytest.mark.parametrize(

@@ -77,7 +77,7 @@ TEST(CCECodegenHeaderTest, CoversHeaderOnlyStateAccessors)
     CCECodegen codegen(ir::SectionKind::Vector);
 
     EXPECT_TRUE(codegen.GetCurrentResultTarget().empty());
-    EXPECT_EQ(codegen.GetArch(), "a3");
+    EXPECT_EQ(codegen.GetArch(), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_EQ(codegen.GetTarget(), ir::SectionKind::Vector);
     EXPECT_FALSE(codegen.IsInVFSection());
     EXPECT_EQ(codegen.GetTileAddress("unknown_tile"), "0x0");

@@ -25,7 +25,7 @@ from pypto_pro.runtime.jit import (
 
 
 def _snippet(kernel_name, specs, dims):
-    target = get_jit_compile_config().resolve_kernel_target("a5", has_cube=False, has_vector=True)
+    target = get_jit_compile_config().resolve_kernel_target("3510", has_cube=False, has_vector=True)
     return _generate_prof_range_snippet(
         kernel_name, specs, dims, target=target, launch_stmt="    k<<<blockDim, nullptr, stream>>>(a, out);\n"
     )
@@ -69,7 +69,7 @@ def test_call_style_output_annotation_sets_direction():
             pl.store(out, ta, [0, 0])
 
     kernel_def = marked_kernel.to_kernel_def()
-    cube, vector = _parse_and_codegen_targets(kernel_def, "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel_def, "3510", "")
     cg = cube or vector
     assert kernel_def.last_param_directions == {1: pl.Output}
     assert cg.param_specs[0].direction is pl.Input
@@ -90,7 +90,7 @@ def test_output_direction_uses_absolute_parameter_index():
             pl.store(out, ta, [0, 0])
 
     kernel_def = marked_kernel.to_kernel_def()
-    cube, vector = _parse_and_codegen_targets(kernel_def, "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel_def, "3510", "")
     cg = cube or vector
     assert kernel_def.last_param_directions == {2: pl.Output}
     assert cg.param_specs[0].kind is ParamKind.SCALAR
@@ -251,7 +251,7 @@ def test_metadata_checks_collection_and_capture_independently():
 
 def test_native_metadata_gate(tmp_path):
     """Execute the emitted control flow with recording APIs; an ordinary launch must not report."""
-    target = get_jit_compile_config().resolve_kernel_target("a5", has_cube=False, has_vector=True)
+    target = get_jit_compile_config().resolve_kernel_target("3510", has_cube=False, has_vector=True)
     _inc, push, pop = _generate_prof_range_snippet(
         "k", [_spec("a", [64], "fp32", pl.Input)], set(), target=target, launch_stmt="    ++launches;\n"
     )

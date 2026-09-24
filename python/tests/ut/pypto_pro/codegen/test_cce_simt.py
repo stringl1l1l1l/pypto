@@ -588,5 +588,5 @@ def test_simt_auto_mutex_emits_pipe_v_lock_unlock_around_launch():
 
 
 def test_simt_codegen_rejects_pre_a5_architecture():
-    with pytest.raises(NotSupported, match="requires arch='a5'"):
+    with pytest.raises(NotSupported, match="requires arch='3510'"):
         _compile_to_cce(_simt_tile_codegen_kernel, arch="a3")

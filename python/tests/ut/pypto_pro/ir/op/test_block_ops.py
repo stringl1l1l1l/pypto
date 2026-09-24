@@ -514,7 +514,7 @@ def test_acc_to_mat_insert_with_scaling_tile_preserves_operand():
 
 @pytest.mark.parametrize("layout", [pl.ND, pl.DN])
 def test_a5_acc_to_mat_move_accepts_supported_destination_layouts(monkeypatch, layout):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
 
     @pl.jit(auto_mutex=False)
     def main(_jit_entry: pl.DT_INT64):
