@@ -1314,12 +1314,15 @@ void DevControlFlowCache::TaskAddrRelocProgramAndCtrlCache(uint64_t srcProgram, 
             DevAscendFunctionDuppedData*& duppedDataRef = dynDataCache->duppedData;
             DevAscendFunctionDuppedData* duppedData = RelocControlFlowCachePointer(duppedDataRef, relocCtrlCache);
 
-            // Reloc Stitch
+            // Reloc Stitch：nodeNext 低 6 位已编码子链长度 R（录制阶段已编码），
+            // 取下一节点字段地址前先解码地址，避免带 R 的地址偏移取到错误字段
             for (uint32_t i = 0; i < duppedData->GetStitchSize(); i++) {
                 DevAscendFunctionDuppedStitchList& stitchList = duppedData->GetStitch(i);
                 DevAscendFunctionDuppedStitch*& stitchRef = stitchList.Head();
                 for (DevAscendFunctionDuppedStitch** nodePtr = &stitchRef; *nodePtr != nullptr;) {
                     DevAscendFunctionDuppedStitch* node = RelocControlFlowCachePointer(*nodePtr, relocCtrlCache);
+                    node = reinterpret_cast<DevAscendFunctionDuppedStitch*>(
+                        reinterpret_cast<uint64_t>(node) & npu::tile_fwk::DUPPED_STITCH_NODE_ADDR_MASK);
                     nodePtr = &node->NextRaw();
                 }
             }

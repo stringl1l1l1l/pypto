@@ -138,9 +138,19 @@ int EmulationLauncher::EmulationRunOnce(Function* function, DevControlFlowCache*
         memUtils, inputDataList, outputDataList);
     DevControlFlowCache* launchCtrlFlowCache = nullptr;
     if (inputCtrlCache != nullptr) {
-        launchCtrlFlowCache = reinterpret_cast<DevControlFlowCache*>(
-            memUtils.AllocZero(inputCtrlCache->usedCacheSize, nullptr));
+        // stitch 节点 nodeNext 低 6 位编码子链长度 R：cache 副本基址须 64B 对齐，
+        // 重定位平移（dst - src）才能保留下低 6 位
+        launchCtrlFlowCache = reinterpret_cast<DevControlFlowCache*>(memUtils.AllocZero(
+            inputCtrlCache->usedCacheSize, nullptr, static_cast<size_t>(npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN)));
         if (launchCtrlFlowCache != nullptr) {
+            MACHINE_LOGI(
+                "#ctrl.cache.align: site=EmulationRunOnce base=%p size=%llu align64=%lu %s",
+                static_cast<void*>(launchCtrlFlowCache), static_cast<unsigned long long>(inputCtrlCache->usedCacheSize),
+                static_cast<unsigned long>(reinterpret_cast<uintptr_t>(launchCtrlFlowCache) %
+                                           npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+                reinterpret_cast<uintptr_t>(launchCtrlFlowCache) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN == 0 ?
+                    "OK" :
+                    "MISALIGNED");
             MemcpyS(launchCtrlFlowCache, inputCtrlCache->usedCacheSize, inputCtrlCache, inputCtrlCache->usedCacheSize);
         }
     }
@@ -170,6 +180,13 @@ DevControlFlowCache* EmulationLauncher::CreateHostCtrlFlowCache(DevAscendProgram
     if (hostCtrlFlowCache == nullptr) {
         return nullptr;
     }
+    MACHINE_LOGI("#ctrl.cache.align: site=CreateHostCtrlFlowCache base=%p size=%u align64=%lu %s",
+                 static_cast<void*>(hostCtrlFlowCache), ctrlCacheAllocSize,
+                 static_cast<unsigned long>(reinterpret_cast<uintptr_t>(hostCtrlFlowCache) %
+                                            npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+                 reinterpret_cast<uintptr_t>(hostCtrlFlowCache) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN == 0 ?
+                     "OK" :
+                     "MISALIGNED");
     hostCtrlFlowCache->allCacheSize = ctrlCacheAllocSize;
     initOffset = reinterpret_cast<uintdevptr_t>(hostCtrlFlowCache->data);
     InitHostCtrlFlowCacheLayout(*hostCtrlFlowCache, devProg, dyndevAttr, initOffset);

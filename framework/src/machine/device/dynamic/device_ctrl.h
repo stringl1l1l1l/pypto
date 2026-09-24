@@ -211,6 +211,21 @@ public:
 
         if (devCtrlFlowCache->IsActivatedCache(devStartArgs)) {
             DEV_INFO("ControlFlowCache: activated");
+            // 维测：cache 生效前最后一个卡点，记录最终参与重定位的 blob 基址对齐情况与来路。
+            // isEmbedded 区分"内嵌在 DevAscendProgram 里的 controlFlowCache"与"外部传入的独立 blob"，
+            // 便于把错位直接归因到具体产生点（配合各 site= 日志）。
+            DEV_INFO("#ctrl.cache.align: site=InitCtrlFlowCache.consume base=%p embedded=%p incoming=%p "
+                     "isEmbedded=%d align64=%lu progAlign64=%lu %s",
+                     reinterpret_cast<void*>(devCtrlFlowCache), reinterpret_cast<void*>(&devProg->controlFlowCache),
+                     reinterpret_cast<void*>(ctrlFlowCache),
+                     static_cast<int>(devCtrlFlowCache == &devProg->controlFlowCache),
+                     static_cast<unsigned long>(reinterpret_cast<uintptr_t>(devCtrlFlowCache) %
+                                                npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+                     static_cast<unsigned long>(reinterpret_cast<uintptr_t>(devProg) %
+                                                npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+                     reinterpret_cast<uintptr_t>(devCtrlFlowCache) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN == 0 ?
+                         "OK" :
+                         "MISALIGNED");
             // Actual run
             if (!devCtrlFlowCache->isRelocDataDev) {
                 devCtrlFlowCache->isRelocDataDev = true;

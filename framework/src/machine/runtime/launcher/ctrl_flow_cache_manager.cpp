@@ -108,15 +108,23 @@ uint8_t* CtrlFlowCacheManager::FindOrBuildDevCache(KernelBinary* kernel, std::ve
 
 DevControlFlowCache* CtrlFlowCacheManager::GetHostCtrlFlowCache(KernelBinary* kernel,
                                                                 std::vector<DeviceTensorData>& tensors,
-                                                                uint8_t* devCache, std::vector<uint8_t>& hostCache)
+                                                                uint8_t* devCache, CtrlFlowCacheBlob& hostCache)
 {
     DevControlFlowCache* ctrlCache = FindHostCtrlFlowCache(kernel, tensors, hostCache);
     if (ctrlCache == nullptr && devCache != nullptr) {
         auto devProg = reinterpret_cast<DevAscendProgram*>(
             kernel->GetFunction()->GetDyndevAttribute()->devProgBinary.data());
         size_t ctrlCacheSize = devProg->ctrlFlowCacheSize;
-        std::vector<uint8_t> hostCacheVec;
+        CtrlFlowCacheBlob hostCacheVec;
         hostCacheVec.resize(ctrlCacheSize);
+        // 维测：blob 基址必须 64B 对齐（CtrlFlowCacheBlob 用 AlignedAllocator<uint8_t,0x40> 保证）。
+        MACHINE_LOGI("#ctrl.cache.align: site=GetHostCtrlFlowCache.build base=%p size=%zu align64=%lu %s",
+                     static_cast<void*>(hostCacheVec.data()), ctrlCacheSize,
+                     static_cast<unsigned long>(reinterpret_cast<uintptr_t>(hostCacheVec.data()) %
+                                                npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+                     reinterpret_cast<uintptr_t>(hostCacheVec.data()) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN == 0 ?
+                         "OK" :
+                         "MISALIGNED");
         AclModeGuard guard(AclMdlRICaptureMode::RELAXED);
         RuntimeMemcpy(hostCacheVec.data(), ctrlCacheSize, devCache, ctrlCacheSize, RtMemcpyKind::DEVICE_TO_HOST);
         AddHostCtrlFlowCache(kernel, tensors, std::move(hostCacheVec));
@@ -127,12 +135,20 @@ DevControlFlowCache* CtrlFlowCacheManager::GetHostCtrlFlowCache(KernelBinary* ke
 
 DevControlFlowCache* CtrlFlowCacheManager::FindHostCtrlFlowCache(KernelBinary* kernel,
                                                                  std::vector<DeviceTensorData>& tensors,
-                                                                 std::vector<uint8_t>& hostCache)
+                                                                 CtrlFlowCacheBlob& hostCache)
 {
     int64_t hash = ControlFlowCache::Hash(tensors);
     for (auto& cache : kernel->GetHostCtrlFlowCaches()) {
         if (cache.hash == hash) {
             hostCache = cache.hostCache;
+            // 维测：值拷贝后 data() 是新地址，必须仍然 64B 对齐（同一 allocator，故成立）
+            MACHINE_LOGI("#ctrl.cache.align: site=FindHostCtrlFlowCache.copy base=%p size=%zu align64=%lu %s",
+                         static_cast<void*>(hostCache.data()), hostCache.size(),
+                         static_cast<unsigned long>(reinterpret_cast<uintptr_t>(hostCache.data()) %
+                                                    npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+                         reinterpret_cast<uintptr_t>(hostCache.data()) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN == 0 ?
+                             "OK" :
+                             "MISALIGNED");
             return reinterpret_cast<DevControlFlowCache*>(hostCache.data());
         }
     }
@@ -140,7 +156,7 @@ DevControlFlowCache* CtrlFlowCacheManager::FindHostCtrlFlowCache(KernelBinary* k
 }
 
 void CtrlFlowCacheManager::AddHostCtrlFlowCache(KernelBinary* kernel, std::vector<DeviceTensorData>& tensors,
-                                                std::vector<uint8_t>&& hostCache)
+                                                CtrlFlowCacheBlob&& hostCache)
 {
     kernel->GetHostCtrlFlowCaches().emplace_back(tensors, std::move(hostCache));
 }

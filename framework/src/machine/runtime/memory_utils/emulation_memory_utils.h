@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include "tilefwk/pypto_fwk_log.h"
 #include "tilefwk/error.h"
@@ -28,8 +29,8 @@ struct EmulationMemoryUtils {
     EmulationMemoryUtils() {}
     ~EmulationMemoryUtils() = default;
     static bool IsDevice() { return false; }
-    // 默认 8 字节对齐；统一用 aligned_alloc 保证基址按 align 对齐
-    uint8_t* AllocDev(size_t size, uint8_t** cachedDevAddrHolder, size_t align = 8)
+    // 默认 alignof(max_align_t)，与原先裸 malloc 的保证完全等价（malloc 只承诺 16B）；
+    uint8_t* AllocDev(size_t size, uint8_t** cachedDevAddrHolder, size_t align = alignof(std::max_align_t))
     {
         (void)cachedDevAddrHolder;
         if (size == 0 || size >= 0xFFFFFFFFF) {
@@ -46,7 +47,7 @@ struct EmulationMemoryUtils {
         return rawPtr;
     }
 
-    uint8_t* AllocZero(uint64_t size, uint8_t** cachedDevAddrHolder, size_t align = 8)
+    uint8_t* AllocZero(uint64_t size, uint8_t** cachedDevAddrHolder, size_t align = alignof(std::max_align_t))
     {
         (void)cachedDevAddrHolder;
         uint8_t* devPtr = AllocDev(size, nullptr, align);

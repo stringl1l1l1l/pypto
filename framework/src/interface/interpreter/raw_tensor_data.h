@@ -57,6 +57,19 @@ public:
         return static_cast<T*>(p);
     }
     void deallocate(T* p, std::size_t) noexcept { std::free(p); }
+
+    // 无状态 allocator：任意实例等价。std::vector 的拷贝赋值 / swap 需要比较 allocator，
+    // C++17 下 == 与 != 都必须显式提供（C++20 才可由 == 合成 !=）。
+    template <class U>
+    bool operator==(const AlignedAllocator<U, Align>&) const noexcept
+    {
+        return true;
+    }
+    template <class U>
+    bool operator!=(const AlignedAllocator<U, Align>&) const noexcept
+    {
+        return false;
+    }
 };
 
 using StorageData = std::vector<uint8_t, AlignedAllocator<uint8_t, 0x40>>;

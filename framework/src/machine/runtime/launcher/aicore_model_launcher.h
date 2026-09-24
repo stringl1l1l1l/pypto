@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stdint.h>
@@ -32,14 +33,15 @@ struct AicoreModelMemoryUtils {
     AicoreModelMemoryUtils() {}
     ~AicoreModelMemoryUtils() = default;
     static bool IsDevice() { return false; }
-    uint8_t* AllocDev(size_t size, uint8_t** cachedDevAddrHolder)
+    // 默认 alignof(max_align_t)，与原先裸 malloc 的保证完全等价；需要更强对齐时显式传参
+    uint8_t* AllocDev(size_t size, uint8_t** cachedDevAddrHolder, size_t align = alignof(std::max_align_t))
     {
         (void)cachedDevAddrHolder;
         if (size == 0 || size > 0x500000000) {
             MACHINE_LOGE(DevCommonErr::PARAM_INVALID, "AllocDev failed: size=%zu bytes", size);
             return nullptr;
         }
-        uint8_t* rawPtr = (uint8_t*)malloc(size);
+        uint8_t* rawPtr = (uint8_t*)aligned_alloc(align, (size + align - 1) / align * align);
         if (rawPtr == nullptr) {
             return nullptr;
         }
@@ -48,10 +50,10 @@ struct AicoreModelMemoryUtils {
         return rawPtr;
     }
 
-    uint8_t* AllocZero(uint64_t size, uint8_t** cachedDevAddrHolder)
+    uint8_t* AllocZero(uint64_t size, uint8_t** cachedDevAddrHolder, size_t align = alignof(std::max_align_t))
     {
         (void)cachedDevAddrHolder;
-        uint8_t* devPtr = AllocDev(size, nullptr);
+        uint8_t* devPtr = AllocDev(size, nullptr, align);
         if (devPtr == nullptr) {
             return nullptr;
         }

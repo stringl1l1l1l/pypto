@@ -19,12 +19,16 @@
 #include <mutex>
 #include <vector>
 
+#include "interface/interpreter/raw_tensor_data.h"
 #include "machine/runtime/launcher/device_launcher_types.h"
 #include "machine/utils/dynamic/dev_encode_program_ctrlflow_cache.h"
 
 namespace npu::tile_fwk::dynamic {
 
 class KernelBinary;
+
+// 普通 std::vector<uint8_t> 的 data() 只保证 alignof(max_align_t)=16
+using CtrlFlowCacheBlob = std::vector<uint8_t, npu::tile_fwk::AlignedAllocator<uint8_t, 0x40>>;
 
 struct ControlFlowCache {
     int64_t hash;
@@ -63,9 +67,9 @@ struct ControlFlowCache {
 
 struct HostControlFlowCache {
     int64_t hash;
-    std::vector<uint8_t> hostCache;
+    CtrlFlowCacheBlob hostCache;
 
-    HostControlFlowCache(std::vector<DeviceTensorData>& datas, std::vector<uint8_t>&& hcache)
+    HostControlFlowCache(std::vector<DeviceTensorData>& datas, CtrlFlowCacheBlob&& hcache)
         : hostCache(std::move(hcache))
     {
         hash = ControlFlowCache::Hash(datas);
@@ -82,16 +86,16 @@ public:
     uint8_t* FindOrBuildDevCache(KernelBinary* kernel, std::vector<DeviceTensorData>& tensors, bool IsCaptureMode);
 
     DevControlFlowCache* GetHostCtrlFlowCache(KernelBinary* kernel, std::vector<DeviceTensorData>& tensors,
-                                              uint8_t* devCache, std::vector<uint8_t>& hostCache);
+                                              uint8_t* devCache, CtrlFlowCacheBlob& hostCache);
 
 private:
     CtrlFlowCacheManager() = default;
     ~CtrlFlowCacheManager() = default;
 
     DevControlFlowCache* FindHostCtrlFlowCache(KernelBinary* kernel, std::vector<DeviceTensorData>& tensors,
-                                               std::vector<uint8_t>& hostCache);
+                                               CtrlFlowCacheBlob& hostCache);
     void AddHostCtrlFlowCache(KernelBinary* kernel, std::vector<DeviceTensorData>& tensors,
-                              std::vector<uint8_t>&& hostCache);
+                              CtrlFlowCacheBlob&& hostCache);
 };
 
 } // namespace npu::tile_fwk::dynamic

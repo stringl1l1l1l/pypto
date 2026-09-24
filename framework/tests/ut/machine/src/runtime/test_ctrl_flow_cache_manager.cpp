@@ -70,7 +70,7 @@ TEST(CtrlFlowCacheManagerTest, ControlFlowCache_Constructor)
 TEST(CtrlFlowCacheManagerTest, HostControlFlowCache_Constructor)
 {
     std::vector<DeviceTensorData> datas = {{DT_FP32, nullptr, {2, 4}}};
-    std::vector<uint8_t> hostCache = {1, 2, 3, 4, 5};
+    CtrlFlowCacheBlob hostCache = {1, 2, 3, 4, 5};
     HostControlFlowCache cache(datas, std::move(hostCache));
     EXPECT_EQ(cache.hostCache.size(), 5u);
     EXPECT_EQ(cache.hostCache[0], 1);

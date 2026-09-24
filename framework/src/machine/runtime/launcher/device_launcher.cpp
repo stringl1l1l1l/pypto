@@ -405,6 +405,16 @@ uint8_t* DeviceLauncher::CopyControlFlowCache(DevControlFlowCache* ctrlCache)
         MACHINE_LOGE(RtErr::RT_MALLOC_FAILED, "control flow cache malloc failed");
         return nullptr;
     }
+    // 维测：device 侧 blob 基址对齐。RuntimeMalloc(HBM) 实测 512B 对齐，但无文档契约；
+    // 另外 ring slot i 的基址是 devCache + i*cacheSize，cacheSize 非 64 倍数时 slot 1..3 会错位
+    // （当前 device 只用 slot 0，见 LaunchKernel 里 kArgs.ctrlFlowCache 直接传基址）。
+    MACHINE_LOGI(
+        "#ctrl.cache.align: site=CopyControlFlowCache base=%p cacheSize=%llu bufNum=%d align64=%lu "
+        "slotStrideAlign64=%lu %s",
+        static_cast<void*>(devCache), static_cast<unsigned long long>(cacheSize), bufNum,
+        static_cast<unsigned long>(reinterpret_cast<uintptr_t>(devCache) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+        static_cast<unsigned long>(cacheSize % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+        reinterpret_cast<uintptr_t>(devCache) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN == 0 ? "OK" : "MISALIGNED");
 
     for (int i = 0; i < bufNum; ++i) {
         ret = static_cast<int>(RuntimeMemcpyDirect(devCache + i * cacheSize, cacheSize, ctrlCache, cacheSize,
@@ -707,7 +717,7 @@ uint8_t* DeviceLauncher::PrepareLaunch(KernelBinary* kernel, std::vector<DeviceT
     if (launchMode == LaunchMode::DEVICE_RT) {
         return ctrlFlowCache;
     }
-    std::vector<uint8_t> hostCache;
+    CtrlFlowCacheBlob hostCache;
     DevControlFlowCache* ctrlCache = cacheMgr.GetHostCtrlFlowCache(kernel, tensors, ctrlFlowCache, hostCache);
     EmulationLaunch(kernel->GetFunction(), tensors, ctrlCache, launchMode);
     return ctrlFlowCache;

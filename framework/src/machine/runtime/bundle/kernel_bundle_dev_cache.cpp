@@ -42,6 +42,12 @@ uint8_t* KernelBundleDevCache::GetOrCopy(uint64_t key, const std::vector<uint8_t
     cache_[key] = dev;
     MACHINE_LOGI("[kernel-bundle] dev-cache: copied ctrl-flow cache key=%#lx size=%zuB (cached, reused hereafter)", key,
                  hostCtrlCache.size());
+    // 维测：bundle 来路的 device blob 基址对齐。走 DevMemoryPool（huge page，2MB 对齐）+
+    // MemoryBlock::Allocate 每块只服务一次直接返回 baseAddr，故天然满足；此处留观测点。
+    MACHINE_LOGI("#ctrl.cache.align: site=KernelBundleDevCache.GetOrCopy base=%p size=%zu align64=%lu %s",
+                 static_cast<void*>(dev), hostCtrlCache.size(),
+                 static_cast<unsigned long>(reinterpret_cast<uintptr_t>(dev) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN),
+                 reinterpret_cast<uintptr_t>(dev) % npu::tile_fwk::DUPPED_STITCH_NODE_ALIGN == 0 ? "OK" : "MISALIGNED");
     return dev;
 }
 

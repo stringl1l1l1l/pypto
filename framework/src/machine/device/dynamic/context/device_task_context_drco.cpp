@@ -221,12 +221,11 @@ void DeviceTaskContext::BuildDrcoRootFuncData(DynFuncData* dyndata, DevAscendFun
     rootFuncData->succStitchList = &stitchedFunc.DupDataForDynFuncData()->GetStitch(0).Head();
     rootFuncData->succInfoList = &source->GetOperationSuccInfo(0);
     dyndata->cceBinaryIndexList = source->GetCalleeIndexAddr();
-    // recording 阶段跳过，避免 (addr|count) 混合值参与 TaskAddrRelocProgramAndCtrlCache 遍历。
-    if (!devProg_->GetControlFlowCache()->IsRecording()) {
-        auto* duppedData = stitchedFunc.DupDataForDynFuncData();
-        for (uint32_t i = 0; i < duppedData->GetStitchSize(); i++) {
-            duppedData->GetStitch(i).EncodeStitchNodes();
-        }
+    // 子链长度编码（nodeNext 低 6 位）：录制/非录制路径统一编码；录制路径下
+    // TaskAddrRelocProgramAndCtrlCache 遍历已按解码地址取 NextRaw，编码值可安全参与重定位。
+    auto* duppedData = stitchedFunc.DupDataForDynFuncData();
+    for (uint32_t i = 0; i < duppedData->GetStitchSize(); i++) {
+        duppedData->GetStitch(i).EncodeStitchNodes();
     }
 }
 
