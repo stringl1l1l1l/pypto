@@ -18,15 +18,16 @@
 #include <type_traits>
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <memory>
-#include <set>
-#include <stack>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
-#include "tilefwk/symbolic_scalar.h"
 #include "interface/utils/entry_registrar.h"
+#include "tilefwk/error.h"
 
 namespace npu::tile_fwk {
 namespace dynamic {
@@ -41,6 +42,8 @@ struct RebuildableAttributeBase {
     virtual ~RebuildableAttributeBase() = default;
     virtual bool AllowRead() const { return true; }
     virtual bool AllowWrite() const { return true; }
+    virtual std::string DumpValue() const { return ""; }
+    virtual const char* Name() const = 0;
 };
 
 template <typename T>
@@ -95,6 +98,8 @@ public:
         attrDict_[func][name] = base;
     }
 
+    std::map<std::string, std::string> DumpAttrs(Function* func) const;
+
     void Clear() { attrDict_.clear(); }
 
     RebuildableAttributeManager() = default;
@@ -123,11 +128,29 @@ struct RebuildableAttrInitContext {
 
 struct RebuildableRequiresSimt : RebuildableAttribute<bool> {
     RebuildableRequiresSimt() { data = false; }
+    const char* Name() const override { return "RequiresSimt"; }
+    std::string DumpValue() const override { return data ? "true" : "false"; }
 };
 
 struct RebuildableMultiIterNoOverlap : RebuildableAttribute<std::unordered_set<int>> {
+    const char* Name() const override { return "MultiIterNoOverlap"; }
     void Mark(int rawMagic) { data.insert(rawMagic); }
     bool Has(int rawMagic) const { return data.count(rawMagic) != 0; }
+    std::string DumpValue() const override
+    {
+        std::vector<int> magics(data.begin(), data.end());
+        std::sort(magics.begin(), magics.end());
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < magics.size(); ++i) {
+            if (i != 0) {
+                oss << ", ";
+            }
+            oss << magics[i];
+        }
+        oss << "]";
+        return oss.str();
+    }
 };
 
 } // namespace npu::tile_fwk

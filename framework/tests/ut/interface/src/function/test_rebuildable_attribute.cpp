@@ -35,6 +35,8 @@ public:
 
 struct RebuildableNumber : RebuildableAttributeBase {
     virtual void Reset(void* data) override { number = *static_cast<int*>(data); }
+    virtual std::string DumpValue() const override { return std::to_string(number); }
+    virtual const char* Name() const override { return "Number"; }
     int number;
 };
 

@@ -15,6 +15,7 @@
 
 #include "pybind_common.h"
 #include "interface/function/function.h"
+#include "interface/function/rebuildable_attribute.h"
 #include "interface/program/program.h"
 
 using namespace npu::tile_fwk;
@@ -91,7 +92,8 @@ void BindFunction(py::module_& m)
             [](const Function&, const SymbolicScalar& expr, int64_t divisor) {
                 return Program::GetInstance().IsKnownDivisible(expr, divisor);
             },
-            py::arg("expr"), py::arg("divisor"), "Check if expr is known to be divisible by divisor");
+            py::arg("expr"), py::arg("divisor"), "Check if expr is known to be divisible by divisor")
+        .def("DumpAttrs", [](Function& self) { return RebuildableAttributeManager::GetInstance().DumpAttrs(&self); });
 
     // Add a function to get the last function from the Program
     m.def(

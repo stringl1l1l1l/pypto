@@ -49,6 +49,22 @@ void RebuildableAttributeManager::InitAttrsForFunc(Function* func)
     GetRegistrarGroup().Init(&ctx);
 }
 
+std::map<std::string, std::string> RebuildableAttributeManager::DumpAttrs(Function* func) const
+{
+    std::map<std::string, std::string> result;
+    auto funcIt = attrDict_.find(func);
+    if (funcIt == attrDict_.end()) {
+        return result;
+    }
+    for (const auto& entry : funcIt->second) {
+        auto str = entry.second->DumpValue();
+        if (!str.empty()) {
+            result[entry.second->Name()] = str;
+        }
+    }
+    return result;
+}
+
 RBUILDABLE_ATTRIBUTE_REGISTER(RebuildableRequiresSimt);
 RBUILDABLE_ATTRIBUTE_REGISTER(RebuildableMultiIterNoOverlap);
 

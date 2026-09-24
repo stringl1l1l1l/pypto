@@ -61,6 +61,7 @@ inline void CopyStitchFunctionNumPerPool(uint32_t (&dst)[STITCH_FUNCTION_NUM_PER
 }
 
 struct RebuildableWorkspaceDesc : RebuildableAttribute<WorkspaceDesc> {
+    const char* Name() const override { return "WorkspaceDesc"; }
     uint64_t GetSizeForCheckOnly(uint64_t maxDynamicAssembleOutcastMem, uint64_t debugSize) const;
     std::string PrettyDumpSize(uint64_t maxDynamicAssembleOutcastMem, uint64_t debugSize) const;
 };
