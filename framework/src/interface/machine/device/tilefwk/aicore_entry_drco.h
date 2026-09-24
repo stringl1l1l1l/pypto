@@ -356,7 +356,8 @@ INLINE uint32_t DrcoLocalReadyMatrixPushBatch(DrcoEntryState* state, __gm__ Drco
     return pushed;
 }
 
-// 遍历 colIdx 整列，把所有待执行任务依次 pop 出来，CAS(task -> 0) 抢占成功即独占该任务；
+// 遍历 colIdx 整列，把所有待执行任务依次 pop 出来，原子 exch(task -> 0) 读清一体，返回非 0
+// 即独占该任务（安全性：每槽仅本列主一个 popper、push 侧只 CAS 空槽，读清无需二次校验）；
 // 从 state->matrixRowIndex（核本地游标，前一次 pop 结束处）起环形扫描，摊平重复扫描开销。
 // 每核只 pop 自己固定的一列（colIdx = 本地编号 % N），单游标即该列游标；
 // maxCount 限制本次最多取出的个数；游标保存为最后扫描行的下一行，未扫到的行下次优先
@@ -370,13 +371,11 @@ INLINE uint32_t DrcoLocalReadyMatrixPopColTasks(DrcoEntryState* state, __gm__ Dr
     for (uint32_t i = 0; i < rowCnt && count < maxCount; i++) {
         uint32_t row = (start + i) % rowCnt;
         next = (row + 1) % rowCnt;
-        uint32_t taskId = DrcoAtomicCasToU32(&matrix->taskList[row][colIdx], 0, 0);
+        uint32_t taskId = DrcoAtomicExchToU32(&matrix->taskList[row][colIdx], 0);
         if (taskId == 0) {
             continue;
         }
-        if (DrcoAtomicCasToU32(&matrix->taskList[row][colIdx], taskId, 0) == taskId) {
-            outTaskList[count++] = DRCO_DECODE_TASK(taskId);
-        }
+        outTaskList[count++] = DRCO_DECODE_TASK(taskId);
     }
     state->readyMatrixPopRowIndex = next;
     return count;
@@ -1098,8 +1097,9 @@ INLINE __gm__ DrcoLocalReadyMatrix* TryGetOtherLocalMatrix(__gm__ npu::tile_fwk:
     return nullptr;
 }
 
-// 消费核 pop 本行上 matrix 中 stitch 节点：两阶段 CAS 抢占
-// （CAS(0,0) 原子读 → CAS(offset,0) 独占）。pop 到子链头后：留首节点本地，
+// 消费核 pop 本行上 matrix 中 stitch 节点：原子 exch(offset -> 0) 读清一体即独占
+// （安全性：每槽仅本行主一个 popper、push 侧只 CAS 空槽，读清无需二次校验）。
+// pop 到子链头后：留首节点本地，
 // 先按 2 的幂序列（1,2,4,8,16,32）把剩余子链头 push 入矩阵（由其他核接力），
 // 末段（链尾）可能不满，最后再解本地首节点依赖；push 失败则就地解对应子链整段兜底。
 INLINE void DrcoStitchNodeMatrixPopResolve(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
@@ -1109,11 +1109,8 @@ INLINE void DrcoStitchNodeMatrixPopResolve(DrcoEntryState* state, __gm__ npu::ti
     uint32_t succTaskIdListSizeCoreList[npu::tile_fwk::DRCO_QUEUE_MAX] = {0};
     for (uint32_t col = 0; col < DrcoGlobalStitchNodeMatrix::COL_SIZE; col++) {
         __gm__ uint32_t* slot = &matrix->stitchNodeList[rowIdx].slot[col];
-        uint32_t nodeOffset = DrcoAtomicCasToU32(slot, 0, 0);
+        uint32_t nodeOffset = DrcoAtomicExchToU32(slot, 0);
         if (nodeOffset == 0) {
-            continue;
-        }
-        if (DrcoAtomicCasToU32(slot, nodeOffset, 0) != nodeOffset) {
             continue;
         }
         __gm__ npu::tile_fwk::DevAscendFunctionDuppedStitchNode*
@@ -1138,7 +1135,7 @@ INLINE void DrcoDynFuncDataListFetchResolveStitchNodeMatrix(DrcoEntryState* stat
 }
 
 // 消费本核行上的兜底 hub 任务（hubStack 溢出/stitch 类型越界改投）：与 DrcoStitchNodeMatrixPopResolve
-// 相同的两阶段 CAS 抢占（CAS(0,0) 原子读 → CAS(val,0) 独占），pop 后经 DrcoResolveDepend 就地
+// 相同的原子 exch 抢占（exch(val -> 0) 读清一体即独占），pop 后经 DrcoResolveDepend 就地
 // 解依赖（不执行不计数）；fetch 循环每轮无条件调用（帮忙模式含）——矩阵内任务必被消费，
 // 消除"溢出 hub 落本类型队列 + 本类型 flag 已置位核跳过 pop"的 stranded 死锁死角
 INLINE void DrcoHubTaskMatrixPopResolve(DrcoEntryState* state, __gm__ npu::tile_fwk::DrcoRootFuncList* rootFuncList,
@@ -1150,15 +1147,11 @@ INLINE void DrcoHubTaskMatrixPopResolve(DrcoEntryState* state, __gm__ npu::tile_
     }
     for (uint32_t col = 0; col < npu::tile_fwk::DrcoGlobalHubTaskMatrix::COL_SIZE; col++) {
         __gm__ uint32_t* slot = &matrix->hubTaskList[rowIdx].slot[col];
-        uint32_t encoded = DrcoAtomicCasToU32(slot, 0, 0);
+        uint32_t encoded = DrcoAtomicExchToU32(slot, 0);
         if (encoded == 0) {
             continue;
         }
-        if (DrcoAtomicCasToU32(slot, encoded, 0) != encoded) {
-            continue;
-        }
         uint32_t taskId = DRCO_DECODE_TASK(encoded);
-        DRCO_LOG(&state->ctx, "hub matrix resolve=%u", taskId);
         DrcoResolveDepend(state, rootFuncList, &taskId);
     }
 }
