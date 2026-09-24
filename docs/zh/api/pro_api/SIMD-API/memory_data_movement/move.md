@@ -63,8 +63,11 @@ pypto_pro.language.move(
   | L0C Buffer → UB（配置scale） | NZ → ND，NZ → DN，NZ → NZ。 | 支持DT_FP32 → DT_INT8/DT_UINT8/DT_HF8/DT_FP16/DT_BF16/DT_FP8E4M3FN/DT_FP32，以及DT_INT32 → DT_INT8/DT_UINT8/DT_FP16/DT_BF16。 |
   | L0C Buffer → L1 Buffer（仅支持目的Tile的shape大于源Tile） | NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
 
-- 尾块场景下，需要搭配pypto_pro.language.set_validshape与[pypto_pro.language.TileType](../basic_data_structures/TileType.md)中的compact参数使用，否则可能出现精度失败或卡死现象。
-- L1 Buffer → L0A_MX Buffer/L0B_MX Buffer要求目的Tile必须满足L0A_MX Buffer地址 = L0A Buffer地址 >> 4或L0B_MX Buffer地址 = L0B Buffer地址 >> 4，否则MX矩阵乘时会读取错误的量化系数。
+  UB → L1 Buffer 仅执行按字节物理拷贝，不做layout转换。源UB Tile为ND时，禁止直接用layout=NZ/ZN的L1 Tile承接，会产生错误分形数据。必须先通过pypto_pro.language.move在UB内将ND转换为NZ（UB → UB），再写入L1 Buffer的NZ/ZN Tile，正确用法参见[UB数据转置写入L1 Buffer](#ub数据转置写入l1-buffer)。<br><br>
+
+  尾块场景下，需要搭配pypto_pro.language.set_validshape与[pypto_pro.language.TileType](../basic_data_structures/TileType.md)中的compact参数使用，否则可能出现精度失败或卡死现象。<br><br>
+
+  L1 Buffer → L0A_MX Buffer/L0B_MX Buffer要求目的Tile必须满足L0A_MX Buffer地址 = L0A Buffer地址 >> 4或L0B_MX Buffer地址 = L0B Buffer地址 >> 4，否则MX矩阵乘时会读取错误的量化系数。
 
 ## 返回值说明
 

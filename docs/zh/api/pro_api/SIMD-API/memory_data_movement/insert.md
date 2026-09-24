@@ -41,6 +41,8 @@ pypto_pro.language.insert(dst_tile: Tile, src_tile: Tile, offset: List[int]) -> 
   | L0C Buffer → UB | NZ → ND，NZ → DN，NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
   | L0C Buffer → L1 Buffer | NZ → NZ。 | 支持DT_FP32 → DT_FP32/DT_FP16/DT_BF16，以及DT_INT32 → DT_INT32。 |
 
+  当源操作数在UB且为ND格式，目的操作数在L1 Buffer且为NZ或ZN格式时，避免直接进行数据搬运，必须先通过pypto_pro.language.move将源操作数搬运至另一块NZ格式的UB，再将其搬运至目的操作数，正确用法参见[将UB中的计算结果拼接到L1 Buffer](#将ub中的计算结果拼接到l1-buffer)。
+
 ## 返回值说明
 
 无。
