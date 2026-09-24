@@ -1097,26 +1097,6 @@ def _check_dtype_match(op_name: str, dt: DataType | None, *others: DataType | No
             raise InvalidType(f"{op_name}: dtype mismatch between arg0 ({dt}) and arg{i + 1} ({other})")
 
 
-def _check_cmp_out(op_name: str, out: Expr) -> None:
-    """Validate the compare destination tile.
-
-    AscendC ``Compare`` writes a 1-byte-per-element predicate mask: the
-    pto-isa A2A3 TCMP pins the dst to ``uint8_t`` and the A5 implementation
-    stores the packed mask through a ``uint8_t`` view of the destination
-    buffer. The destination tile must therefore be an 8-bit type (int8,
-    uint8, or bool).
-    """
-    out_dtype = getattr(getattr(out, "type", None), "dtype", None)
-    if out_dtype is None:
-        return
-    if out_dtype in (DataType.INT8, DataType.UINT8, DataType.BOOL):
-        return
-    raise NotSupported(
-        f"{op_name}: unsupported out dtype {out_dtype}, expected an 8-bit mask tile "
-        f"(int8/uint8/bool, mirrors AscendC Compare's uint8_t destination)"
-    )
-
-
 # Per-op supported dtype sets (aligned with ISA static_assert constraints)
 _BINARY_DTYPES: tuple[DataType, ...] = (
     DataType.INT8, DataType.UINT8, DataType.INT16, DataType.UINT16,
@@ -1396,7 +1376,6 @@ def _ir_cmp(out: Expr, lhs: Expr, rhs: Expr, *, span: Span | None = None, cmp_mo
     dt = getattr(lhs.type, "dtype", None)
     _check_dtype("cmp", dt, _CMP_DTYPES)
     _check_dtype_match("cmp", dt, getattr(rhs.type, "dtype", None))
-    _check_cmp_out("cmp", out)
     return _ir_core.create_op_call(
         block_ir_op("cmp"),
         [out, lhs, rhs],
@@ -1411,7 +1390,6 @@ def _ir_cmps(out: Expr, lhs: Expr, rhs: Expr, *, span: Span | None = None, cmp_m
     from pypto_pro.language.parser.diagnostics import check_const_expr_fits_dtype
 
     check_const_expr_fits_dtype(rhs, dt, span=span, api="pl.cmps")
-    _check_cmp_out("cmps", out)
     return _ir_core.create_op_call(
         block_ir_op("cmps"),
         [out, lhs, rhs],

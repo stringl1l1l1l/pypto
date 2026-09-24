@@ -24,16 +24,20 @@
 
 #include "core/logging.h"
 #include "ir/kind_traits.h"
+#include "ir/memory_space.h"
 #include "ir/op_registry.h"
 #include "ir/type.h"
 #include "ir/type_inference.h"
+#include "ir/op/op_common.h"
 
 namespace pypto {
 namespace ir {
 
-// ---------------------------------------------------------------------------
-// Common helpers
-// ---------------------------------------------------------------------------
+// The reduction families execute on the vector pipe over UB tiles: the ISA
+// pins dst/src/tmp to TileType::Vec (the TROWMAX/TROWMIN/TCOLMAX/TCOLSUM
+// implementation checks state that dst and src must both be TileType::Vec),
+// so every tile argument below is validated one by one with CheckTileArg and
+// a Vec space list.
 
 // ---------------------------------------------------------------------------
 // Reduction operations: (out, tile, tmp) -> out's type
@@ -47,6 +51,11 @@ REGISTER_OP("block.row_sum")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.row_sum requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.row_sum", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.row_sum", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.row_sum", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.row_sum", 3);
     });
 
@@ -58,6 +67,11 @@ REGISTER_OP("block.row_max")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.row_max requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.row_max", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.row_max", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.row_max", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.row_max", 3);
     });
 
@@ -69,6 +83,11 @@ REGISTER_OP("block.row_min")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.row_min requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.row_min", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.row_min", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.row_min", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.row_min", 3);
     });
 
@@ -80,6 +99,11 @@ REGISTER_OP("block.col_max")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.col_max requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.col_max", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.col_max", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.col_max", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.col_max", 3);
     });
 
@@ -91,6 +115,11 @@ REGISTER_OP("block.col_sum")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.col_sum requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.col_sum", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.col_sum", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.col_sum", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.col_sum", 3);
     });
 
@@ -102,6 +131,11 @@ REGISTER_OP("block.col_min")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.col_min requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.col_min", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.col_min", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.col_min", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.col_min", 3);
     });
 
@@ -113,6 +147,11 @@ REGISTER_OP("block.row_prod")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.row_prod requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.row_prod", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.row_prod", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.row_prod", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.row_prod", 3);
     });
 
@@ -124,6 +163,11 @@ REGISTER_OP("block.col_prod")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
+            << "The operator block.col_prod requires 3 arguments (out, tile, tmp)";
+        CheckTileArg(args, 0, "block.col_prod", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.col_prod", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.col_prod", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.col_prod", 3);
     });
 

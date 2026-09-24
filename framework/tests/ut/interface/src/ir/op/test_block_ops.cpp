@@ -975,6 +975,88 @@ TEST_F(BlockOpsOutElemwiseTest, BlockDequant_4Args_ReturnsOutType)
 // out_matmul.cpp: block.matmul, block.matmul_acc, block.matmul_bias, block.gemv, block.gemv_acc, block.gemv_bias
 // ============================================================================
 
+// ----------------------------------------------------------------------------
+// Vec memspace + out-shape contract checks (DeduceBlockOut*Tile)
+// ----------------------------------------------------------------------------
+
+TEST_F(BlockOpsOutElemwiseTest, BlockAdd_NonVecMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW((void)reg.Create("block.add",
+                                  {MakeTileVar("o", {16, 32}, DataType::FP16),
+                                   MakeTileVarWithMemRef("l", {16, 32}, DataType::FP16, MemorySpace::Mat, 0, 1024),
+                                   MakeTileVar("r", {16, 32}, DataType::FP16)},
+                                  Sp()),
+                 npu::tile_fwk::Error);
+}
+
+TEST_F(BlockOpsOutElemwiseTest, BlockAdd_VecMemrefs_Deduces)
+{
+    auto& reg = OpRegistry::GetInstance();
+    auto call = reg.Create("block.add",
+                           {MakeTileVarWithMemRef("o", {16, 32}, DataType::FP16, MemorySpace::Vec, 0, 1024),
+                            MakeTileVarWithMemRef("l", {16, 32}, DataType::FP16, MemorySpace::Vec, 256, 1024),
+                            MakeTileVarWithMemRef("r", {16, 32}, DataType::FP16, MemorySpace::Vec, 512, 1024)},
+                           Sp());
+    auto rt = As<TileType>(call->GetType());
+    ASSERT_NE(rt, nullptr);
+    EXPECT_EQ(rt->dtype_, DataType::FP16);
+}
+
+TEST_F(BlockOpsOutElemwiseTest, BlockNeg_NonVecMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW((void)reg.Create("block.neg",
+                                  {MakeTileVar("o", {16, 32}, DataType::FP16),
+                                   MakeTileVarWithMemRef("s", {16, 32}, DataType::FP16, MemorySpace::Acc, 0, 1024)},
+                                  Sp()),
+                 npu::tile_fwk::Error);
+}
+
+TEST_F(BlockOpsOutElemwiseTest, BlockCmp_PackedMaskOut_ShapeExempt)
+{
+    // block.cmp writes a packed b8 mask: out cols are doubled vs the operands.
+    auto& reg = OpRegistry::GetInstance();
+    std::vector<std::pair<std::string, std::any>> kwargs = {{"cmp_mode", int(0)}};
+    auto call = reg.Create("block.cmp",
+                           {MakeTileVar("o", {16, 128}, DataType::UINT8), MakeTileVar("l", {16, 64}, DataType::FP16),
+                            MakeTileVar("r", {16, 64}, DataType::FP16)},
+                           kwargs, Sp());
+    EXPECT_NE(As<TileType>(call->GetType()), nullptr);
+}
+
+TEST_F(BlockOpsOutElemwiseTest, BlockCmps_PackedMaskOut_ShapeExempt)
+{
+    auto& reg = OpRegistry::GetInstance();
+    std::vector<std::pair<std::string, std::any>> kwargs = {{"cmp_mode", int(1)}};
+    auto call = reg.Create("block.cmps",
+                           {MakeTileVar("o", {16, 128}, DataType::UINT8), MakeTileVar("t", {16, 64}, DataType::FP16),
+                            MakeScalarVar("s", DataType::FP16)},
+                           kwargs, Sp());
+    EXPECT_NE(As<TileType>(call->GetType()), nullptr);
+}
+
+TEST_F(BlockOpsOutElemwiseTest, BlockTranspose_TransposedOut_ShapeExempt)
+{
+    auto& reg = OpRegistry::GetInstance();
+    std::vector<std::pair<std::string, std::any>> kwargs = {{"axis1", int(0)}, {"axis2", int(1)}};
+    auto call = reg.Create("block.transpose",
+                           {MakeTileVar("o", {32, 16}, DataType::FP16), MakeTileVar("s", {16, 32}, DataType::FP16)},
+                           kwargs, Sp());
+    EXPECT_NE(As<TileType>(call->GetType()), nullptr);
+}
+
+TEST_F(BlockOpsOutElemwiseTest, BlockMaximum_NonVecMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW((void)reg.Create("block.maximum",
+                                  {MakeTileVar("o", {16, 32}, DataType::FP16),
+                                   MakeTileVarWithMemRef("l", {16, 32}, DataType::FP16, MemorySpace::Mat, 0, 1024),
+                                   MakeTileVar("r", {16, 32}, DataType::FP16)},
+                                  Sp()),
+                 npu::tile_fwk::Error);
+}
+
 class BlockOpsOutMatmulTest : public testing::Test {};
 
 TEST_F(BlockOpsOutMatmulTest, BlockMatmul_LhsRhsOut_ReturnsOutType)
@@ -1080,6 +1162,68 @@ TEST_F(BlockOpsOutMatmulTest, BlockMatmul_WrongArgCount_Throws)
                      "block.matmul",
                      {MakeTileVar("l", {16, 32}, DataType::FP16), MakeTileVar("r", {32, 16}, DataType::FP16)}, Sp()),
                  npu::tile_fwk::Error);
+}
+
+// ----------------------------------------------------------------------------
+// Cube memspace contract checks (out_matmul.cpp)
+// ----------------------------------------------------------------------------
+
+TEST_F(BlockOpsOutMatmulTest, BlockMatmul_Memspaces_Match)
+{
+    auto& reg = OpRegistry::GetInstance();
+    auto call = reg.Create("block.matmul",
+                           {MakeTileVarWithMemRef("o", {16, 16}, DataType::FP32, MemorySpace::Acc, 0, 1024),
+                            MakeTileVarWithMemRef("l", {16, 32}, DataType::FP16, MemorySpace::Left, 0, 1024),
+                            MakeTileVarWithMemRef("r", {32, 16}, DataType::FP16, MemorySpace::Right, 0, 1024)},
+                           Sp());
+    EXPECT_NE(As<TileType>(call->GetType()), nullptr);
+}
+
+TEST_F(BlockOpsOutMatmulTest, BlockMatmul_OutNotAcc_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW((void)reg.Create("block.matmul",
+                                  {MakeTileVarWithMemRef("o", {16, 16}, DataType::FP32, MemorySpace::Vec, 0, 1024),
+                                   MakeTileVarWithMemRef("l", {16, 32}, DataType::FP16, MemorySpace::Left, 0, 1024),
+                                   MakeTileVarWithMemRef("r", {32, 16}, DataType::FP16, MemorySpace::Right, 0, 1024)},
+                                  Sp()),
+                 npu::tile_fwk::Error);
+}
+
+TEST_F(BlockOpsOutMatmulTest, BlockMatmul_LhsWrongMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW((void)reg.Create("block.matmul",
+                                  {MakeTileVarWithMemRef("o", {16, 16}, DataType::FP32, MemorySpace::Acc, 0, 1024),
+                                   MakeTileVarWithMemRef("l", {16, 32}, DataType::FP16, MemorySpace::Vec, 0, 1024),
+                                   MakeTileVarWithMemRef("r", {32, 16}, DataType::FP16, MemorySpace::Right, 0, 1024)},
+                                  Sp()),
+                 npu::tile_fwk::Error);
+}
+
+TEST_F(BlockOpsOutMatmulTest, BlockMatmulBias_BiasWrongMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW((void)reg.Create("block.matmul_bias",
+                                  {MakeTileVarWithMemRef("o", {16, 16}, DataType::FP32, MemorySpace::Acc, 0, 1024),
+                                   MakeTileVarWithMemRef("l", {16, 32}, DataType::FP16, MemorySpace::Left, 0, 1024),
+                                   MakeTileVarWithMemRef("r", {32, 16}, DataType::FP16, MemorySpace::Right, 0, 1024),
+                                   MakeTileVarWithMemRef("bias", {1, 16}, DataType::FP32, MemorySpace::Vec, 0, 1024)},
+                                  Sp()),
+                 npu::tile_fwk::Error);
+}
+
+TEST_F(BlockOpsOutMatmulTest, BlockMatmulMx_ScaleWrongMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW(
+        (void)reg.Create("block.matmul_mx",
+                         {MakeTileVar("o", {64, 64}, DataType::FP32), MakeTileVar("l", {64, 64}, DataType::FP8E4M3FN),
+                          MakeTileVar("r", {64, 64}, DataType::FP8E5M2),
+                          MakeTileVarWithMemRef("sa", {64, 2}, DataType::FP8E8M0, MemorySpace::Vec, 0, 1024),
+                          MakeTileVar("sb", {2, 64}, DataType::FP8E8M0)},
+                         Sp()),
+        npu::tile_fwk::Error);
 }
 
 // ============================================================================
@@ -1773,6 +1917,45 @@ TEST_F(BlockOpsOutReductionTest, BlockColExpandMin_ReturnsOutType)
 // ============================================================================
 // sort.cpp: block.sort32, block.mrgsort, block.mrgsort2, block.histogram
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// Reduction Vec memspace contract checks (out_reduction.cpp)
+// ----------------------------------------------------------------------------
+
+TEST_F(BlockOpsOutReductionTest, BlockRowSum_NonVecMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW(
+        (void)reg.Create("block.row_sum",
+                         {MakeTileVar("o", {16, 1}, DataType::FP16), MakeTileVar("t", {16, 32}, DataType::FP16),
+                          MakeTileVarWithMemRef("tmp", {16, 1}, DataType::FP16, MemorySpace::Acc, 0, 1024)},
+                         Sp()),
+        npu::tile_fwk::Error);
+}
+
+TEST_F(BlockOpsOutReductionTest, BlockRowSum_VecMemrefs_Deduces)
+{
+    auto& reg = OpRegistry::GetInstance();
+    auto call = reg.Create("block.row_sum",
+                           {MakeTileVarWithMemRef("o", {16, 1}, DataType::FP16, MemorySpace::Vec, 0, 1024),
+                            MakeTileVarWithMemRef("t", {16, 32}, DataType::FP16, MemorySpace::Vec, 256, 1024),
+                            MakeTileVarWithMemRef("tmp", {16, 1}, DataType::FP16, MemorySpace::Vec, 512, 1024)},
+                           Sp());
+    auto rt = As<TileType>(call->GetType());
+    ASSERT_NE(rt, nullptr);
+    EXPECT_EQ(rt->dtype_, DataType::FP16);
+}
+
+TEST_F(BlockOpsOutReductionTest, BlockColMax_NonVecMemspace_Throws)
+{
+    auto& reg = OpRegistry::GetInstance();
+    EXPECT_THROW(
+        (void)reg.Create("block.col_max",
+                         {MakeTileVarWithMemRef("o", {1, 32}, DataType::FP16, MemorySpace::Acc, 0, 1024),
+                          MakeTileVar("t", {16, 32}, DataType::FP16), MakeTileVar("tmp", {1, 32}, DataType::FP16)},
+                         Sp()),
+        npu::tile_fwk::Error);
+}
 
 class BlockOpsSortTest : public testing::Test {};
 

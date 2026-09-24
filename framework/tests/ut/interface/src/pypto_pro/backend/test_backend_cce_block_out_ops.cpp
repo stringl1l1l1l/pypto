@@ -328,6 +328,16 @@ TEST_P(QuaternaryOpTest, EmitsCorrectCode)
 INSTANTIATE_TEST_SUITE_P(BlockOutQuaternaryOps, QuaternaryOpTest,
                          ::testing::Values(SimpleOpParam{"block.sel", "TSEL"}, SimpleOpParam{"block.sels", "TSELS"}));
 
+// maximum/minimum lower to TMAX/TMIN over UB tiles; the Vec memspace contract
+// is enforced at deduce time (out_elementwise.cpp).
+
+TEST(BackendCCEBlockOutOps, Maximum_VecMemref_EmitsTmax)
+{
+    auto tile = MakeTileType({16, 16}, ir::DataType::FP16, std::make_optional(MakeMemRef(ir::MemorySpace::Vec)));
+    auto call = MakeCall("block.maximum", {MakeVar("dst", tile), MakeVar("lhs", tile), MakeVar("rhs", tile)});
+    EXPECT_CONTAINS(RunCodegen("block.maximum", call), "TMAX(dst, lhs, rhs);");
+}
+
 TEST(BackendCCEBlockOutOps, ColMax)
 {
     auto tile = MakeTileType();

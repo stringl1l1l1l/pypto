@@ -26,6 +26,7 @@ Requires an Ascend 950 (A5) device; skips otherwise.
 
 import os
 
+from pypto_pro._errors import InvalidOperation
 import pypto_pro.language as pl
 import pytest
 import torch
@@ -1915,3 +1916,94 @@ def test_add_relu_fp32_unaligned():
     out = torch.empty(TILE_M, UNALIGN_N, device=ST_DEVICE, dtype=torch.float32)
     _run(kernel_add_relu_fp32_unaligned, a, b, out)
     torch.testing.assert_close(out, torch.relu(a + b), rtol=1e-5, atol=1e-5)
+
+
+# =============================================================================
+# Tile placement contract rejections: wrong-usage kernels that trip the
+# deduce-time memspace checks for the Vec / reduction tile contracts. The
+# raise happens at parse (deduce) time during launch.
+# =============================================================================
+
+@pl.jit()
+def kernel_reject_add_wrong_memspace(
+    a: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+    b: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+    out: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+):
+    # block.add runs on the vector pipe over UB tiles: a Mat-space operand
+    # must fail the deduce-time memspace check.
+    tf_v = pl.TileType(shape=[TILE_M, TILE_N], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+    tf_m = pl.TileType(shape=[TILE_M, TILE_N], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Mat)
+    ta = pl.make_tile_group(type=tf_m, addrs=[0], mutex_ids=[0]).next()
+    tb = pl.make_tile(tf_v, addr=TILE_SIZE)
+    tc = pl.make_tile(tf_v, addr=TILE_SIZE * 2)
+    with pl.section_vector():
+        pl.add(tc, ta, tb)
+
+
+@pytest.mark.soc("950")
+def test_reject_add_nonvec_memspace():
+    if not _check_npu():
+        return
+    a = torch.zeros(TILE_M, TILE_N, device=ST_DEVICE, dtype=torch.float32)
+    b = torch.zeros(TILE_M, TILE_N, device=ST_DEVICE, dtype=torch.float32)
+    out = torch.empty(TILE_M, TILE_N, device=ST_DEVICE, dtype=torch.float32)
+    with pytest.raises(InvalidOperation, match="requires argument 1 to be a Vec"):
+        _run(kernel_reject_add_wrong_memspace, a, b, out)
+
+
+@pl.jit()
+def kernel_reject_matmul_wrong_memspace(
+    a: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+    b: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+    out: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+):
+    # block.matmul pins out=Acc, lhs=Left, rhs=Right: an out tile taken from a
+    # Vec-space group must fail the tile-placement check.
+    tf_v = pl.TileType(shape=[TILE_M, TILE_N], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+    tf_l = pl.TileType(shape=[TILE_M, TILE_N], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Left)
+    tf_r = pl.TileType(shape=[TILE_N, TILE_N], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Right)
+    to = pl.make_tile_group(type=tf_v, addrs=[0], mutex_ids=[0]).next()
+    tl = pl.make_tile(tf_l, addr=TILE_SIZE * 2)
+    tr = pl.make_tile(tf_r, addr=TILE_SIZE * 4)
+    with pl.section_vector():
+        pl.matmul(to, tl, tr)
+
+
+@pytest.mark.soc("950")
+def test_reject_matmul_wrong_memspace():
+    if not _check_npu():
+        return
+    a = torch.zeros(TILE_M, TILE_N, device=ST_DEVICE, dtype=torch.float32)
+    b = torch.zeros(TILE_N, TILE_N, device=ST_DEVICE, dtype=torch.float32)
+    out = torch.empty(TILE_M, TILE_N, device=ST_DEVICE, dtype=torch.float32)
+    with pytest.raises(InvalidOperation, match="dst_tile must be in L0C"):
+        _run(kernel_reject_matmul_wrong_memspace, a, b, out)
+
+
+@pl.jit()
+def kernel_reject_row_sum_vec(
+    a: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+    out: pl.Tensor[[DYN, DYN], pl.DT_FP32],
+):
+    # The reduction families pin dst/src/tmp to UB tiles: an Acc-space src
+    # must fail the deduce-time memspace check. (out/tmp keep [rows, 1]
+    # shapes, whose RowMajor stride stays 32B-aligned at rows=16.)
+    tf_v = pl.TileType(shape=[16, TILE_N], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+    tf_o = pl.TileType(shape=[16, 1], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
+    tf_acc = pl.TileType(shape=[16, 16], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc)
+    to = pl.make_tile(tf_o, addr=0)
+    tl = pl.make_tile_group(type=tf_acc, addrs=[TILE_SIZE], mutex_ids=[1]).next()
+    tmp = pl.make_tile(tf_v, addr=TILE_SIZE * 2)
+    with pl.section_vector():
+        pl.sum(to, tl, tmp, dim=0)
+
+
+@pytest.mark.soc("950")
+def test_reject_row_sum_vec():
+    if not _check_npu():
+        return
+    a = torch.zeros(16, TILE_N, device=ST_DEVICE, dtype=torch.float32)
+    out = torch.empty(16, 1, device=ST_DEVICE, dtype=torch.float32)
+    with pytest.raises(InvalidOperation, match="requires argument 1 to be a Vec"):
+        _run(kernel_reject_row_sum_vec, a, out)

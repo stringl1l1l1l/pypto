@@ -33,9 +33,11 @@
 #include "core/logging.h"
 #include "pypto_pro/error.h"
 #include "ir/kind_traits.h"
+#include "ir/memory_space.h"
 #include "ir/op_registry.h"
 #include "ir/type.h"
 #include "ir/type_inference.h"
+#include "ir/op/op_common.h"
 
 namespace pypto {
 namespace ir {
@@ -45,14 +47,6 @@ using npu::tile_fwk::ExternalError;
 // Shared type deduction helpers
 // ---------------------------------------------------------------------------
 
-// Validate that args[idx] is TileType.
-static void CheckTileArg([[maybe_unused]] const std::vector<ExprPtr>& args, size_t idx, const std::string& op_name)
-{
-    PRO_IR_CHECK(ExternalError::INVALID_TYPE, As<TileType>(args[idx]->GetType()))
-        << "The operator " << op_name << " requires argument " << idx << " to be TileType, but got "
-        << args[idx]->GetType()->TypeName();
-}
-
 // Validate that args[idx] is ScalarType.
 static void CheckScalarArg([[maybe_unused]] const std::vector<ExprPtr>& args, size_t idx, const std::string& op_name)
 {
@@ -61,15 +55,21 @@ static void CheckScalarArg([[maybe_unused]] const std::vector<ExprPtr>& args, si
         << args[idx]->GetType()->TypeName();
 }
 
-// Type deduction for (out:TileType, TileType, TileType) -> out.
+// The elementwise families execute on the vector pipe over UB tiles: the ISA
+// pins their tiles to TileType::Vec (implementation checks of TADDS/TABS/
+// TRELU/TMAX/TCMP/TAXPY/TTRANS; no elementwise compute op accepts Mat), so
+// every tile argument below is validated one by one with CheckTileArg and a
+// Vec space list. TEXPANDS is the documented exception and passes a Vec-or-Mat
+// space list instead.
 static TypePtr DeduceBlockOutBinaryTile([[maybe_unused]] const std::vector<ExprPtr>& args,
                                         [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs,
                                         const std::string& op_name)
 {
     PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
         << op_name << " requires 3 arguments (out, lhs, rhs)";
-    CheckTileArg(args, 1, op_name); // NOLINT: lhs index
-    CheckTileArg(args, 2, op_name); // NOLINT: rhs index
+    CheckTileArg(args, 0, op_name, {MemorySpace::Vec});
+    CheckTileArg(args, 1, op_name, {MemorySpace::Vec}); // NOLINT: lhs index
+    CheckTileArg(args, 2, op_name, {MemorySpace::Vec}); // NOLINT: rhs index
     return DeduceBlockOutTileType(args, kwargs, op_name, 0x3);
 }
 
@@ -80,8 +80,9 @@ static TypePtr DeduceBlockOutBinaryScalar([[maybe_unused]] const std::vector<Exp
 {
     PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x3)
         << op_name << " requires 3 arguments (out, tile, scalar)";
-    CheckTileArg(args, 1, op_name);   // NOLINT: lhs index
-    CheckScalarArg(args, 2, op_name); // NOLINT: rhs index
+    CheckTileArg(args, 0, op_name, {MemorySpace::Vec});
+    CheckTileArg(args, 1, op_name, {MemorySpace::Vec}); // NOLINT: lhs index
+    CheckScalarArg(args, 2, op_name);                   // NOLINT: rhs index
     return DeduceBlockOutTileType(args, kwargs, op_name, 0x3);
 }
 
@@ -91,7 +92,8 @@ static TypePtr DeduceBlockOutUnary([[maybe_unused]] const std::vector<ExprPtr>& 
                                    const std::string& op_name)
 {
     PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x2) << op_name << " requires 2 arguments (out, src)";
-    CheckTileArg(args, 1, op_name);
+    CheckTileArg(args, 0, op_name, {MemorySpace::Vec});
+    CheckTileArg(args, 1, op_name, {MemorySpace::Vec});
     return DeduceBlockOutTileType(args, kwargs, op_name, 0x2);
 }
 
@@ -338,6 +340,12 @@ REGISTER_OP("block.xor")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x4)
+            << "The operator block.xor requires 4 arguments (out, lhs, rhs, tmp)";
+        CheckTileArg(args, 0, "block.xor", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.xor", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.xor", {MemorySpace::Vec});
+        CheckTileArg(args, 3, "block.xor", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.xor", 4);
     });
 
@@ -351,6 +359,11 @@ REGISTER_OP("block.xors")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x4)
+            << "The operator block.xors requires 4 arguments (out, lhs, scalar, tmp)";
+        CheckTileArg(args, 0, "block.xors", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.xors", {MemorySpace::Vec});
+        CheckTileArg(args, 3, "block.xors", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.xors", 4);
     });
 
@@ -366,6 +379,13 @@ REGISTER_OP("block.sel")
     .add_argument("tmp", "Scratch tile required by hardware (TileType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x5)
+            << "The operator block.sel requires 5 arguments (out, mask, lhs, rhs, tmp)";
+        CheckTileArg(args, 0, "block.sel", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.sel", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.sel", {MemorySpace::Vec});
+        CheckTileArg(args, 3, "block.sel", {MemorySpace::Vec});
+        CheckTileArg(args, 4, "block.sel", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.sel", 5);
     });
 
@@ -382,6 +402,12 @@ REGISTER_OP("block.sels")
     .add_argument("scalar", "Scalar value selected where mask bit is 0 (ScalarType)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
+        PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x5)
+            << "The operator block.sels requires 5 arguments (out, mask, src, tmp, scalar)";
+        CheckTileArg(args, 0, "block.sels", {MemorySpace::Vec});
+        CheckTileArg(args, 1, "block.sels", {MemorySpace::Vec});
+        CheckTileArg(args, 2, "block.sels", {MemorySpace::Vec});
+        CheckTileArg(args, 3, "block.sels", {MemorySpace::Vec});
         return DeduceBlockOutTileType(args, kwargs, "block.sels", 5);
     });
 
@@ -417,6 +443,20 @@ REGISTER_OP("block.cmps")
 // Scalar-to-tile broadcast
 // ---------------------------------------------------------------------------
 
+// TEXPANDS is the documented elementwise exception: the ISA accepts both Vec
+// (UB) and Mat (L1) destinations on A2/A3 and 950 (TExpandS.hpp
+// static_asserts), so it passes a Vec-or-Mat space list to CheckTileArg
+// instead of the shared Vec-only one.
+static TypePtr DeduceBlockOutExpands([[maybe_unused]] const std::vector<ExprPtr>& args,
+                                     [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs,
+                                     const std::string& op_name)
+{
+    PRO_IR_CHECK(ExternalError::INVALID_ARGUMENT, args.size() == 0x2)
+        << op_name << " requires 2 arguments (out, scalar)";
+    CheckTileArg(args, 0, op_name, {MemorySpace::Vec, MemorySpace::Mat});
+    return DeduceBlockOutTileType(args, kwargs, op_name, 0x2);
+}
+
 REGISTER_OP("block.expands")
     .set_op_category("BlockOp")
     .set_description("Block explicit-output scalar broadcast: fill out tile with scalar value (out[i,j] = scalar)")
@@ -424,7 +464,7 @@ REGISTER_OP("block.expands")
     .add_argument("scalar", "Fill value (ScalarType or constant)")
     .f_deduce_type([]([[maybe_unused]] const std::vector<ExprPtr>& args,
                       [[maybe_unused]] const std::vector<std::pair<std::string, std::any>>& kwargs) {
-        return DeduceBlockOutTileType(args, kwargs, "block.expands", 2);
+        return DeduceBlockOutExpands(args, kwargs, "block.expands");
     });
 
 REGISTER_OP("block.fill_index")
