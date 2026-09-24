@@ -148,7 +148,7 @@ inline uint64_t AlignSize(const uint64_t bytes, const uint32_t aligns = 512U)
 inline void* DevMallocWithAlignSize(const uint64_t size, const RtMemType memType)
 {
     uint8_t* devPtr = nullptr;
-    if (RuntimeMalloc(reinterpret_cast<void**>(&devPtr), AlignSize(size), memType, 0) != 0) {
+    if (RuntimeMalloc(reinterpret_cast<void**>(&devPtr), AlignSize(size), memType, PYPTO) != 0) {
         MACHINE_LOGW("Fail to malloc dev memory with size[%lu] bytes and mem type[%u].", size, memType);
         return nullptr;
     }

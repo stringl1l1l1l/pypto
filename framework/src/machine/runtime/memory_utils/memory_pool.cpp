@@ -299,7 +299,7 @@ MemoryBlock* DevMemoryPool::CreateNewBlock(uint64_t alignSize)
 {
     uint8_t* devAddr = nullptr;
 
-    if (RuntimeMalloc((void**)&devAddr, alignSize, TWO_MB_HUGE_PAGE_FLAGS, 0) == RTMALLOC_SUCCESS) {
+    if (RuntimeMalloc((void**)&devAddr, alignSize, TWO_MB_HUGE_PAGE_FLAGS, PYPTO) == RTMALLOC_SUCCESS) {
         MemoryBlock* block = new MemoryBlock(devAddr, alignSize);
         memoryBlocks_.push_back(block);
         return block;
