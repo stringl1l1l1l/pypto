@@ -32,8 +32,8 @@ interleave(src0, src1, dtype: Optional[DType] = None) -> (dst0, dst1)
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src0 | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型。<br>- **reg_tensor输入**：源操作数src0、src1和目的操作数dst的数据类型保持一致。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。<br>- **mask_reg输入**：支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32。 |
-| src1 | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型，支持的数据类型和src0中的说明一致。 |
+| src0 | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型。<br>- **reg_tensor输入**：源操作数src0、src1和目的操作数dst的数据类型保持一致。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。<br>- **mask_reg输入**：支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32。 |
+| src1 | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型，支持的数据类型和src0中的说明一致。 |
 | dtype | 输入 | 可选，模板参数对应的数据类型。仅当源操作数为mask_reg时生效，决定按位交织的位宽。 |
 
 ## 约束说明
@@ -46,8 +46,8 @@ interleave(src0, src1, dtype: Optional[DType] = None) -> (dst0, dst1)
 
 返回一个二元组 (dst0, dst1)。
 
-- dst0目的操作数，[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型，支持的数据类型和src0中的说明一致。
-- dst1目的操作数，[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型，支持的数据类型和src0中的说明一致。
+- dst0目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型，支持的数据类型和src0中的说明一致。
+- dst1目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型，支持的数据类型和src0中的说明一致。
 
 ## 调用示例
 

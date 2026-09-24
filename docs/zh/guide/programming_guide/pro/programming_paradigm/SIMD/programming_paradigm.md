@@ -2,7 +2,7 @@
 
 SIMD（Single Instruction Multiple Data，单指令多数据）以数据块为主要编程对象，一条指令同时对多个同构数据元素执行相同操作。PyPTO Pro使用Tensor、Tile和RegTensor表示不同存储层级中的数据，并将多核数据切分和核内批量计算组织在同一个Kernel中。
 
-PyPTO Pro的SIMD编程包含三种主要计算方式：基于UB Tile的矢量计算、基于Vector Register的Reg计算，以及基于L1 Buffer和L0 Buffer Tile的Cube矩阵计算。三者都以批量数据为操作对象，适合访存和计算较规整、并行度较高的算子。
+PyPTO Pro的SIMD编程包含三种主要计算方式：基于UB Tile的Tile计算、基于Vector Register的Reg计算，以及基于L1 Buffer和L0 Buffer Tile的Cube计算。三者都以批量数据为操作对象，适合访存和计算较规整、并行度较高的算子。
 
 ## 多核SPMD与核内SIMD
 
@@ -52,7 +52,7 @@ PyPTO Pro使用不同的数据对象表示SIMD数据在存储层级中的位置�
 | 数据对象 | 数据位置 | 作用 |
 |:---|:---|:---|
 | Tensor | GM | 描述Kernel输入、输出或Workspace中的多维数据视图 |
-| Tile | UB、L1 Buffer、L0A Buffer、L0B Buffer和L0C Buffer等片上存储 | 表示当前分块的数据，是Tile矢量计算和Cube计算的操作数 |
+| Tile | UB、L1 Buffer、L0A Buffer、L0B Buffer和L0C Buffer等片上存储 | 表示当前分块的数据，是Tile计算和Cube计算的操作数 |
 | TileGroup | 与Tile相同 | 管理一组轮转Tile，用于单缓冲、双缓冲和N缓冲 |
 | RegTensor、MaskReg | Vector Register File | 保存Reg计算的输入、中间结果和输出 |
 
@@ -60,11 +60,11 @@ Tensor表示全局数据，Tile表示当前AI Core处理的局部数据块。开
 
 ## SIMD计算方式
 
-### Tile矢量计算
+### Tile计算
 
-Tile矢量计算以UB中的二维Tile作为计算对象，在`pypto_pro.language.section_vector()`执行域中完成批量运算。Tile API适合逐元素、归约、数据类型转换和数据重排等通用矢量场景。
+Tile计算以UB中的二维Tile作为计算对象，在`pypto_pro.language.section_vector()`执行域中完成批量运算。Tile API适合逐元素、归约、数据类型转换和数据重排等通用矢量场景。
 
-Tile分配、数据搬运、计算接口、缓冲区轮转和尾块处理请参考[Tile计算](../../development/vector_computation/tile_computation.md)；完整可执行示例请参考[Add算子快速入门](../../../../quick_start/pro/add_simd.md)。
+Tile分配、数据搬运、计算接口、缓冲区轮转和尾块处理请参考[Tile计算](../../development/vector_computation/tile_computation.md)；完整可执行示例请参考[Softmax算子快速入门（SIMD）](../../../../quick_start/pro/softmax_simd.md)。
 
 ### Reg计算
 
@@ -72,17 +72,17 @@ Reg计算也称Regbase矢量计算，通过`@pypto_pro.language.vector_function`
 
 VF函数不能独立启动，需要由外层JIT Kernel在Vector执行域中调用。寄存器数据类型、VF函数、加载存储和计算接口的完整规则请参考[Reg计算](../../development/vector_computation/reg_computation.md)。
 
-### Cube矩阵计算
+### Cube计算
 
 Cube计算使用L1 Buffer、L0A Buffer、L0B Buffer和L0C Buffer中的矩阵Tile，通过一条矩阵指令并行完成一个矩阵分块的乘加运算。Kernel使用`pypto_pro.language.section_cube()`标识Cube执行域。
 
-开发者根据矩阵分块选择Tile shape并组织矩阵计算。矩阵分形、片上地址、数据搬运和计算接口请参考[Cube计算](../../development/cube_computation.md)；完整示例请参考[Matmul算子快速入门](../../../../quick_start/pro/matmul_simd.md)。
+开发者根据矩阵分块选择Tile shape并组织矩阵计算。矩阵分形、片上地址、数据搬运、计算接口和完整示例请参考[Cube计算](../../development/cube_computation.md)。
 
 ## SIMD Kernel开发流程
 
 使用PyPTO Pro开发SIMD算子通常包含以下步骤：
 
-1. **确定计算方式**：根据数据访问和计算特点选择Tile矢量、Reg矢量或Cube矩阵计算。
+1. **确定计算方式**：根据数据访问和计算特点选择Tile计算、Reg计算或Cube计算。
 2. **设计多核与Tile切分**：确定`block_dim`、各核的数据范围、Tile shape和尾块处理方式。
 3. **声明Tensor参数**：在Kernel签名中描述GM输入、输出和Workspace的数据类型、shape及layout。
 4. **规划片上数据**：根据计算方式选择Tile所在的MemorySpace和数据排布。

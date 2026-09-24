@@ -2,7 +2,7 @@
 
 SIMT计算以线程为基本执行单元，适合表达运行时索引、逐线程分支和共享地址的原子更新。PyPTO Pro支持SIMD与SIMT混合编程：外层JIT Kernel管理Tile、数据搬运和流水依赖，SIMT函数执行逐线程计算。
 
-初次运行可先参考[Add算子快速入门（SIMT）](../../../../quick_start/pro/add_simt.md)；概念见[SIMT编程范式](../../programming_paradigm/SIMT/programming_paradigm.md)，完整接口约束见[SIMT API](../../../../../api/pro_api/SIMT-API/index.md)。
+初次运行可先参考[Softmax算子快速入门（SIMT）](../../../../quick_start/pro/softmax_simt.md)；概念见[SIMT编程范式](../../programming_paradigm/SIMT/programming_paradigm.md)，完整接口约束见[SIMT API](../../../../../api/pro_api/SIMT-API/index.md)。
 
 ## 定义与启动SIMT函数
 
@@ -82,9 +82,9 @@ torch.npu.synchronize()
 torch.testing.assert_close(output, input_tensor * scale + bias, rtol=0, atol=0)
 ```
 
-本例在Host侧将`block_dim`设置为4，表示实际使用4个Vector核。每个Vector核调用一次`transform[THREADS](...)`，各启动一个包含256个线程的Thread Block；最后一个Thread Block只有232个线程访问数据，其余24个线程被边界判断跳过。
+本例在Host侧将`block_dim`设置为4，请求启动4个逻辑Vector核。假设4个核均实际生效，每个Vector核调用一次`transform[THREADS](...)`，各启动一个包含256个线程的Thread Block；最后一个Thread Block只有232个线程访问数据，其余24个线程被边界判断跳过。
 
-Host启动参数`block_dim`用于配置核数；SIMT函数内的`pypto_pro.language.simt.block_dim()`表示Thread Block在各维度上的线程数，两者含义不同。Host启动参数的调用形式和默认值参见[Kernel核函数](../kernel_function.md#blockdim的含义与设置)。
+Host启动参数`block_dim`用于配置逻辑核数；SIMT函数内的`pypto_pro.language.simt.block_dim()`表示Thread Block在各维度上的线程数，两者含义不同。Host启动参数的调用形式和默认值参见[Kernel核函数](../kernel_function.md#blockdim的含义与设置)。
 
 ## 配置线程与映射数据索引
 
@@ -157,7 +157,7 @@ SIMT入口函数调用在V流水异步执行。混合计算中，MTE2搬入的�
 load（MTE2） → MTE2/V同步 → SIMD或SIMT计算（V）→ V/MTE3同步 → store（MTE3）
 ```
 
-普通Tile通过成对的pypto_pro.language.system.sync_src和pypto_pro.language.system.sync_dst表达依赖，完整代码见[Add快速入门](../../../../quick_start/pro/add_simt.md)。
+普通Tile通过成对的pypto_pro.language.system.sync_src和pypto_pro.language.system.sync_dst表达依赖，完整代码见[pypto_pro.language.system.sync_src调用示例](../../../../../api/pro_api/SIMD-API/synchronization/sync_src.md#调用示例)。
 
 使用带mutex_ids的pypto_pro.language.make_tile_group时，默认启用的Auto Mutex可管理pypto_pro.language.load、SIMT入口函数调用和pypto_pro.language.store的缓冲区依赖。仅开启auto_mutex=True不会为普通pypto_pro.language.make_tile自动补全同步。
 
@@ -218,7 +218,7 @@ def gather_kernel(
 gather_kernel[None, BLOCKS](input_tensor, indices, output, OUTPUT_ROWS)
 ```
 
-本例在Host侧将`block_dim`设置为`BLOCKS=48`，表示实际使用48个Vector核；每个Vector核启动一个包含256个线程的Thread Block。线程按`pypto_pro.language.simt.grid_dim().x * pypto_pro.language.simt.block_dim().x`跨步处理后续行，覆盖全部12288行。各线程写入不同输出行，行间没有数据依赖，不需要线程块屏障。
+本例在Host侧将`block_dim`设置为`BLOCKS=48`，请求启动48个逻辑Vector核；每个实际生效的Vector核启动一个包含256个线程的Thread Block。线程按`pypto_pro.language.simt.grid_dim().x * pypto_pro.language.simt.block_dim().x`跨步处理后续行，覆盖全部12288行。各线程写入不同输出行，行间没有数据依赖，不需要线程块屏障。
 
 ## 当前能力边界
 

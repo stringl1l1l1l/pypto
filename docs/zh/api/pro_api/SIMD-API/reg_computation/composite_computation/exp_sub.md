@@ -38,9 +38,9 @@ exp_sub(src0, src1, preg, layout: Optional[CastLayout] = None, dtype: Optional[D
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src0 | 输入 | 源操作数0，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
-| src1 | 输入 | 源操作数1，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。 |
+| src0 | 输入 | 源操作数0，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
+| src1 | 输入 | 源操作数1，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。 |
 | layout | 输入 | 可选，决定结果放置半区。pypto_pro.language.CastLayout.ZERO（偶数半区，默认）或pypto_pro.language.CastLayout.ONE（奇数半区）。<br>- src类型为DT_FP16类型时，支持pypto_pro.language.CastLayout.ZERO和pypto_pro.language.CastLayout.ONE。<br>- src类型为DT_FP32类型时，配置不生效。|
 | dtype | 输入 | 可选，目标reg_tensor数据类型。当src为DT_FP16时，指定dtype=pypto_pro.language.DT_FP32可将源操作数提升精度到DT_FP32再进行计算，产生DT_FP32结果。 |
 
@@ -63,7 +63,7 @@ exp_sub(src0, src1, preg, layout: Optional[CastLayout] = None, dtype: Optional[D
 
 ## 返回值说明
 
-返回dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。
+返回dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。
 
 ## 调用示例
 

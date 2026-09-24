@@ -38,10 +38,10 @@ pypto_pro.language.move(
 | dst_tile | 输出 | 目的操作数，Tile类型，支持的数据类型与分形详见[约束说明](#约束说明)。 |
 | src_tile | 输入 | 源操作数，Tile类型，支持的数据类型与分形详见[约束说明](#约束说明)。 |
 | offset | 输入 | 可选，表示小Tile在大Tile中的相对位置，格式为[offset_m, offset_n]，单位为元素个数。<br>- 当源操作数的shape >= 目的操作数的shape时，表示从源操作数的第offset_m行offset_n列开始读，数据的搬运量取自目的操作数的valid_shape。<br>- 当源操作数的shape < 目的操作数的shape时，表示从目的操作数的第offset_m行offset_n列开始写，数据的搬运量取自源操作数的valid_shape。 |
-| acc_to_vec_mode | 输入 | 可选，L0C Buffer→UB搬运时是否开启双目标搬运模式，[pypto_pro.language.AccToVecMode](../basic_data_structures/AccToVecMode.md)类型。<br>- DualModeSplitN与phase同时使用时，若N未32对齐，可能出现卡死现象。可以在矩阵乘运算前对L0B Buffer的N设置valid shape，使其向上对齐到32的倍数。 |
+| acc_to_vec_mode | 输入 | 可选，L0C Buffer→UB搬运时的数据分发模式，[pypto_pro.language.AccToVecMode](../basic_data_structures/AccToVecMode.md)类型，默认值为`None`。<br>- 不配置或配置为`None`时，仅将数据搬运至Vec0，不搬运至Vec1。<br>- DualModeSplitN与phase同时使用时，若N未32对齐，可能出现卡死现象。可以在矩阵乘运算前对L0B Buffer的N设置valid shape，使其向上对齐到32的倍数。 |
 | relu_pre_mode | 输入 | 可选，L0C Buffer→UB或L1 Buffer搬运时是否开启随路ReLU操作，[pypto_pro.language.ReluPreMode](../basic_data_structures/ReluPreMode.md)类型。 |
 | scale | 输入 | 可选，是否使能量化功能及设置量化模式下的量化参数，数据在搬出L0C Buffer时由Fixpipe乘以该比例并转换到目的数据类型。不支持与双目标搬运（AccToVecMode.DualModeSplitM / AccToVecMode.DualModeSplitN）同时使用。不同的传入形式会影响量化粒度，支持如下类型：<br>- **float类型**：直接传入固定值（如scale = 2.0），适用于整块Tile使用同一比例。<br>- **Scalar类型**：量化比例在运行时确定，需按数据类型传值。<br>&nbsp;&nbsp;- DT_FP32：直接传原始比例值（如0.5）。<br>&nbsp;&nbsp;- DT_INT32、DT_INT64：传预编码的float32位模式转成的整数（如struct.pack("!f", 0.5)）。<br>- **Tile类型**：每列使用独立比例，需满足以下要求：<br>&nbsp;&nbsp;- 目标存储区域必须为Fixpipe Buffer。<br>&nbsp;&nbsp;- shape为[1, N]（列量化），N必须是16的倍数且N ≤ 512。<br>&nbsp;&nbsp;- dtype为DT_INT64。<br>&nbsp;&nbsp;- 目的操作数的Tile数据类型为DT_INT8时，Fixpipe Buffer中的Tile每个DT_INT64元素的bit46需置1，用于选择有符号量化；未置位时L0C Buffer中的负值会被按无符号解读。<br>&nbsp;&nbsp;- 用户需要先把比例数据从GM搬到L1 Buffer，再搬到Fixpipe Buffer，并完成MTE1→FIX同步。|
-| phase | 输入 | 可选，L0C Buffer搬运时是否启用unit_flag同步，详见[phase使用约束](../cube_computation/phase.md)。 |
+| phase | 输入 | 可选，L0C Buffer搬运时是否启用unit_flag同步，详见[Cube计算进阶](../../../../guide/programming_guide/pro/advanced_programming/cube_computation_advanced_usage.md)。 |
 
 ## 约束说明
 

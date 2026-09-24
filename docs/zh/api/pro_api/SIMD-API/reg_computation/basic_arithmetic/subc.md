@@ -30,10 +30,10 @@ subc(src0, src1, borrow_src, preg) -> (borrow, dst)
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src0 | 输入 | 源操作数0，[reg_tensor](../reg_tensor.md)，源操作数src0、src1与目的操作数dst的数据类型保持一致。支持的数据类型为：DT_INT32、DT_UINT32。 |
-| src1 | 输入 | 源操作数1，[reg_tensor](../reg_tensor.md)，支持的数据类型和src0中的说明一致。 |
-| borrow_src | 输入 | 输入借位值，[mask_reg](../mask_reg.md)。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。 |
+| src0 | 输入 | 源操作数0，[reg_tensor](../basic_data_structures/reg_tensor.md)，源操作数src0、src1与目的操作数dst的数据类型保持一致。支持的数据类型为：DT_INT32、DT_UINT32。 |
+| src1 | 输入 | 源操作数1，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型和src0中的说明一致。 |
+| borrow_src | 输入 | 输入借位值，[mask_reg](../basic_data_structures/mask_reg.md)。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。 |
 
 ## 约束说明
 
@@ -43,8 +43,8 @@ subc(src0, src1, borrow_src, preg) -> (borrow, dst)
 
 返回一个二元组 (borrow, dst)。
 
-- borrow输出借位值，[mask_reg](../mask_reg.md)。
-- dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型和src0中的说明一致。
+- borrow输出借位值，[mask_reg](../basic_data_structures/mask_reg.md)。
+- dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型和src0中的说明一致。
 
 ## 调用示例
 

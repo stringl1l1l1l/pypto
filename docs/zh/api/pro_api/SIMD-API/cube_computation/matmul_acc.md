@@ -41,7 +41,7 @@ pypto_pro.language.matmul_acc(
 | acc_tile | 输入 | 源操作数（已有累加结果），Tile类型，存储空间为L0C Buffer。形状和数据类型必须与dst_tile一致，且内容必须由此前的matmul或matmul_acc操作初始化。K维首块应使用matmul初始化，不能直接对未初始化的L0C Buffer执行matmul_acc。 |
 | lhs_tile | 输入 | 源操作数（左矩阵），Tile类型，存储空间为L0A Buffer，形状为[M, K]，layout必须为NZ。M、K的有效取值范围均为[1, 4095]。支持的数据类型组合为：DT_FP16 × DT_FP16 → DT_FP32、DT_BF16 × DT_BF16 → DT_FP32、DT_FP32 × DT_FP32 → DT_FP32、DT_INT8 × DT_INT8 → DT_INT32、DT_HF8 × DT_HF8 → DT_FP32；DT_FP8E4M3FN和DT_FP8E5M2可任意两两组合，输出为DT_FP32。 |
 | rhs_tile | 输入 | 源操作数（右矩阵），Tile类型，存储空间为L0B Buffer，形状为[K, N]，layout必须为ZN，N的有效取值范围为[1, 4095]。K维必须与lhs_tile一致。数据类型必须与lhs_tile共同满足上述支持组合。 |
-| phase | 输入 | K维分块累加阶段，[pypto_pro.language.AccPhase](../basic_data_structures/AccPhase.md)类型，可选。使用时必须与store、store_tile或move的[pypto_pro.language.STPhase](../basic_data_structures/STPhase.md)正确配对，详见[AccPhase与STPhase配合使用说明](phase.md)。 |
+| phase | 输入 | K维分块累加阶段，[pypto_pro.language.AccPhase](../basic_data_structures/AccPhase.md)类型，可选。使用时必须与store、store_tile或move的[pypto_pro.language.STPhase](../basic_data_structures/STPhase.md)正确配对，详见[Cube计算进阶](../../../../guide/programming_guide/pro/advanced_programming/cube_computation_advanced_usage.md)。 |
 
 ## 约束说明
 

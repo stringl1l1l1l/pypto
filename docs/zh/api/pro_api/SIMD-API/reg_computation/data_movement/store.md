@@ -27,7 +27,7 @@ store(tile, src, count)
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
 | tile | 输出 | 目的操作数，Tile地址，起始地址需要32字节对齐。 |
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)，源操作数src与目的操作数dst的数据类型保持一致。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，源操作数src与目的操作数dst的数据类型保持一致。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。 |
 | count | 输入 | 搬运数据量（元素个数）。count不能大于一个reg_tensor能存储的数据个数，即count <= 256B / sizeof(dtype)。 |
 
 ## 约束说明

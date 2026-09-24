@@ -1,6 +1,6 @@
 # Tiling概述
 
-Kernel在Device侧由多个AI Core并行执行，而每个AI Core的片上Buffer容量有限。为了用满多核算力，并让单个核每次处理的数据能放进片上Buffer，需要把算子的输入数据切分成多个数据块，分配到不同的核上、分多次搬入片上完成计算。这个对数据进行切分、分块计算的过程称为Tiling。
+Kernel在Device侧由多个AI Core并行执行，而每个AI Core的片上Buffer容量有限。为了用满多核算力，并让单个核处理的数据能放进片上Buffer，需要把算子的输入数据划分为基本任务块，将一组任务块分配给各个核，再为核内处理配置Buffer。这个对数据进行切分、分块计算的过程称为Tiling。
 
 Tiling是算子开发的第一步：切分方式决定了各个核的负载是否均衡、片上Buffer能否放下、数据搬运是否连续，直接影响算子的性能。
 
@@ -8,20 +8,22 @@ Tiling是算子开发的第一步：切分方式决定了各个核的负载是�
 
 两个硬件约束决定了Tiling的必要性。
 
-**Device上有多个AI Core。** 算子的数据如果只交给一个核处理，其余核处于空闲，多核算力无法发挥。把数据划分成多个任务并分配到不同的核并行处理，才能把算力用起来。
+**Device上有多个AI Core。** 算子的数据如果只交给一个核处理，其余核处于空闲，多核算力无法发挥。把数据划分成基本任务块，并将一组任务块分配给每个核并行处理，才能把算力用起来。
 
-**单个核的片上Buffer容量有限。** 计算只能在片上Buffer中进行，而算子的输入输出通常远大于片上容量，无法一次完整装入。单个核需要把分到的数据再分成若干块，按“搬入—计算—搬出”的节奏分批处理。
+**单个核的片上Buffer容量有限。** 计算只能在片上Buffer中进行，而算子的输入输出通常远大于片上容量，无法一次完整装入。基本任务块的大小需要适配片上容量；核内可为已分配的任务划分双缓冲或多个Buffer槽位，轮转执行“搬入—计算—搬出”，让不同任务的搬运与计算尽量并行。
 
 因此Tiling包含两个层次：
 
 | 层次 | 含义 | 详细内容 |
 | --- | --- | --- |
-| 核间切分 | 把算子的数据划分为多个任务，分配到不同的AI Core并行处理。 | [多核Tiling切分](multi_core_tiling.md) |
-| 核内切分 | 单个核把分到的数据再分成多个Tile，分批搬入片上Buffer完成计算。 | [Tile创建和操作](../tile_creation_and_operations.md)、[Tile计算](../vector_computation/tile_computation.md) |
+| 核间切分 | 把算子的数据划分为基本任务块，将一组任务块分配给每个AI Core并行处理。 | [多核Tiling切分](multi_core_tiling.md) |
+| 核内切分 | 基于已分配的任务划分核内Buffer，例如使用双缓冲或多个Buffer槽位轮转，让搬运与计算并行。 | [Tile创建和操作](../tile_creation_and_operations.md)、[Tile计算](../vector_computation/tile_computation.md) |
 
 **图1 Tiling的两个层次**
 
 ![Tiling的两个层次](../../../../figures/pro/pro_tiling_two_levels.png "Tiling的两个层次")
+
+图中AI Core 0负责完整的T0、T4、T8三个基本任务块；核内示意的是这些任务对Buffer槽位的轮转使用，并非把T0再次切成更小的Tile。
 
 ## AI Core与执行域
 

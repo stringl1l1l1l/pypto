@@ -30,11 +30,11 @@ muls_cast(src, scalar, preg, dtype: DType, layout: Optional[CastLayout] = None) 
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
 | scalar | 输入 | 标量源操作数。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。 |
 | dtype | 输入 | 指定目标reg_tensor的数据类型，支持的数据类型请参见[约束说明](#约束说明)。由于乘法后进行类型转换（DT_FP32→DT_FP16），目标类型与源类型不同，必须显式指定，通常为pypto_pro.language.DT_FP16。 |
-| layout | 输入 | 可选，结果放置半区：pypto_pro.language.CastLayout.ZERO（偶数半区，默认，PART_EVEN）或pypto_pro.language.CastLayout.ONE（奇数半区，PART_ODD），对应[CastLayout](../types/CastLayout.md)类型。计算按照CAST_ROUND模式舍入。 |
+| layout | 输入 | 可选，结果放置半区：pypto_pro.language.CastLayout.ZERO（偶数半区，默认，PART_EVEN）或pypto_pro.language.CastLayout.ONE（奇数半区，PART_ODD），对应[CastLayout](../basic_data_structures/CastLayout.md)类型。计算按照CAST_ROUND模式舍入。 |
 
 ## 约束说明
 
@@ -48,7 +48,7 @@ muls_cast(src, scalar, preg, dtype: DType, layout: Optional[CastLayout] = None) 
 
 ## 返回值说明
 
-返回dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。
+返回dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。
 
 ## 调用示例
 

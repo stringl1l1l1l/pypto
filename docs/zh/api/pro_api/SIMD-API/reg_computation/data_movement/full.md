@@ -29,11 +29,11 @@ full(src, preg, dtype: Optional[DType] = None, mode: Optional[MergeMode] = None,
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src | 输入 | 源操作数，为标量值或者[reg_tensor](../reg_tensor.md)。源操作数src与目的操作数dst的数据类型保持一致。<br>- **Scalar模式**：标量值，广播到寄存器各元素。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。<br>- **Tensor模式**：[reg_tensor](../reg_tensor.md)，广播其最低位或最高位元素。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。Tensor模式必选；Scalar模式可选。 |
+| src | 输入 | 源操作数，为标量值或者[reg_tensor](../basic_data_structures/reg_tensor.md)。源操作数src与目的操作数dst的数据类型保持一致。<br>- **Scalar模式**：标量值，广播到寄存器各元素。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。<br>- **Tensor模式**：[reg_tensor](../basic_data_structures/reg_tensor.md)，广播其最低位或最高位元素。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。Tensor模式必选；Scalar模式可选。 |
 | dtype | 输入 | 可选，指定数据类型。Scalar模式必须输入，Tensor模式可从源寄存器自动推断。 |
-| mode | 输入 | 可选，对应[MergeMode](../types/MergeMode.md)类型。<br>- pypto_pro.language.MergeMode.ZEROING（默认），preg未筛选的元素在dst中置0。<br>- pypto_pro.language.MergeMode.MERGING当前不支持。 |
-| pos | 输入 | 可选，Tensor模式下选择广播源reg_tensor的哪个元素，对应[DuplicatePos](../types/DuplicatePos.md)类型：<br>- pypto_pro.language.DuplicatePos.LOWEST：默认，广播最低位的元素。<br>- pypto_pro.language.DuplicatePos.HIGHEST：指定广播最高位的元素。 |
+| mode | 输入 | 可选，对应[MergeMode](../basic_data_structures/MergeMode.md)类型。<br>- pypto_pro.language.MergeMode.ZEROING（默认），preg未筛选的元素在dst中置0。<br>- pypto_pro.language.MergeMode.MERGING当前不支持。 |
+| pos | 输入 | 可选，Tensor模式下选择广播源reg_tensor的哪个元素，对应[DuplicatePos](../basic_data_structures/DuplicatePos.md)类型：<br>- pypto_pro.language.DuplicatePos.LOWEST：默认，广播最低位的元素。<br>- pypto_pro.language.DuplicatePos.HIGHEST：指定广播最高位的元素。 |
 
 ## 约束说明
 
@@ -41,7 +41,7 @@ full(src, preg, dtype: Optional[DType] = None, mode: Optional[MergeMode] = None,
 
 ## 返回值说明
 
-返回dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型和src中的说明一致。
+返回dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型和src中的说明一致。
 
 ## 调用示例
 

@@ -46,11 +46,11 @@ update_mask(scalar, dtype: Optional[DType] = None) -> preg
   | DT_FP32 / DT_INT32 / DT_UINT32 | 32 bit | 64 | 4 bit（b32 粒度） | 256 bit |
   | DT_INT64 / DT_UINT64 | 64 bit | 32 | 8 bit（b64 粒度） | 256 bit |
 
-  > **注意**：FP8 类型（FP8E4M3FN/FP8E5M2/FP8E8M0/HF8）和 FP4 类型（FP4E2M1/FP4E1M2）均为 b8 存储，按 b8 粒度处理。掩码寄存器始终为[mask_reg](../mask_reg.md)类型。
+  > **注意**：FP8 类型（FP8E4M3FN/FP8E5M2/FP8E8M0/HF8）和 FP4 类型（FP4E2M1/FP4E1M2）均为 b8 存储，按 b8 粒度处理。掩码寄存器始终为[mask_reg](../basic_data_structures/mask_reg.md)类型。
 
 ## 返回值说明
 
-返回preg目标[mask_reg](../mask_reg.md)。
+返回preg目标[mask_reg](../basic_data_structures/mask_reg.md)。
 
 ## 调用示例
 

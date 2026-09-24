@@ -35,7 +35,7 @@ tile_type = pypto_pro.language.TileType(
 | shape | Tile的物理shape，当前仅支持二维正整数shape |
 | dtype | Tile元素的数据类型 |
 | target_memory | Tile所在的片上内存空间，默认为MemorySpace.Vec |
-| valid_shape | Tile的有效区域；动态尾块通常声明为[-1, -1]并在运行时设置 |
+| valid_shape | Tile的有效区域；省略时默认动态模式，等同于[-1, -1]，尾块在运行时通过set_validshape设置 |
 | layout | Tile的物理排布，如ND、DN、NZ、ZN、NN或ZZ；省略时按内存空间推导默认值 |
 | fractal | 分形大小；部分内存空间和数据类型可以推导默认值 |
 | pad | 无效区域的填充模式 |
@@ -60,6 +60,18 @@ target_memory决定Tile绑定的物理缓冲区和可使用的数据路径：
 | ScaleRight | L0B_MX Buffer | MX矩阵乘的右量化系数矩阵 |
 
 选择内存空间后，还需要遵守相应Buffer对layout、fractal、dtype、容量和地址对齐的约束。详细枚举说明请参考[pypto_pro.language.MemorySpace](../../../../api/pro_api/SIMD-API/basic_data_structures/MemorySpace.md)。
+
+## Tile创建方式的选择
+
+确定TileType后，可以通过make_tile创建一块绑定固定地址的Tile，由开发者管理访问时序和同步；也可以通过make_tile_group创建一组规格相同的Tile，统一管理地址、轮转和可选的自动同步元数据。根据缓冲方式和同步需求选择：
+
+| 需求 | 建议方式 |
+|:---|:---|
+| 创建一块固定地址的Tile并精确控制同步 | make_tile |
+| 创建仅在局部计算中临时使用、无需轮转和自动同步的Tile | make_tile |
+| 创建常规单缓冲并使用自动同步 | make_tile_group，配置一个mutex ID |
+| 创建双缓冲或N缓冲 | make_tile_group，按缓冲深度配置多个mutex ID |
+| 创建轮转Tile但自行管理同步 | make_tile_group，使用depth且不配置mutex ID |
 
 ## 使用make_tile创建单个Tile
 
@@ -158,12 +170,16 @@ separate = pl.make_tile_group(
 
 ### 配置mutex和depth
 
+mutex ID是片上缓冲区互斥同步资源的编号，用于协调不同Pipe对Tile的访问。为TileGroup配置mutex_ids，是指定组内每块Tile使用的ID；启用@pypto_pro.language.jit(auto_mutex=True)后，框架根据这些ID自动插入同步操作。也可以只传depth而不传mutex_ids来创建轮转Tile，但此时框架不会分配mutex ID；即使启用auto_mutex=True，也不会为这些Tile自动插入mutex同步，需要开发者自行保证访问时序。
+
 - mutex_ids中的每一项对应一块Tile，ID取值范围为[0, 31]。
-- 每块Tile可以绑定一个ID，也可以绑定一个非空ID列表；同一块Tile的ID不能重复。
+- 每块Tile可以绑定一个ID，也可以绑定一个非空ID列表；同一块Tile绑定的多个ID不能重复。
 - mutex_ids非空且未指定depth时，TileGroup深度由len(mutex_ids)推导。
 - mutex_ids为None或空列表时必须显式指定depth，并由开发者保证访问时序。
 
-开启@pypto_pro.language.jit(auto_mutex=True)并配置非空mutex_ids后，框架根据Tile与mutex的映射为后续数据依赖插入同步。TileGroup本身不会在运行时主动执行加锁或解锁。完整参数说明请参考[pypto_pro.language.make_tile_group](../../../../api/pro_api/SIMD-API/resource_management/make_tile_group.md)。
+分配ID时，在同一个TileGroup内和不同的TileGroup之间，优先为每块Tile分配不同的ID。比如双缓冲使用mutex_ids=[0, 1]，另一块同时参与流水的Tile使用mutex_ids=[2]。这样可避免无关Tile因共用ID而互相等待，更利于发挥流水并行性能。ID不够用时，优先让使用时段不重叠、不会同时参与流水的Tile复用同一ID；尽量不要让可能同时使用的两块Tile共用ID。
+
+如果还显式调用pypto_pro.language.system.mutex_lock/mutex_unlock，应将其ID与自动同步正在使用的ID分开；只有确认两者的使用周期完全不重叠，才能复用同一ID，避免重复获取尚未释放的互斥资源。TileGroup本身不会在运行时主动执行加锁或解锁。完整参数说明请参考[pypto_pro.language.make_tile_group](../../../../api/pro_api/SIMD-API/resource_management/make_tile_group.md)。
 
 ## 访问TileGroup中的Tile
 
@@ -198,7 +214,7 @@ first_tile = double_buffer[0]
 
 ## 设置Tile的有效形状
 
-当Tensor shape不能被Tile shape整除时，边界Tile只有部分元素有效。创建TileType时可以用valid_shape描述有效区域：
+当Tensor shape不能被Tile shape整除时，边界Tile只有部分元素有效。TileType省略valid_shape时默认采用动态模式，等同于valid_shape=[-1, -1]，无需为尾块显式填写：
 
 ```python
 import pypto_pro.language as pl
@@ -208,11 +224,10 @@ tail_type = pl.TileType(
     shape=[64, 128],
     dtype=pl.DT_FP16,
     target_memory=pl.MemorySpace.Vec,
-    valid_shape=[-1, -1],
 )
 ```
 
-valid_shape=[-1, -1]表示有效形状在运行时确定。取得具体Tile后，使用pypto_pro.language.set_validshape设置本次访问的有效范围；每一维必须大于0且不能超过Tile对应维度：
+需要表示部分维度为固定有效大小时，可显式指定valid_shape，例如[64, -1]。取得具体Tile后，使用pypto_pro.language.set_validshape设置本次访问的有效范围；每一维必须大于0且不能超过Tile对应维度：
 
 ```python
 import pypto_pro.language as pl
@@ -255,14 +270,6 @@ reinterpret至少需要指定dtype、shape或layout中的一项；显式指定dt
 
 对TileGroup执行reinterpret后，新旧TileGroup共享同一套缓冲区轮转状态；任意一方调用next()都会影响另一方。需要独立轮转时，应分别创建TileGroup。详细约束请参考[pypto_pro.language.reinterpret](../../../../api/pro_api/SIMD-API/resource_management/reinterpret.md)。
 
-## Tile创建方式的选择
-
-| 需求 | 建议方式 |
-|:---|:---|
-| 创建一块固定地址的Tile并精确控制同步 | make_tile |
-| 创建常规单缓冲并使用自动同步 | make_tile_group，配置一个mutex ID |
-| 创建双缓冲或N缓冲 | make_tile_group，按缓冲深度配置多个mutex ID |
-| 创建轮转Tile但自行管理同步 | make_tile_group，使用depth且不配置mutex ID |
-| 用新的dtype、shape或layout解释已有Tile | reinterpret |
+## 相关内容
 
 Tile上的矢量计算接口请参考[Tile计算](vector_computation/tile_computation.md)，矩阵搬运和计算请参考[Cube计算](cube_computation.md)，跨Pipe手动同步接口请参考[同步API](../../../../api/pro_api/SIMD-API/synchronization/index.md)。

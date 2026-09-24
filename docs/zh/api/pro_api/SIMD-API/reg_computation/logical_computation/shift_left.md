@@ -14,7 +14,7 @@
 
 ## 功能说明
 
-vf.shift_left指令根据preg对源操作数src进行左移操作，将结果写入目的操作数dst。移位量shift既可以是**标量**（所有元素移动相同位数），也可以是**[reg_tensor](../reg_tensor.md)**（每个元素按对应lane的位数移动）。接口会根据shift参数的类型自动选择：
+vf.shift_left指令根据preg对源操作数src进行左移操作，将结果写入目的操作数dst。移位量shift既可以是**标量**（所有元素移动相同位数），也可以是**[reg_tensor](../basic_data_structures/reg_tensor.md)**（每个元素按对应lane的位数移动）。接口会根据shift参数的类型自动选择：
 
 - **标量模式**（整数值或标量变量）：所有元素统一左移。
 
@@ -41,10 +41,10 @@ shift_left(src, shift, preg, mode: Optional[MergeMode] = None) -> dst
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)。源操作数src与目的操作数dst的数据类型保持一致。支持的数据类型参见[约束说明](#约束说明)。 |
-| shift | 输入 | 左移位数。标量（整型，所有元素统一移位）或[reg_tensor](../reg_tensor.md)（逐元素移位），支持的数据类型参见[约束说明](#约束说明)。<br>- 对于**reg_tensor模式**下逻辑位移（无符号数据类型），如果位移量大于数据类型位宽，则输出为0。<br>- 对于**reg_tensor模式**下算术位移（有符号数据类型），如果位移量大于数据类型位宽，则输出0。<br>- 两种模式下均不支持设置为负数，负数行为未定义。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。 |
-| mode | 输入 | 可选，对应[MergeMode](../types/MergeMode.md)类型。<br>- pypto_pro.language.MergeMode.ZEROING（默认），preg未筛选的元素在dst中置0。<br>- pypto_pro.language.MergeMode.MERGING当前不支持。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)。源操作数src与目的操作数dst的数据类型保持一致。支持的数据类型参见[约束说明](#约束说明)。 |
+| shift | 输入 | 左移位数。标量（整型，所有元素统一移位）或[reg_tensor](../basic_data_structures/reg_tensor.md)（逐元素移位），支持的数据类型参见[约束说明](#约束说明)。<br>- 对于**reg_tensor模式**下逻辑位移（无符号数据类型），如果位移量大于数据类型位宽，则输出为0。<br>- 对于**reg_tensor模式**下算术位移（有符号数据类型），如果位移量大于数据类型位宽，则输出0。<br>- 两种模式下均不支持设置为负数，负数行为未定义。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。 |
+| mode | 输入 | 可选，对应[MergeMode](../basic_data_structures/MergeMode.md)类型。<br>- pypto_pro.language.MergeMode.ZEROING（默认），preg未筛选的元素在dst中置0。<br>- pypto_pro.language.MergeMode.MERGING当前不支持。 |
 
 ## 约束说明
 
@@ -63,7 +63,7 @@ shift_left(src, shift, preg, mode: Optional[MergeMode] = None) -> dst
 
 ## 返回值说明
 
-返回dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型参见[约束说明](#约束说明)。
+返回dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型参见[约束说明](#约束说明)。
 
 ## 调用示例
 

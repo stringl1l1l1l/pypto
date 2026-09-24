@@ -80,7 +80,7 @@ load_unalign(align_reg, tile, stride, post_update: bool = False) -> dst
 
 ## 返回值说明
 
-返回dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型和tile中的说明一致。
+返回dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型和tile中的说明一致。
 
 ## 调用示例
 

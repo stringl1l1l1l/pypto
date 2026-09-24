@@ -30,7 +30,7 @@ arange(start, dtype: DType, index_order: Optional[IndexOrder] = None) -> dst
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
 | start | 输入 | 序列起始值（整型标量或表达式）。 |
-| dtype | 输入 | 指定目标[reg_tensor](../reg_tensor.md)的数据类型（如pypto_pro.language.DT_UINT32、pypto_pro.language.DT_INT32等）。由于标量源无法推断寄存器数据类型，必须显式指定。 |
+| dtype | 输入 | 指定目标[reg_tensor](../basic_data_structures/reg_tensor.md)的数据类型（如pypto_pro.language.DT_UINT32、pypto_pro.language.DT_INT32等）。由于标量源无法推断寄存器数据类型，必须显式指定。 |
 | index_order | 输入 | 可选关键字参数，生成方向。pypto_pro.language.IndexOrder.INCREASE_ORDER（默认，递增）或pypto_pro.language.IndexOrder.DECREASE_ORDER（递减）。每一步的步长固定为 ±1，这是硬件特性。如需非1步长（如start + i*step），可在vf.arange之后追加一条vf.muls对结果整体缩放。 |
 
 ## 约束说明
@@ -41,7 +41,7 @@ arange(start, dtype: DType, index_order: Optional[IndexOrder] = None) -> dst
 
 ## 返回值说明
 
-返回dst目标[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)，存放生成的序列。
+返回dst目标[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)，存放生成的序列。
 
 ## 调用示例
 

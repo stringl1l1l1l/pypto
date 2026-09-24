@@ -145,8 +145,8 @@ Kernel使用方括号指定启动配置，使用圆括号传入函数实参：
 | 调用形式 | 含义 |
 | --- | --- |
 | kernel(args...) | 使用当前Stream，block_dim=1。 |
-| kernel\[block_dim\](args...) | 使用当前Stream，并指定实际核数。 |
-| kernel\[stream, block_dim\](args...) | 指定Stream和实际核数。 |
+| kernel\[block_dim\](args...) | 使用当前Stream，并指定逻辑核数。 |
+| kernel\[stream, block_dim\](args...) | 指定Stream和逻辑核数。 |
 | kernel\[stream, block_dim, tiling_key\](args...) | 选择TilingKey对应的编译实例。 |
 | kernel\[stream, block_dim, tiling_key, datatype\](args...) | 同时选择TilingKey和datatype特化实例。 |
 
@@ -192,13 +192,15 @@ stream.synchronize()
 
 ### blockDim的含义与设置
 
-block_dim表示实际可用核数，取值必须是正整数，且不得超过最大可用核数。Kernel可通过[pypto_pro.language.get_block_num()](../../../../api/pro_api/SIMD-API/system_variables/get_block_num.md)读取实际生效的核数。
+block_dim表示请求启动的逻辑核数，取值必须是正整数，且不得超过当前设备和Kernel类型下实际可用的上限。运行时实际生效的逻辑Block数可能小于请求值；Kernel内应通过[pypto_pro.language.get_block_num()](../../../../api/pro_api/SIMD-API/system_variables/get_block_num.md)读取实际生效值。
+
+以下示例假设所述核数均在当前可用范围内。
 
 | Kernel类型 | block_dim的含义 |
 | --- | --- |
-| Vector Kernel | 用于设置启动多少个Vector（AIV）实例执行，比如某款AI处理器上有40个Vector核，建议设置为40。 |
-| Cube Kernel | 用于设置启动多少个Cube（AIC）实例执行，比如某款AI处理器上有20个Cube核，建议设置为20。 |
-| Cube与Vector混合Kernel | 按照AIV和AIC组合启动，用于设置启动多少个组合执行，比如某款AI处理器上有40个Vector核和20个Cube核，一个组合是2个Vector核和1个Cube核，建议设置为20，此时会启动20个组合，即40个Vector核和20个Cube核。此时Vector核数的统计还需要乘以[pypto_pro.language.get_subblock_num()](../../../../api/pro_api/SIMD-API/system_variables/get_subblock_num.md)。 |
+| Vector Kernel | 用于设置逻辑Vector（AIV）核数。比如某款AI处理器上有40个Vector核，设置`block_dim=40`表示请求启动40个逻辑Vector核。 |
+| Cube Kernel | 用于设置逻辑Cube（AIC）核数。比如某款AI处理器上有20个Cube核，设置`block_dim=20`表示请求启动20个逻辑Cube核。 |
+| Cube与Vector混合Kernel | 按照AIV和AIC组合启动，用于设置逻辑执行组数。比如某款AI处理器上有40个Vector核和20个Cube核，一个执行组包含2个Vector核和1个Cube核，设置`block_dim=20`表示请求启动20个执行组；若20组均实际生效，对应40个Vector核和20个Cube核。实际生效的执行组数由`get_block_num()`获取，Vector侧逻辑核数还需乘以[pypto_pro.language.get_subblock_num()](../../../../api/pro_api/SIMD-API/system_variables/get_subblock_num.md)。 |
 
 ## 使用TilingKey和datatype
 

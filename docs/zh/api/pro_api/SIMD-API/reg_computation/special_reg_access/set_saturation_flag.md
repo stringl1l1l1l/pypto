@@ -31,7 +31,7 @@ set_saturation_flag(mode: SaturationFlagMode, enable: bool) -> None
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| mode | 输入 | 饱和模式类别，对应[SaturationFlagMode](../types/SaturationFlagMode.md)枚举。<br>- pypto_pro.language.SaturationFlagMode.FLOAT：浮点数计算和浮点数精度转换（CTRL bit 48）<br>- pypto_pro.language.SaturationFlagMode.FLOAT8：浮点8计算（CTRL bit 50）<br>- pypto_pro.language.SaturationFlagMode.INT：整数计算（CTRL bit 53）<br>- pypto_pro.language.SaturationFlagMode.CAST：浮点转整数或整数转整数的精度转换（CTRL bit 59）<br> 设置后对后续所有VF计算指令生效，直到再次调用本接口修改。|
+| mode | 输入 | 饱和模式类别，对应[SaturationFlagMode](../basic_data_structures/SaturationFlagMode.md)枚举。<br>- pypto_pro.language.SaturationFlagMode.FLOAT：浮点数计算和浮点数精度转换（CTRL bit 48）<br>- pypto_pro.language.SaturationFlagMode.FLOAT8：浮点8计算（CTRL bit 50）<br>- pypto_pro.language.SaturationFlagMode.INT：整数计算（CTRL bit 53）<br>- pypto_pro.language.SaturationFlagMode.CAST：浮点转整数或整数转整数的精度转换（CTRL bit 59）<br> 设置后对后续所有VF计算指令生效，直到再次调用本接口修改。|
 | enable | 输入 | 饱和模式使能位。True启用饱和模式，False禁用（不饱和模式）。 |
 
 ## 约束说明

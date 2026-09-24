@@ -42,10 +42,10 @@ histograms(src, preg, bin_type: Optional[BinType] = None, hist_type: Optional[Hi
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)，数据类型为DT_UINT8，待统计的数据。取值范围为0~255。<br>- mask位为0时，源操作数src对应位置的数值不参与统计，dst对应位置的值为原有值（对该位置src不存在的值进行统计）。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)，指定参与统计的元素范围。mask位为1时该元素参与统计，为0时不参与统计。dtype需为DT_UINT8（b8粒度）。 |
-| bin_type | 输入 | 可选，分桶类型，决定统计的数据值范围，对应[BinType](../types/BinType.md)类型。<br>- pypto_pro.language.BinType.BIN0（默认）：低位模式，统计src中值在[0, 127]范围内的出现频率/累计频率，dst[n]对应数值n的统计结果。<br>- pypto_pro.language.BinType.BIN1：高位模式，统计src中值在[128, 255]范围内的出现频率/累计频率，统计时数值减去128映射到dst的对应位置，dst[n]对应数值(n+128)的统计结果。 |
-| hist_type | 输入 | 可选，统计模式，决定计数方式，对应[HistType](../types/HistType.md)类型。<br>- pypto_pro.language.HistType.ACCUMULATE（默认，累计统计）：dst的第n个元素表示src中从0到n的所有数值在对应区间中出现的总频率，统计结果在dst原始数据基础上累加。<br>- pypto_pro.language.HistType.FREQUENCY（频率统计）：dst的第n个元素表示src中数值n的出现次数，统计结果在dst原始数据基础上累加。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，数据类型为DT_UINT8，待统计的数据。取值范围为0~255。<br>- mask位为0时，源操作数src对应位置的数值不参与统计，dst对应位置的值为原有值（对该位置src不存在的值进行统计）。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)，指定参与统计的元素范围。mask位为1时该元素参与统计，为0时不参与统计。dtype需为DT_UINT8（b8粒度）。 |
+| bin_type | 输入 | 可选，分桶类型，决定统计的数据值范围，对应[BinType](../basic_data_structures/BinType.md)类型。<br>- pypto_pro.language.BinType.BIN0（默认）：低位模式，统计src中值在[0, 127]范围内的出现频率/累计频率，dst[n]对应数值n的统计结果。<br>- pypto_pro.language.BinType.BIN1：高位模式，统计src中值在[128, 255]范围内的出现频率/累计频率，统计时数值减去128映射到dst的对应位置，dst[n]对应数值(n+128)的统计结果。 |
+| hist_type | 输入 | 可选，统计模式，决定计数方式，对应[HistType](../basic_data_structures/HistType.md)类型。<br>- pypto_pro.language.HistType.ACCUMULATE（默认，累计统计）：dst的第n个元素表示src中从0到n的所有数值在对应区间中出现的总频率，统计结果在dst原始数据基础上累加。<br>- pypto_pro.language.HistType.FREQUENCY（频率统计）：dst的第n个元素表示src中数值n的出现次数，统计结果在dst原始数据基础上累加。 |
 
 ## 约束说明
 
@@ -53,7 +53,7 @@ histograms(src, preg, bin_type: Optional[BinType] = None, hist_type: Optional[Hi
 
 ## 返回值说明
 
-返回dst目标[reg_tensor](../reg_tensor.md)，数据类型为DT_UINT16，存放分桶计数结果。VL(寄存器位宽)为256Byte时，dst可存储128个uint16元素。<br>- hist_type=ACCUMULATE时为原地累加：dst寄存器既被读又被写，首次调用前必须通过vf.full(0, ...)将dst初始化为零，后续dst = vf.histograms(...)复用同一寄存器继续累加。<br>- dst数据类型为DT_UINT16，最大值为65535，使用时需注意累加溢出问题。
+返回dst目标[reg_tensor](../basic_data_structures/reg_tensor.md)，数据类型为DT_UINT16，存放分桶计数结果。VL(寄存器位宽)为256Byte时，dst可存储128个uint16元素。<br>- hist_type=ACCUMULATE时为原地累加：dst寄存器既被读又被写，首次调用前必须通过vf.full(0, ...)将dst初始化为零，后续dst = vf.histograms(...)复用同一寄存器继续累加。<br>- dst数据类型为DT_UINT16，最大值为65535，使用时需注意累加溢出问题。
 
 ## 调用示例
 

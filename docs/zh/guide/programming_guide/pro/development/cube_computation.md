@@ -4,7 +4,7 @@
 
 ## 矩阵编程的基本步骤
 
-一个常见的Cube矩阵计算步骤如下：
+一个常见的Cube计算步骤如下：
 
 1. 分别创建L1 Buffer、L0A Buffer、L0B Buffer和L0C Buffer。
 2. 将左、右矩阵从GM搬入L1 Buffer。
@@ -17,15 +17,15 @@
 
 对应的数据流和硬件流水如下：
 
-**图1 Cube矩阵计算的数据流和硬件流水**
+**图1 Cube计算的数据流和硬件流水**
 
-![Cube矩阵计算的数据流和硬件流水](../../../figures/pro/cube_matrix_computation_data_flow.png "Cube矩阵计算的数据流和硬件流水")
+![Cube计算的数据流和硬件流水](../../../figures/pro/cube_matrix_computation_data_flow.png "Cube计算的数据流和硬件流水")
 
 ## 矩阵计算内存管理
 
 ### Cube侧Tile创建
 
-输入数据从GM搬入L1 Buffer，再从L1 Buffer搬入L0A Buffer和L0B Buffer，经Cube矩阵计算后，将结果写入L0C Buffer。
+输入数据从GM搬入L1 Buffer，再从L1 Buffer搬入L0A Buffer和L0B Buffer，经Cube计算后，将结果写入L0C Buffer。
 
 PyPTO Pro通过[TileType](../../../../api/pro_api/SIMD-API/basic_data_structures/TileType.md)描述Tile的shape、dtype和target_memory。TileType本身不创建Tile，需要将其传给[pypto_pro.language.make_tile](../../../../api/pro_api/SIMD-API/resource_management/make_tile.md)或[pypto_pro.language.make_tile_group](../../../../api/pro_api/SIMD-API/resource_management/make_tile_group.md)，将Tile绑定到指定Buffer的地址。
 
@@ -163,6 +163,8 @@ L0C Buffer中的结果分形固定为16×16。以FP32/INT32累加结果为例，
 - **NZ**：分形之间按列主序排列，分形内部按行主序排列。对shape为[M, N]的矩阵，补齐并拆分为[M1, M0, N1, N0]后，物理排列顺序为[N1, M1, M0, N0]。
 - **ZN**：分形之间按行主序排列，分形内部按列主序排列。对shape为[K, N]的矩阵，补齐并拆分为[K1, K0, N1, N0]后，物理排列顺序为[K1, N1, N0, K0]。
 
+ND、NZ和ZN等数据排布格式的详细说明请参见[数据排布格式](https://gitcode.com/cann/asc-devkit/blob/master/docs/zh/guide/technical_appendix/concepts_and_terms/neural_networks_and_operators/data_layout.md)。
+
 对于矩阵乘法`C = A × B`，左矩阵A使用NZ，右矩阵B使用ZN，结果矩阵C使用NZ。左矩阵按行取数、右矩阵按列取数时，相应元素均能从连续地址读取。
 
 默认数据路径如下：
@@ -182,7 +184,7 @@ layout描述Tile的物理排布，TileType.shape保持逻辑轴语义；例如B�
 
 ### Cube侧同步
 
-Cube矩阵计算的四个步骤分别对应MTE2、MTE1、M、FIX四条流水线。各流水线异步执行，当一条流水线生产的数据被另一条流水线消费时，需要插入同步以保证数据依赖。
+Cube计算的四个步骤分别对应MTE2、MTE1、M、FIX四条流水线。各流水线异步执行，当一条流水线生产的数据被另一条流水线消费时，需要插入同步以保证数据依赖。
 
 | 流水线 | 含义 | 典型操作 |
 |:---|:---|:---|
@@ -402,22 +404,17 @@ def matmul_acc_kernel(
             pl.move(al, cur_a)
             pl.move(br, cur_b)
             if k == 0:
-                pl.matmul(ac, al, br, phase=pl.AccPhase.Partial)
-            elif k < K_SIZE - TILE:
-                pl.matmul_acc(ac, ac, al, br, phase=pl.AccPhase.Partial)
+                pl.matmul(ac, al, br)
             else:
-                pl.matmul_acc(ac, ac, al, br, phase=pl.AccPhase.Final)
-        pl.store(c, ac, [0, 0], phase=pl.STPhase.Final)
+                pl.matmul_acc(ac, ac, al, br)
+        pl.store(c, ac, [0, 0])
 ```
-
-> [!NOTE]说明
-> phase参数控制Cube（M流水）与Fixpipe（FIX流水）之间的硬件unit_flag握手。`phase`配对使用时，框架不自动插入M与FIX之间的软件同步，由硬件unit_flag保证顺序。使用不当会导致精度问题或设备卡死。详见[`phase`使用约束](../../../../api/pro_api/SIMD-API/cube_computation/phase.md)。
 
 ## 尾块处理
 
 当GM Tensor的shape不能被Tile shape整除时，边界上会出现比Tile小的尾块。Cube场景需要为参与当前矩阵乘的输入Tile和输出Tile设置相互匹配的有效形状：
 
-- `valid_shape=[-1, -1]`：声明有效区域为运行时动态，后续通过pypto_pro.language.set_validshape设置。
+- `valid_shape`：省略时默认采用动态模式，等同于`[-1, -1]`；后续通过pypto_pro.language.set_validshape设置实际有效区域。
 - `compact=1`：使L0A Buffer、L0B Buffer和L0C Buffer中的数据按有效形状采用紧凑排布，但不改变Tile绑定的Buffer大小。
 
 ```python
@@ -425,20 +422,18 @@ import pypto_pro.language as pl
 
 
 tt_a_l1 = pl.TileType(shape=[TILE_M, TILE_K], dtype=pl.DT_FP16,
-                       target_memory=pl.MemorySpace.Mat,
-                       valid_shape=[-1, -1])
+                       target_memory=pl.MemorySpace.Mat)
 tt_b_l1 = pl.TileType(shape=[TILE_K, TILE_N], dtype=pl.DT_FP16,
-                       target_memory=pl.MemorySpace.Mat,
-                       valid_shape=[-1, -1])
+                       target_memory=pl.MemorySpace.Mat)
 tt_left = pl.TileType(shape=[TILE_M, TILE_K], dtype=pl.DT_FP16,
                       target_memory=pl.MemorySpace.Left,
-                      valid_shape=[-1, -1], compact=1)
+                      compact=1)
 tt_right = pl.TileType(shape=[TILE_K, TILE_N], dtype=pl.DT_FP16,
                        target_memory=pl.MemorySpace.Right,
-                       valid_shape=[-1, -1], compact=1)
+                       compact=1)
 tt_acc = pl.TileType(shape=[TILE_M, TILE_N], dtype=pl.DT_FP32,
                      target_memory=pl.MemorySpace.Acc,
-                     valid_shape=[-1, -1], compact=1)
+                     compact=1)
 ```
 
 下面以K维完整、M和N方向存在尾块为例，运行时需要在相应的load、move和matmul执行前，同时设置L1 Buffer、L0A Buffer、L0B Buffer和L0C Buffer上Tile的有效形状：
@@ -465,7 +460,6 @@ import os
 import pypto_pro.language as pl
 import torch
 import torch_npu
-from pypto_pro.runtime.platform import get_platform_info
 
 TILE_M = 128
 TILE_K = 128
@@ -531,9 +525,7 @@ a = torch.randn(M_SIZE, K_SIZE, device=device, dtype=torch.float16)
 b = torch.randn(K_SIZE, N_SIZE, device=device, dtype=torch.float16)
 out = torch.zeros(M_SIZE, N_SIZE, device=device, dtype=torch.float32)
 
-# block_dim取平台可用AIC数量和M方向Tile数量中的较小值。
-block_dim = min(get_platform_info().cube_core_num, M_SIZE // TILE_M)
-matmul_kernel[None, block_dim](a, b, out)
+matmul_kernel(a, b, out)
 torch.npu.synchronize()
 
 golden = torch.matmul(a.float(), b.float())

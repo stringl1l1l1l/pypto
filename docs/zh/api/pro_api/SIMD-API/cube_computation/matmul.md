@@ -41,7 +41,7 @@ pypto_pro.language.matmul(
 | lhs_tile | 输入 | 源操作数（左矩阵），Tile类型，存储空间为L0A Buffer，形状为[M, K]，layout必须为NZ，K必须与rhs_tile的K维一致。支持的数据类型组合详见[约束说明](#约束说明)。 |
 | rhs_tile | 输入 | 源操作数（右矩阵），Tile类型，存储空间为L0B Buffer，形状为[K, N]，layout必须为ZN，K必须与lhs_tile的K维一致。支持的数据类型组合详见[约束说明](#约束说明)。 |
 | bias_tile | 输入 | 源操作数（可选偏置），Tile类型，存储空间为BiasTable Buffer，形状为[1, N]，layout默认且仅支持ND。偏置沿M维广播，数据类型必须与dst_tile一致。传入本参数时，在Fixpipe阶段融合偏置加法，无需额外调用pypto_pro.language.add。只能作为第四个位置参数传入。 |
-| phase | 输入 | 可选，开启硬件unitFlag机制，[pypto_pro.language.AccPhase](../basic_data_structures/AccPhase.md)类型。与[pypto_pro.language.STPhase](../basic_data_structures/STPhase.md)的配合方式见[AccPhase与STPhase配合使用说明](phase.md)。 |
+| phase | 输入 | 可选，开启硬件unitFlag机制，[pypto_pro.language.AccPhase](../basic_data_structures/AccPhase.md)类型。与[pypto_pro.language.STPhase](../basic_data_structures/STPhase.md)的配合方式见[Cube计算进阶](../../../../guide/programming_guide/pro/advanced_programming/cube_computation_advanced_usage.md)。 |
 
 ## 约束说明
 

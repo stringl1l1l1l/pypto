@@ -1,6 +1,6 @@
 # 编程范式概述
 
-PyPTO Pro采用Host与Device协同的异构编程方式。其中，Host代码运行在CPU上，负责设备资源管理、Host Memory与Device Memory之间的数据搬运、计算任务下发和结果同步；Device代码运行在NPU上，负责执行实际的计算任务，提供SIMD和SIMT两种并行编程方式。
+PyPTO Pro使用Python语法编写运行在NPU上的Kernel。开发者可通过Tensor和Tile描述不同存储层级的数据，利用多核SPMD划分任务，并按计算特点选用SIMD、SIMT或组合两种并行方式。
 
 ## 并行执行模型：SIMD与SIMT
 

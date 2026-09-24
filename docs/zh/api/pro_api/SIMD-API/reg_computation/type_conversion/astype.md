@@ -55,13 +55,13 @@ astype(src, preg, dtype: DType, layout: Optional[CastLayout] = None, round_mode:
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。preg会按照输入的源操作数来筛选有效元素。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。preg会按照输入的源操作数来筛选有效元素。 |
 | dtype | 输入 | 必选，指定目标寄存器的数据类型（如pypto_pro.language.DT_FP16、pypto_pro.language.DT_INT32等）。由于类型转换后目标类型与源类型不同，必须显式指定。 |
-| layout | 输入 | 可选，[CastLayout](../types/CastLayout.md)枚举类型。pypto_pro.language.CastLayout.ZERO（偶数半区，默认）或pypto_pro.language.CastLayout.ONE（奇数半区）。当源操作数和目的操作数位宽不同时，控制位宽小的元素在寄存器中的排布方式。FP4类型还支持pypto_pro.language.CastLayout.TWO/pypto_pro.language.CastLayout.THREE模式。具体支持的值因转换路径而异，详见[约束说明](#约束说明)各表。 |
-| round_mode | 输入 | 可选，[VFRoundMode](../types/VFRoundMode.md)枚举类型，浮点舍入模式。默认pypto_pro.language.VFRoundMode.CAST_RINT。不同转换路径支持的舍入模式不同，详见[约束说明](#约束说明)各表。不涉及精度损失的转换路径round_mode标记为UNKNOWN（可省略）。 |
-| saturate | 输入 | 可选，[SaturateMode](../types/SaturateMode.md)枚举类型。pypto_pro.language.SaturateMode.OFF（默认，非饱和）或pypto_pro.language.SaturateMode.ON（饱和）。具体支持的值因转换路径而异，详见[约束说明](#约束说明)各表。标记为UNKNOWN的路径表示不涉及饱和/非饱和选择。 |
-| mode | 输入 | 可选，对应[MergeMode](../types/MergeMode.md)类型。<br>- pypto_pro.language.MergeMode.ZEROING（默认），preg未筛选的元素在dst中置0。<br>- pypto_pro.language.MergeMode.MERGING当前不支持。 |
+| layout | 输入 | 可选，[CastLayout](../basic_data_structures/CastLayout.md)枚举类型。pypto_pro.language.CastLayout.ZERO（偶数半区，默认）或pypto_pro.language.CastLayout.ONE（奇数半区）。当源操作数和目的操作数位宽不同时，控制位宽小的元素在寄存器中的排布方式。FP4类型还支持pypto_pro.language.CastLayout.TWO/pypto_pro.language.CastLayout.THREE模式。具体支持的值因转换路径而异，详见[约束说明](#约束说明)各表。 |
+| round_mode | 输入 | 可选，[VFRoundMode](../basic_data_structures/VFRoundMode.md)枚举类型，浮点舍入模式。默认pypto_pro.language.VFRoundMode.CAST_RINT。不同转换路径支持的舍入模式不同，详见[约束说明](#约束说明)各表。不涉及精度损失的转换路径round_mode标记为UNKNOWN（可省略）。 |
+| saturate | 输入 | 可选，[SaturateMode](../basic_data_structures/SaturateMode.md)枚举类型。pypto_pro.language.SaturateMode.OFF（默认，非饱和）或pypto_pro.language.SaturateMode.ON（饱和）。具体支持的值因转换路径而异，详见[约束说明](#约束说明)各表。标记为UNKNOWN的路径表示不涉及饱和/非饱和选择。 |
+| mode | 输入 | 可选，对应[MergeMode](../basic_data_structures/MergeMode.md)类型。<br>- pypto_pro.language.MergeMode.ZEROING（默认），preg未筛选的元素在dst中置0。<br>- pypto_pro.language.MergeMode.MERGING当前不支持。 |
 
 ## 约束说明
 
@@ -193,7 +193,7 @@ astype(src, preg, dtype: DType, layout: Optional[CastLayout] = None, round_mode:
 
 ## 返回值说明
 
-返回dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。当目的操作数位宽比源操作数小时，在preg和layout作用下，目的操作数中的无效元素均为0
+返回dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。当目的操作数位宽比源操作数小时，在preg和layout作用下，目的操作数中的无效元素均为0
 
 ## 调用示例
 

@@ -36,6 +36,24 @@ add_kernel[None, 1](x, y, out)
 
 Kernel的定义和启动语法参考[Kernel核函数](../kernel_function.md)。
 
+### 查询可用核数
+
+设置`block_dim`前，建议使用PyTorch NPU接口查询目标Stream当前可用的最大核数：
+
+```python
+import torch
+import torch_npu
+
+
+stream = torch.npu.current_stream()
+limits = torch.npu.get_stream_limit(stream)
+max_vector_blocks = limits["vector_core_num"]
+max_cube_blocks = limits["cube_core_num"]
+max_mixed_blocks = min(max_cube_blocks, max_vector_blocks // 2)
+```
+
+纯Vector、纯Cube和AIC:AIV为1:2的混合Kernel分别以对应的`max_*_blocks`作为`block_dim`上限，再根据任务数量选择逻辑核数。若只需查询Device级限制，可使用`torch.npu.get_device_limit(torch.npu.current_device())`；指定Stream启动时，以目标Stream的查询结果为准。`block_dim`的含义和调用形式参见[Kernel核函数](../kernel_function.md#blockdim的含义与设置)。
+
 ## 编译签名与复用
 
 同一Kernel对象按照编译签名区分编译实例。以下信息可能产生不同实例：
@@ -45,11 +63,12 @@ Kernel的定义和启动语法参考[Kernel核函数](../kernel_function.md)。
 | Tensor固定维度 | 声明为固定值的维度在Kernel定义时编入IR，调用时Tensor的对应维度必须匹配。 |
 | pypto_pro.language.STATIC维度 | 运行时取值参与特化，值变化时生成新实例。 |
 | pypto_pro.language.DYNAMIC维度 | 维度值不参与特化，值变化时复用实例。 |
+| Scalar入参（DT_*） | 数据类型由Kernel参数标注确定，实参值在运行时传入；值变化时复用实例。 |
 | TilingKey | 每个合法Key对应一个专用实例。 |
 | datatype | 每组数据类型组合对应一个专用实例。 |
 | 编译目标 | 显式指定的目标在Kernel对象创建时确定；未指定时在首次启动时根据运行环境确定。不同目标使用不同的Kernel对象。 |
 
-TilingData字段是运行时数据，字段值变化不会单独产生编译实例。静态与动态shape的声明方式参考[Tensor创建和操作](../tensor_creation_and_operations.md)，TilingData和TilingKey的区别参考[Tiling参数定义与传递](../tiling/tiling_parameter_definition.md)。
+静态与动态shape的声明方式参考[Tensor创建和操作](../tensor_creation_and_operations.md)。Scalar入参和TilingData字段都是运行时数据，它们的值变化不会单独产生编译实例。TilingData和TilingKey的区别参考[Tiling参数定义与传递](../tiling/tiling_parameter_definition.md)。
 
 `stream`和`block_dim`只影响本次启动，不参与编译签名；调整两者不会因此生成新的编译实例。
 
@@ -105,7 +124,7 @@ Stream和`block_dim`的完整说明参考[Kernel核函数](../kernel_function.md
 
 ## 编译产物
 
-未设置`ASCEND_WORK_PATH`时，JIT产物以`./build/`为根目录；设置后，以`${ASCEND_WORK_PATH}/PYPTO_PRO/build/`为根目录。Kernel目录名称以`{kernel_name}__{arch}`开头，并可能包含STATIC维度哈希、Device和Rank等后缀；datatype和TilingKey实例还会分别使用`dt_{hash}`和`tk_{packed}`（未使用TilingKey时为`tk_none`）子目录。主要文件包括：
+未设置`ASCEND_WORK_PATH`时，JIT产物以`./build/`为根目录；设置后，以`${ASCEND_WORK_PATH}/PYPTO_PRO/build/`为根目录。Kernel目录名称以`{kernel_name}__{arch}`开头；存在STATIC维度特化时追加`__shape_{hash}`；还会根据环境附加设备和分布式进程标识，例如`__d0`、`__r1`或`__d0_r1`。设备标识是当前NPU设备编号，Rank是分布式进程编号，不是Tensor的维度数。datatype和TilingKey实例还会分别使用`dt_{hash}`和`tk_{packed}`（未使用TilingKey时为`tk_none`）子目录。主要文件包括：
 
 | 文件 | 作用 |
 | --- | --- |

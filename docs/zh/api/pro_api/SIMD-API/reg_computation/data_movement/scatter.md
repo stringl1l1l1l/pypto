@@ -31,9 +31,9 @@ scatter(tile, src, index, preg)
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
 | tile | 输出 | 目的操作数，Tile地址，需要32字节对齐。 |
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。当src为DT_INT8或者DT_UINT8数据类型时，源操作数中仅偶数位元素有效。即src中的偶数位置[0, 2, 4, ..., 252, 254]的数据会被分散存储到目的操作数中。 |
-| index | 输入 | 索引值，[reg_tensor](../reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)，src中的每个元素在Tile中相对于基地址的位置，单位：元素个数。index中的值必须唯一，若存在重复的index值，系统仅保留其中一个对应的数据。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)。当src为DT_INT8或者DT_UINT8数据类型时，源操作数中仅偶数位元素有效。即src中的偶数位置[0, 2, 4, ..., 252, 254]的数据会被分散存储到目的操作数中。 |
+| index | 输入 | 索引值，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型请参见[约束说明](#约束说明)，src中的每个元素在Tile中相对于基地址的位置，单位：元素个数。index中的值必须唯一，若存在重复的index值，系统仅保留其中一个对应的数据。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。 |
 
 ## 约束说明
 

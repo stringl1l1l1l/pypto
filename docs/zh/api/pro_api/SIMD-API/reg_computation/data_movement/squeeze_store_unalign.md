@@ -31,7 +31,7 @@ squeeze_store_unalign(tile, src, align_reg)
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
 | tile | 输出 | 目的操作数，Tile地址。 |
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)类型。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)类型。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。 |
 | align_reg | 输入 | alignment tracker寄存器（由vf.unalign_reg_for_store()创建）。 |
 
 ## 约束说明

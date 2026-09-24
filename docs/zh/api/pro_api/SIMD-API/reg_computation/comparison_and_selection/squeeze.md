@@ -34,8 +34,8 @@ squeeze(src, preg, gather_mode: Optional[SqueezeMode] = None) -> dst
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_INT32、DT_UINT32、DT_FP32。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)，指定哪些元素参与压缩。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_INT32、DT_UINT32、DT_FP32。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)，指定哪些元素参与压缩。 |
 | gather_mode | 输入 | 可选，收集模式："NO_STORE_REG"（不存入AR寄存器，默认）/ "STORE_REG"（有效元素总字节数存入AR寄存器）。<br>- 当gather_mode取值为"STORE_REG"时，由于硬件约束，vf.store_unalign指令和vf.squeeze指令必须交替使用。<br>- 当gather_mode取值为"NO_STORE_REG"时，不涉及AR寄存器，vf.squeeze和vf.store_unalign不强制交替。 |
 
 ## 约束说明
@@ -44,7 +44,7 @@ squeeze(src, preg, gather_mode: Optional[SqueezeMode] = None) -> dst
 
 ## 返回值说明
 
-返回dst目标[reg_tensor](../reg_tensor.md)，存放压缩后的元素，支持的数据类型和src中的说明一致。
+返回dst目标[reg_tensor](../basic_data_structures/reg_tensor.md)，存放压缩后的元素，支持的数据类型和src中的说明一致。
 
 ## 调用示例
 

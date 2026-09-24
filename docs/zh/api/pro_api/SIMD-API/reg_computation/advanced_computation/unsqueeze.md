@@ -36,7 +36,7 @@ unsqueeze(preg) -> dst
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| preg | 输入 | [mask_reg](../mask_reg.md)（由vf.create_mask或vf.update_mask产生）。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)（由vf.create_mask或vf.update_mask产生）。 |
 
 ## 约束说明
 
@@ -44,7 +44,7 @@ unsqueeze(preg) -> dst
 
 ## 返回值说明
 
-返回dst目标操作数，[reg_tensor](../reg_tensor.md)，存放扩展结果，支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_INT32、DT_UINT32。
+返回dst目标操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，存放扩展结果，支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_INT32、DT_UINT32。
 
 ## 调用示例
 

@@ -11,7 +11,7 @@ Tiling参数在Host侧计算后传给Kernel，由TilingKey和TilingData共同承
 
 ## TilingData
 
-TilingData使用Python `dataclass`声明。框架根据字段标注生成设备侧结构体，并在启动Kernel时序列化字段值。
+TilingData使用Python `dataclass`声明。框架根据字段标注生成设备侧结构体，并在启动Kernel时序列化字段值。一个Kernel最多只能声明一个TilingData参数，且该参数必须位于形参列表末尾。
 
 ```python
 from __future__ import annotations
@@ -72,7 +72,7 @@ class CopyTiling:
 
 ### 在Kernel中读取TilingData
 
-TilingData参数必须位于Kernel形参列表末尾。每次Kernel调用最多传入一个TilingData实例：
+在Kernel函数签名中声明TilingData参数后，即可通过字段名读取运行时值：
 
 ```python
 import pypto_pro.language as pl
@@ -131,14 +131,14 @@ class AddKey:
         return use_scale == 0 or block_m == 128
 ```
 
-字段按照类中的定义顺序收集。该顺序决定`is_valid()`参数元组的顺序和64-bit Key中各字段的位置。
+字段按照类中的定义顺序收集。该顺序决定`is_valid()`参数元组的顺序和64-bit Key中各字段的位置。各字段候选值的下标打包为64-bit Key，是为了与离线二进制编译场景使用的`uint64_t` TilingKey配合。
 
 `TilingKeyField`需满足以下约束：
 
 | 项目 | 约束 |
 | --- | --- |
 | `bits` | 必须大于0。 |
-| `values` | 必须是非空、互不重复的整数集合，不能包含`bool`。 |
+| `values` | 候选值只能是整数，不能使用字符串、浮点数或`bool`；集合必须非空且值互不重复。 |
 | 编码容量 | 候选值数量不能超过`2**bits`。 |
 | 总位宽 | 所有字段的`bits`之和不能超过64。 |
 | `is_valid` | 可选；用于拒绝不支持的字段组合。 |

@@ -65,7 +65,7 @@ store_unalign(tile, src, align_reg, stride=None, post_update: bool = False)
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
 | tile | 输出 | 目的操作数，Tile地址。 |
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型，目的操作数与源操作数的数据类型需要保持一致。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型，目的操作数与源操作数的数据类型需要保持一致。支持的数据类型为：DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64、DT_FP8E4M3FN、DT_FP8E5M2、DT_FP8E8M0、DT_HF8、DT_FP4E2M1、DT_FP4E1M2。 |
 | align_reg | 输入 | alignment tracker寄存器（由vf.unalign_reg_for_store()创建）。 |
 | stride | 输入 | 可选，存储元素个数或地址寄存器。<br>- 当为整型标量时，代表地址更新步长，仅post_update = True时有效。<br>- 当为AddrReg（由vf.create_addr_reg创建）时，使用向量偏移地址替代标量stride。src为reg_tensor时为必选输入；src为mask_reg时不传stride。 |
 | post_update | 输入 | 可选，True时tracker自动累进到下一段，默认False。 |
@@ -184,7 +184,7 @@ if __name__ == "__main__":
 
 ### mask_reg非对齐存储示例
 
-当src为mask_reg时，vf.store_unalign自动分派mask_reg非对齐存储路径。[mask_reg](../mask_reg.md) 32字节数据按16位宽（DT_INT16、DT_UINT16、DT_FP16、DT_BF16）打包为16字节或按32位宽（DT_INT32、DT_UINT32、DT_FP32）打包为8字节写入Tile。硬件从每2bit（16位宽）/4bit（32位宽）中提取最低有效位(LSB)。
+当src为mask_reg时，vf.store_unalign自动分派mask_reg非对齐存储路径。[mask_reg](../basic_data_structures/mask_reg.md) 32字节数据按16位宽（DT_INT16、DT_UINT16、DT_FP16、DT_BF16）打包为16字节或按32位宽（DT_INT32、DT_UINT32、DT_FP32）打包为8字节写入Tile。硬件从每2bit（16位宽）/4bit（32位宽）中提取最低有效位(LSB)。
 
 ```python
 import os

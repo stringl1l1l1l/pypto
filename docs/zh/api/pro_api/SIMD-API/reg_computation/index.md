@@ -1,12 +1,10 @@
-# Reg计算
+# Reg API
 
 ```{toctree}
 :maxdepth: 1
 :titlesonly:
 
-reg_tensor
-mask_reg
-types/index
+basic_data_structures/index
 basic_arithmetic/index
 logical_computation/index
 comparison_and_selection/index

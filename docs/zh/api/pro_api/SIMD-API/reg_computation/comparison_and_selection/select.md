@@ -28,9 +28,9 @@ select(src0, src1, preg) -> dst
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src0 | 输入 | 掩码为真时，取值的源操作数，为[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型，源操作数src0、src1与目的操作数dst的数据类型保持一致。支持的数据类型为：DT_BOOL、DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。 |
-| src1 | 输入 | 掩码为假时，取值的源操作数，为[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型，支持的数据类型与src0一致。 |
-| preg | 输入 | [mask_reg](../mask_reg.md)。 |
+| src0 | 输入 | 掩码为真时，取值的源操作数，为[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型，源操作数src0、src1与目的操作数dst的数据类型保持一致。支持的数据类型为：DT_BOOL、DT_INT8、DT_UINT8、DT_INT16、DT_UINT16、DT_FP16、DT_BF16、DT_INT32、DT_UINT32、DT_FP32、DT_INT64、DT_UINT64。 |
+| src1 | 输入 | 掩码为假时，取值的源操作数，为[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型，支持的数据类型与src0一致。 |
+| preg | 输入 | [mask_reg](../basic_data_structures/mask_reg.md)。 |
 
 ## 约束说明
 
@@ -38,7 +38,7 @@ select(src0, src1, preg) -> dst
 
 ## 返回值说明
 
-返回dst目的操作数，为[reg_tensor](../reg_tensor.md)或者[mask_reg](../mask_reg.md)类型，支持的数据类型与src0一致。
+返回dst目的操作数，为[reg_tensor](../basic_data_structures/reg_tensor.md)或者[mask_reg](../basic_data_structures/mask_reg.md)类型，支持的数据类型与src0一致。
 
 ## 调用示例
 

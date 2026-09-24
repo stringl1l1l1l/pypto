@@ -36,7 +36,7 @@ bit_cast(src, dtype: DType) -> dst
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| src | 输入 | 源操作数，[reg_tensor](../reg_tensor.md)。 |
+| src | 输入 | 源操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)。 |
 | dtype | 输入 | 目标数据类型。指定src被重解释为的数据类型。 |
 
 ## 约束说明
@@ -45,7 +45,7 @@ bit_cast(src, dtype: DType) -> dst
 
 ## 返回值说明
 
-返回dst目标操作数，[reg_tensor](../reg_tensor.md)。数据类型由dtype参数决定。
+返回dst目标操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)。数据类型由dtype参数决定。
 
 ## 调用示例
 

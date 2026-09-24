@@ -4,8 +4,5 @@
 :maxdepth: 2
 :titlesonly:
 
-helloworld_simd
-add_simd
-matmul_simd
-add_simt
-```
+softmax_simd
+softmax_simt

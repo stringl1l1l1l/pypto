@@ -21,6 +21,8 @@ CV融合算子中，cube和vector的计算相互依赖，若按串行流水执�
 
 ## 使用方法
 
+自动CV并行流水的使用约束分别列在以下各使用步骤后的“说明”中，开发时应结合对应步骤检查。
+
 ### 编写Stage函数
 
 需要用户将算子划分为若干个计算流程，每个计算流程对应一个stage函数，通过@pypto_pro.language.pipeline.stage装饰器进行标识。
@@ -36,11 +38,20 @@ def stage1(ki, a, b_l1, a_l1_db, left_db, right_db, acc_db, mm1_vec_db):
     ...  # 普通的 Tile/Buffer 操作，不用写任何同步
 ```
 
+> [!NOTE]说明
+>
+> - stage函数不能嵌套stage，也不能有返回值；stage调用的普通函数不能返回Tile或Tile Group。
+> - stage函数有结构体参数时，需要使用`pypto_pro.language.struct()`声明，不支持`pypto_pro.language.struct_array()`。
+
 ### 声明跨核共享Buffer
 
-跨核共享Buffer使用make_tile_group接口进行声明，通过fwd_ids和bwd_ids参数配置核间正反向同步id，若未配置，则不会插入对应的核间同步。
+跨核共享Buffer使用make_tile_group接口进行声明。`mutex_ids`与`fwd_ids`、`bwd_ids`作用于不同范围：`mutex_ids`用于管理核内Tile槽位的流水同步和地址复用，`fwd_ids`、`bwd_ids`用于Cube与Vector之间的数据交接。声明了`fwd_ids`或`bwd_ids`，且该Buffer分别被Cube stage和Vector stage使用时，框架才将其识别为跨核共享Buffer，并插入相应的核间同步。
 
-其中fwd_ids为正向同步（生产者写完通知消费者），生产者stage之后插入set、消费者stage之前插入wait；bwd_ids为反向同步（消费者用完通知生产者可以覆写），消费者stage之后插入set、生产者stage之前插入wait。只配置fwd_ids时，仅保证消费者读到的是生产者写完的数据，不保证生产者下一轮覆写时消费者已经读完。每次迭代实际使用的id按`ids[迭代序号 % len(ids)]`轮转取用。
+`mutex_ids`需要为Buffer中的每个Tile配置一个id，因此其数量与Tile数一致。`fwd_ids`和`bwd_ids`的数量不要求始终与Tile数一致：可以为每个Tile分别配置一个id，也可以只配置一个由所有Tile共用的id。共用一个核间同步id会使不同Tile之间的交接串行化，能够减少同步id占用，但可能降低流水并行度。
+
+其中`fwd_ids`为正向同步（生产者写完通知消费者），生产者stage之后插入set、消费者stage之前插入wait；`bwd_ids`为反向同步（消费者用完通知生产者可以覆写），消费者stage之后插入set、生产者stage之前插入wait。只配置`fwd_ids`时，仅保证消费者读到的是生产者写完的数据，不保证生产者下一轮覆写时消费者已经读完。每次迭代使用的Tile按Tile数轮转；核间同步id则按`ids[迭代序号 % len(ids)]`轮转，因此二者的轮转周期可以不同。
+
+`target_memory`仅声明Buffer所在的物理存储空间，不表示是否跨核。跨核共享Buffer支持UB和L1。下面的`mm1_vec_db`是Cube stage将计算结果交给Vector stage的示例；在后文完整示例中，`p_mat_db`由Vector stage写入后交给Cube stage读取。两者的跨核关系都由stage的生产者/消费者关系以及`fwd_ids`、`bwd_ids`确定。
 
 ```python
 import pypto_pro.language as pl
@@ -54,7 +65,14 @@ mm1_vec_db = pl.make_tile_group(
 )
 ```
 
-Tile数不能随意取，与上游核提前迭代计算的次数相关，且直接影响流水性能，具体规则参见[使用约束](#使用约束)。
+> [!NOTE]说明
+>
+> - 跨核Buffer和核内Buffer的`make_tile_group`声明需要写在kernel函数体内，不能写在stage调用的普通函数中；跨核Buffer仅支持UB和L1 Buffer。
+> - 一个跨核Buffer需要恰好被相邻的两个stage使用，两个stage分别位于Cube和Vector上，并构成一对一的生产者和消费者关系。需要把数据送到更后面的stage时，应逐级交接。
+> - `fwd_ids`和`bwd_ids`的取值范围为0～15，只能直接写编译期常量整数列表，或使用kernel外绑定到整数列表的变量，不支持切片、拼接、函数调用等表达式。ID数量需要等于Tile数或等于1；等于1时所有Tile共用同一个同步ID，可能降低性能。
+> - 复用地址时最多允许两块Buffer复用，双方的Tile数和`mutex_ids`需要一致；`mutex_ids`不同不能形成地址互斥。
+> - 跨核Buffer的Tile需要随迭代顺序轮转。按stage在主循环中的书写顺序编号（与第一个stage位于Cube还是Vector无关），写该Buffer的stage编号为奇数时至少需要2个Tile，为偶数时至少需要`preload`个Tile；Tile数不足时会在编译期报错，并提示所需的最小Tile数。
+> - 在空间充足时，可以分配多于下限的Tile，并根据实测结果判断是否有性能收益。调整Tile数时，需要同步调整`mutex_ids`、`fwd_ids`和`bwd_ids`的数量以及Buffer占用的地址空间；核间同步ID配置为所有Tile共用的单个ID时除外。
 
 ### 编写主循环
 
@@ -94,6 +112,13 @@ for kj in pl.range(0, M_ITER):        # 第二条流水
         stage4(kj, ...)
 ```
 
+> [!NOTE]说明
+>
+> - 同一条流水的stage调用需要放在同一个for循环内，循环步长必须为正，不支持倒序迭代。每个`section_cube()`或`section_vector()`块只能包含一个stage调用，各stage需要按Cube、Vector严格交替排列；第一个stage与最后一个stage之间不能插入其他语句。
+> - 流水循环体内不能直接获取或操作跨核Buffer，以及与跨核Buffer复用地址的核内Buffer，应把这些操作放进stage函数。同一个stage函数在一条流水中只能调用一次，不同stage函数不能重名。
+> - 可以用if语句控制stage是否执行，但条件必须是编译期常量。在流水循环外调用`group.next()`取Tile时，需要使用单独的赋值语句，不能嵌入其他表达式；同一个变量只能取一次Tile，需要多个Tile时应使用多个变量。
+> - 一个kernel可以包含多个独立的流水循环，但这些循环不能嵌在同一个外层循环中，循环之间需要手动插入全核同步。kernel内不要使用以`_pl_`开头的框架保留变量名。
+
 ### 开启流水变换
 
 在pypto_pro.language.jit接口中通过PipelineConfig参数进行配置：
@@ -103,7 +128,13 @@ for kj in pl.range(0, M_ITER):        # 第二条流水
 | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | preload | 表示上游核提前迭代计算的次数，类型为int或list[int]。传入单个整数时，kernel内所有流水循环共用该值；传入列表时，按源码顺序为每个流水循环单独配置。取值为0的循环不做流水改写，只在原串行循环中插入核间同步。 |
 
-**建议流程**：先配置**preload=0**执行，确认串行版本精度正确，再逐步调大preload开启流水。调大preload的同时，需按[使用约束](#使用约束)检查各跨核Buffer的Tile数是否够用。多个流水循环时可以只把其中一条配成0（如preload=[0, 2]），单独验证这条流水的串行精度。
+**建议流程**：先配置**preload=0**执行，确认串行版本精度正确，再逐步调大preload开启流水。调大preload的同时，需按[声明跨核共享Buffer](#声明跨核共享buffer)后的说明检查各跨核Buffer的Tile数是否够用。多个流水循环时可以只把其中一条配成0（如preload=[0, 2]），单独验证这条流水的串行精度。
+
+调优时应同时观察`preload`和Buffer Tile数对性能的影响。如果增大`preload`或增加Tile后性能没有提升，可将Tile数减少到当前`preload`对应的最小值，以节省片上存储空间；减少后仍需满足[声明跨核共享Buffer](#声明跨核共享buffer)后说明中的Tile数下限，并重新验证精度和性能。
+
+> [!NOTE]说明
+>
+> - `preload`需要大于等于0；传入列表时，列表长度需要与kernel内流水循环的数量一致。
 
 ```python
 import pypto_pro.language as pl
@@ -133,35 +164,6 @@ def pipeline_demo_kernel(...):
 ### 查看生成的代码
 
 框架自动生成的并行流水代码保存在编译产物目录下，文件名为pipeline_generated.py，用户可以在该代码的基础上继续修改调试。
-
-## 使用约束
-
-- 同一条流水的stage调用需要放在同一个for循环内。一个kernel可以有多个独立的流水循环，循环之间需要用户手动插入全核同步，两条流水循环不能嵌在同一个外层循环里。
-- 流水循环的步长必须为正，不支持倒序迭代。
-- preload取值必须大于等于0；传入列表时，列表长度必须与kernel内流水循环的个数相同。
-- 不支持stage嵌套stage。
-- 跨核Buffer和核内Buffer的make_tile_group声明必须写在kernel函数体内，不支持在被stage调用的普通函数里声明。
-- stage函数不支持有返回值。
-- stage调用的普通函数不能返回tile或tile group。
-- 每个with pypto_pro.language.section_cube()/pypto_pro.language.section_vector()块里只放单个stage调用，且stage调用需要严格按cube/vector交替排列（C→V→C→V…），不允许连续两个stage落在同一个核上。
-- 流水循环体内，第一个stage与最后一个stage之间不允许插入其他语句。
-- 流水循环（含stage调用的那个for循环）体内不允许获取或操作跨核Buffer，以及与跨核Buffer地址复用的核内Buffer，请把它们放进stage函数体内。
-- 在流水循环之外取Tile时，必须单独写成一条赋值语句（slot = group.next()），不能嵌在更大的表达式里；同一个变量只能取一次Tile，需要多个Tile请用多个变量。
-- 同一个stage函数在一条流水循环内只能调用一次，不允许重名stage。
-- 允许通过if语句判断stage执行场景，但分支条件必须为编译期常量。
-- fwd_ids/bwd_ids取值范围为0~15。
-- fwd_ids/bwd_ids只支持两种写法：直接写整数列表（fwd_ids=[0, 1]），或写一个在kernel外绑定到整数列表的变量名（IDS = [0, 1] … fwd_ids=IDS）。元素必须是编译期常量整数，不支持切片、拼接、函数调用等表达式形式。
-- fwd_ids/bwd_ids的长度只能等于该Buffer的Tile数，或者等于1。等于1时多个Tile共用同一个同步id，交接会被串行化（性能下降但结果正确），用于同步id不够分配的场景。
-- 允许跨核Buffer之间、跨核Buffer与核内Buffer之间进行地址复用，但最多允许两块Buffer复用，且复用双方的Tile数需要一致。
-- 地址复用的Buffer之间必须声明相同的mutex_ids。mutex锁的是地址，不同的id等于没有互斥。
-- 一个跨核Buffer（通过fwd_ids/bwd_ids标记）需要恰好被两个stage使用，且这两个stage分别在cube和vector上，构成一对一的生产者/消费者关系。
-- 跨核Buffer的生产者stage与消费者stage必须是主循环中相邻的两个stage，即消费者紧跟在生产者之后，不允许跨过中间的stage直接交接（如stage1写、stage4读）。需要把数据送到更后面的stage时，请逐级交接。
-- 跨核Buffer的Tile数由preload决定，不能随意取：按stage在主循环中的书写顺序编号（1、2、3……，与第一个stage在cube还是vector上无关），写这块Buffer的stage编号为奇数时至少需要2个Tile，为偶数时至少需要preload个Tile。以本文的[调用示例](#调用示例)（stage1 Cube → stage2 Vector → stage3 Cube → stage4 Vector）为例：mm1_vec_db（stage1写）与out_vec_db（stage3写）始终为2个Tile，与preload无关；p_mat_db（stage2写）至少需要preload个Tile，即preload=3时至少3个、preload=4时至少4个。Tile数不足时编译期报错，并给出该Buffer所需的最小Tile数。
-- 上述规则给出的是Tile数的下限。在Buffer空间充足时，可以分配多于该下限的Tile，用于进一步提升性能。增加Tile数时，mutex_ids的长度、fwd_ids/bwd_ids的长度（配成单个共用id的情况除外）以及Buffer占用的地址空间都需要同步调整。
-- 跨核Buffer的Tiles必须随迭代顺序轮转。
-- stage函数如果有结构体参数，请使用pypto_pro.language.struct()声明，不支持pypto_pro.language.struct_array()。
-- 跨核Buffer仅支持UB和L1 Buffer。
-- 以_pl_开头的变量名为框架保留，kernel内不要使用。
 
 ## 调用示例
 
@@ -334,6 +336,20 @@ def test_pipeline_demo_kernel():
     ref = torch.relu(a @ b) @ d
     torch.testing.assert_close(out, ref, rtol=1e-2, atol=1e-2)
 ```
+
+### 完整示例的流水与同步关系
+
+下图对应上述完整示例的`N_ITER=4`和`preload=2`配置。`sN·iM`表示stage N正在处理第M次迭代；两个AIV执行相同的Vector stage，分别处理M方向的一半，因此合并画在一条Vector泳道中。方框宽度和空隙用于示意各stage的耗时与等待关系，不表示真实执行周期；实线表示Forward数据就绪依赖，虚线表示Backward槽位释放依赖。
+
+**图2 完整示例在preload=2时的执行顺序与同步关系**
+
+![自动CV并行流水完整示例的流水与同步关系](../../../figures/pro/pro_auto_parallel_pipeline_example.png "自动CV并行流水完整示例的流水与同步关系")
+
+- **并行preload**：填充阶段先让前级stage处理两个迭代。进入稳态后，Cube侧交错执行`stage1(i+2)`和`stage3(i)`，Vector侧交错执行`stage2(i+2)`和`stage4(i)`，AIC与AIV同时处理不同迭代的数据。主循环结束后，编译器继续排空已经进入流水的`stage3`和`stage4`任务。
+- **核间同步**：编译器根据跨核Buffer的`fwd_ids`和`bwd_ids`自动插入`set_cross_core`和`wait_cross_core`。`mm1_vec_db`使用Forward ID 0/1和Backward ID 2/3，`p_mat_db`使用Forward ID 4/5和Backward ID 6/7，`out_vec_db`使用Forward ID 8/9和Backward ID 10/11。Forward事件保证消费者等待数据写完，Backward事件保证生产者等待消费者使用完毕后再覆写对应槽位。
+- **核内同步**：`auto_mutex=True`根据各Tile Group的`mutex_ids`管理同一AIC或AIV内部不同流水单元对Tile的读写、槽位轮转和地址复用。`mutex_ids`负责核内同步，`fwd_ids`和`bwd_ids`负责AIC与AIV之间的数据交接，两者的作用范围不同。
+
+本示例的`mm1_vec_db`和`out_vec_db`分别由奇数编号的stage1、stage3写入，因此至少需要2个Tile；`p_mat_db`由偶数编号的stage2写入，Tile数不能小于`preload`。当前`preload=2`，所以三块跨核Buffer均配置为2个Tile。
 
 > [!NOTE]说明
 >

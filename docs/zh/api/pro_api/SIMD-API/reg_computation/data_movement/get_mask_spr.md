@@ -14,7 +14,7 @@
 
 ## 功能说明
 
-从pypto_pro.language.set_vec_mask设置的掩码寄存器 {MASK1, MASK0} 中读取mask值，并按数据类型对应的格式转换后写入返回值[mask_reg](../mask_reg.md)。
+从pypto_pro.language.set_vec_mask设置的掩码寄存器 {MASK1, MASK0} 中读取mask值，并按数据类型对应的格式转换后写入返回值[mask_reg](../basic_data_structures/mask_reg.md)。
 
 具体转换方式：
 
@@ -31,7 +31,7 @@ get_mask_spr(width: MaskWidth = MaskWidth.B32) -> preg
 
 | 参数 | 输入/输出 | 说明 |
 |---|---|---|
-| width | 输入 | 可选，掩码宽度，决定读取的SPR位宽及扩展方式，对应[MaskWidth](../types/MaskWidth.md)类型。<br>- pypto_pro.language.MaskWidth.B32（默认）：读取64bit MASK0，每bit扩展为4bit。<br>- pypto_pro.language.MaskWidth.B16：读取128bit {MASK1, MASK0}，每bit扩展为2bit。 |
+| width | 输入 | 可选，掩码宽度，决定读取的SPR位宽及扩展方式，对应[MaskWidth](../basic_data_structures/MaskWidth.md)类型。<br>- pypto_pro.language.MaskWidth.B32（默认）：读取64bit MASK0，每bit扩展为4bit。<br>- pypto_pro.language.MaskWidth.B16：读取128bit {MASK1, MASK0}，每bit扩展为2bit。 |
 
 ## 约束说明
 

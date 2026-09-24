@@ -30,7 +30,7 @@ with pl.section_vector():
 
 ## 计算接口与常用模式
 
-PyPTO Pro当前公开的Tile矢量计算操作如下：
+PyPTO Pro当前公开的Tile计算操作如下：
 
 | 计算类型 | 主要用途 |
 |---|---|
@@ -188,7 +188,7 @@ TileType.shape和TileType.valid_shape描述的对象不同：
 
 ![Tile物理shape与逻辑valid_shape的关系](../../../../figures/pro/pro_tail_shape_validshape.png)
 
-对于每次运行时有效尺寸可能不同的尾块，建议在[TileType](../../../../../api/pro_api/SIMD-API/basic_data_structures/TileType.md)中显式声明动态有效形状：
+对于每次运行时有效尺寸可能不同的尾块，[TileType](../../../../../api/pro_api/SIMD-API/basic_data_structures/TileType.md)可省略valid_shape；默认值None等同于动态模式[-1, -1]：
 
 ```python
 import pypto_pro.language as pl
@@ -197,11 +197,10 @@ tile_type = pl.TileType(
     shape=[64, 128],
     dtype=pl.DT_FP16,
     target_memory=pl.MemorySpace.Vec,
-    valid_shape=[-1, -1],
 )
 ```
 
-valid_shape=[-1, -1]中的-1是TileType声明阶段使用的动态维度标记，表示两个维度的有效大小在运行时确定。如果只有一个维度动态，也可以声明为[64, -1]。运行时传给pypto_pro.language.set_validshape的有效大小必须为正整数，且不能超过shape的对应维度。
+省略valid_shape时，两个维度的有效大小都可在运行时确定，无需显式写出[-1, -1]。如果只有一个维度动态，也可以声明为valid_shape=[64, -1]。运行时传给pypto_pro.language.set_validshape的有效大小必须为正整数，且不能超过shape的对应维度。
 
 ### 标准处理流程
 
@@ -287,7 +286,6 @@ src_type = pl.TileType(
     shape=[64, 128],
     dtype=pl.DT_FP16,
     target_memory=pl.MemorySpace.Vec,
-    valid_shape=[-1, -1],
 )
 dst_type = pl.TileType(
     shape=[64, 128],
@@ -328,7 +326,6 @@ def add_tail_kernel(
         shape=[TILE_M, TILE_N],
         dtype=pl.DT_FP16,
         target_memory=pl.MemorySpace.Vec,
-        valid_shape=[-1, -1],
     )
     a_group = pl.make_tile_group(
         type=tile_type, addrs=[0x0000, 0x4000], mutex_ids=[0, 1])

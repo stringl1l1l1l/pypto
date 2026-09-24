@@ -35,7 +35,7 @@ load(tile, stride) -> dst
 
 ## 返回值说明
 
-返回dst目的操作数，[reg_tensor](../reg_tensor.md)，支持的数据类型和Tile一致。不支持双寄存器模式。
+返回dst目的操作数，[reg_tensor](../basic_data_structures/reg_tensor.md)，支持的数据类型和Tile一致。不支持双寄存器模式。
 
 ## 调用示例
 

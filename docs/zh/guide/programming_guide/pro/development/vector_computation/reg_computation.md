@@ -7,11 +7,11 @@ Reg计算直接使用SIMD Register File保存矢量数据和中间结果。PyPTO
 
 ## Reg计算的适用场景
 
-Tile矢量计算以UB Tile为数据载体。多个矢量操作串联时，中间结果通常需要写回UB，再由下一条指令读取。计算链较长时，反复访问UB会增加读写带宽压力和Bank冲突概率。
+Tile计算以UB Tile为数据载体。多个矢量操作串联时，中间结果通常需要写回UB，再由下一条指令读取。计算链较长时，反复访问UB会增加读写带宽压力和Bank冲突概率。
 
 Reg计算将一段连续计算保留在寄存器中，仅在计算链入口和出口与UB交互：
 
-| 维度 | Tile矢量计算 | Regbase矢量计算 |
+| 维度 | Tile计算 | Reg计算 |
 |:---|:---|:---|
 | 数据载体 | UB中的Tile | Register File中的RegTensor / MaskReg |
 | 中间结果 | 通常写回UB | 可由后续vf.*操作直接消费 |
@@ -112,7 +112,7 @@ def add_kernel(
         pl.store(out, tile_out, [0, 0])
 ```
 
-完整寄存器生命周期说明参见[vf.reg_tensor](../../../../../api/pro_api/SIMD-API/reg_computation/reg_tensor.md)。
+完整寄存器生命周期说明参见[vf.reg_tensor](../../../../../api/pro_api/SIMD-API/reg_computation/basic_data_structures/reg_tensor.md)。
 
 ### VF函数中的Tile指针偏移
 

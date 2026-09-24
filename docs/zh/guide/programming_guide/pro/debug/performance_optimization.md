@@ -118,7 +118,7 @@ msprof op python3 test_example.py
 
 PyPTO Pro使用[`pypto_pro.language.get_block_idx()`](../../../../api/pro_api/SIMD-API/system_variables/get_block_idx.md)和[`pypto_pro.language.get_block_num()`](../../../../api/pro_api/SIMD-API/system_variables/get_block_num.md)划分多核任务。切分方案既要完整覆盖计算范围、避免多个Core重复写入同一输出区域，也要保证各Core负载均衡。
 
-- `block_dim`不能超过对应Kernel模式的平台上限，也不宜超过可并行执行的任务数，否则会产生空闲工作单元。模式相关上限参见[Kernel核函数](../development/kernel_function.md#blockdim的含义与设置)。
+- `block_dim`不宜超过可并行执行的任务数，否则会产生空闲工作单元。逻辑核数的取值约束参见[Kernel核函数](../development/kernel_function.md#blockdim的含义与设置)。
 - 各Core的工作量应尽量接近，避免将尾块或高开销分支集中到少数Core。
 - 规则二维Tile可先线性编号，再按Core编号进行跨步分配，以减小尾部负载差异。
 - 输出区域应由唯一Core写入；需要跨Core归约时，应使用明确且受支持的同步与归约方案。

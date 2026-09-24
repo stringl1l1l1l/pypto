@@ -58,7 +58,7 @@ reg_tensor(dtype: DType) -> reg_tensor
 
 **图1**RegTensor搬运DT_FP16
 
-![](../../figures/reg_tensor_move_complex32.jpg "RegTensor搬运DT_FP16")
+![](../../../figures/reg_tensor_move_complex32.jpg "RegTensor搬运DT_FP16")
 
 DT_FP16为16位浮点类型。在双寄存器模式场景下，从UB中以DIST_DINTLV_B16双搬入模式读取2*VL数据量，将数据交错搬运，偶数索引的元素存入reg[0]，奇数索引的元素存入reg[1]，数据类型为DT_UINT16。两个RegTensor存储512B的数据量，reg[0]和reg[1]各存128个DT_FP16元素。
 
@@ -68,7 +68,7 @@ DT_FP16为16位浮点类型。在双寄存器模式场景下，从UB中以DIST_D
 
 **图2**RegTensor搬运DT_FP32
 
-![](../../figures/reg_tensor_move_complex64.jpg "RegTensor搬运DT_FP32")
+![](../../../figures/reg_tensor_move_complex64.jpg "RegTensor搬运DT_FP32")
 
 DT_FP32为32位浮点类型。在双寄存器模式场景下，从UB中以DIST_DINTLV_B32双搬入模式读取2*VL数据量，将数据交错搬运，偶数索引的元素存入reg[0]，奇数索引的元素存入reg[1]，数据类型为DT_UINT32。两个RegTensor存储512B的数据量，reg[0]和reg[1]各存64个DT_FP32元素。
 
@@ -78,7 +78,7 @@ DT_FP32为32位浮点类型。在双寄存器模式场景下，从UB中以DIST_D
 
 **图3**RegTensor搬运b64
 
-![](../../figures/reg_tensor_move_b64.jpg "RegTensor搬运b64")
+![](../../../figures/reg_tensor_move_b64.jpg "RegTensor搬运b64")
 
 在单寄存器模式场景下，从UB中以DIST_NORM模式搬运VL数据量。
 

@@ -6,7 +6,7 @@ PyPTO Pro的SIMD计算使用AIV的Vector资源和AIC的Cube资源。理解这两
 
 AI Core的相关硬件可从计算单元、存储单元和搬运单元三个方面理解。下图展示AIC、AIV及其指令流和主要数据流。
 
-**图1 AI Core硬件架构**
+**图1 AI Core硬件架构（Ascend 950PR&950DT系列产品）**
 
 ![AIC、AIV、存储、计算和搬运单元的关系](../../../../figures/pro/hardware_architecture_950.png)
 
