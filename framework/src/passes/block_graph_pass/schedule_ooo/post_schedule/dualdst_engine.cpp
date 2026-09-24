@@ -908,7 +908,7 @@ Status DualDstEngine::AllocateBothPoolsAtOffset(const DualDstAllocCtx& ctx, uint
 
 // ===== 核心 Override 查询 =====
 
-Status DualDstEngine::RunDualDstFuse()
+Status DualDstEngine::RunDualDstFuse(std::vector<Operation*>& opList)
 {
     if (!state_.enableDualDst) {
         return SUCCESS;
@@ -925,6 +925,15 @@ Status DualDstEngine::RunDualDstFuse()
     if (pairs.empty()) {
         state_.enableDualDst = false;
         return SUCCESS;
+    }
+    if (RealignAllocByIso(opList) != SUCCESS) {
+        APASS_LOG_ERROR_F(Elements::Operation, "RealignAllocByIso failed!");
+        return FAILED;
+    }
+    for (size_t i = 0; i < opList.size(); ++i) {
+        if (opList[i] != nullptr) {
+            state_.schedInfoMap[opList[i]].execOrder = static_cast<int>(i);
+        }
     }
     if (FuseDualDstPairs(pairs) != SUCCESS) {
         APASS_LOG_ERROR_F(Elements::Operation, "FuseDualDstPairs failed.");

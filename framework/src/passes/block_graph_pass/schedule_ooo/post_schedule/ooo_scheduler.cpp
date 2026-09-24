@@ -1387,12 +1387,8 @@ Status OoOScheduler::Schedule(const std::vector<Operation*>& opList,
         return FAILED;
     }
     AllocWorkspaceGM(opList);
-    if (dualDstEngine_.RealignAllocByIso(state_.orderedOps) != SUCCESS) {
-        APASS_LOG_ERROR_F(Elements::Operation, "RealignAllocByIso failed!");
-        return FAILED;
-    }
     UpdateIssueExecOrder();
-    if (dualDstEngine_.RunDualDstFuse() != SUCCESS) {
+    if (dualDstEngine_.RunDualDstFuse(state_.orderedOps) != SUCCESS) {
         APASS_LOG_ERROR_F(Elements::Operation, "RunDualDstFuse failed!");
         return FAILED;
     }

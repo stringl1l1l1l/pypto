@@ -40,7 +40,7 @@ public:
     DualDstEngine(ScheduleState& state, Function& function) : state_(state), function_(function) {}
     ~DualDstEngine() {}
 
-    Status RunDualDstFuse();
+    Status RunDualDstFuse(std::vector<Operation*>& opList);
     Status AllocateDualDstAtCurrent(Operation* allocA, bool& allocated);
     Status ResolveDualDstAllocCtx(Operation* allocOp, DualDstAllocCtx& ctx);
     Status GetMatchedAivUbAllocOffset(Operation* allocOp, bool& hasMatchedOffset, uint64_t& matchedOffset);

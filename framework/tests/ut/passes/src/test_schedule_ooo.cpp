@@ -3404,8 +3404,7 @@ TEST_F(ScheduleOoOTest, DualDst_ShouldEnableDualDst_WithOnlineSoftmaxTasks)
     ASSERT_EQ(pairs.size(), 1u);
     EXPECT_EQ(pairs[0].opEarly, g.copy0);
     EXPECT_EQ(pairs[0].opLate, g.copy1);
-    EXPECT_EQ(scheduler.dualDstEngine_.RealignAllocByIso(scheduler.state_.orderedOps), SUCCESS);
-    EXPECT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
     EXPECT_TRUE(dualdst_ut::HasDualDstOp(scheduler.state_.orderedOps));
 }
 
@@ -3640,7 +3639,7 @@ TEST_F(ScheduleOoOTest, DualDst_RunDualDstFuse_DisabledIsNoOp)
     dualdst_ut::InjectCoreMap(s, g);
 
     s.SetEnableDualDst(false);
-    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 }
 
 TEST_F(ScheduleOoOTest, DualDst_RunDualDstFuse_SingleAivPoolEarlyExit)
@@ -3657,7 +3656,7 @@ TEST_F(ScheduleOoOTest, DualDst_RunDualDstFuse_SingleAivPoolEarlyExit)
     dualdst_ut::InjectCoreMap(s, g);
 
     s.SetEnableDualDst(true);
-    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 }
 
 // 验证融合改图的完整结果：两个旧 Copy 被一个 DualDst Copy 替换，
@@ -3681,7 +3680,7 @@ TEST_F(ScheduleOoOTest, DualDst_RunDualDstFuse_ActuallyFusesAndMutatesFunction)
     ASSERT_NE(std::find(s.state_.orderedOps.begin(), s.state_.orderedOps.end(), g.copy1), s.state_.orderedOps.end());
     auto before = dualdst_ut::CaptureFuseSnapshot(s, g);
     s.SetEnableDualDst(true);
-    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
     dualdst_ut::ExpectFusedGraph(s, g, before);
     dualdst_ut::ExpectFusedMetadata(s, g, before);
 }
@@ -3702,7 +3701,7 @@ TEST_F(ScheduleOoOTest, DualDst_FusedCopyPreservesDynamicValidShapeOnNonSplitAxi
     ASSERT_EQ(s.Init(g.func->Operations().DuplicatedOpList(), CORE_INIT_CONFIGS_HARDWARE_TWO), SUCCESS);
     dualdst_ut::InjectCoreMap(s, g);
     s.SetEnableDualDst(true);
-    ASSERT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 
     Operation* dual = dualdst_ut::FindDualDstOp(*g.func);
     ASSERT_NE(dual, nullptr);
@@ -3731,7 +3730,7 @@ TEST_F(ScheduleOoOTest, DualDst_FusedCopyPreservesDynamicValidShapeOnNonSplitAxi
     ASSERT_EQ(s.Init(g.func->Operations().DuplicatedOpList(), CORE_INIT_CONFIGS_HARDWARE_TWO), SUCCESS);
     dualdst_ut::InjectCoreMap(s, g);
     s.SetEnableDualDst(true);
-    ASSERT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 
     Operation* dual = dualdst_ut::FindDualDstOp(*g.func);
     ASSERT_NE(dual, nullptr);
@@ -3759,7 +3758,7 @@ TEST_F(ScheduleOoOTest, DualDst_AllocQueryHelpers_AfterFuse)
     EXPECT_EQ(s.Init(g.func->Operations().DuplicatedOpList(), CORE_INIT_CONFIGS_HARDWARE_TWO), SUCCESS);
     dualdst_ut::InjectCoreMap(s, g);
     s.SetEnableDualDst(true);
-    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 
     Operation* dual = nullptr;
     for (auto& op : g.func->Operations()) {
@@ -3841,7 +3840,7 @@ TEST_F(ScheduleOoOTest, DualDst_AivUbAllocSeparatesRegularAndDualDstStages)
     auto graph = dualdst_ut::BuildOnlineSoftmaxDualDstGraph();
     OoOScheduler scheduler(*graph.func);
     ASSERT_EQ(dualdst_ut::InitDualDstScheduler(scheduler, graph), SUCCESS);
-    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
 
     constexpr uint64_t kRegularSize = 256;
     Operation* regular0 = dualdst_ut::AddAivUbAlloc(*graph.func, scheduler, CoreLocationType::AIV0, kRegularSize);
@@ -3885,7 +3884,7 @@ TEST_F(ScheduleOoOTest, DualDst_AivUbAllocRejectsMismatchedFrontKinds)
     auto graph = dualdst_ut::BuildOnlineSoftmaxDualDstGraph();
     OoOScheduler scheduler(*graph.func);
     ASSERT_EQ(dualdst_ut::InitDualDstScheduler(scheduler, graph), SUCCESS);
-    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
     constexpr uint64_t kRegularSize = 256;
     Operation* regular0 = dualdst_ut::AddAivUbAlloc(*graph.func, scheduler, CoreLocationType::AIV0, kRegularSize);
     auto& queue0 = scheduler.state_.allocIssueQueue[CoreLocationType::AIV0][MemoryType::MEM_UB];
@@ -3918,7 +3917,7 @@ TEST_F(ScheduleOoOTest, DualDst_AivUbAllocRejectsUnsynchronizedQueues)
     auto graph = dualdst_ut::BuildOnlineSoftmaxDualDstGraph();
     OoOScheduler scheduler(*graph.func);
     ASSERT_EQ(dualdst_ut::InitDualDstScheduler(scheduler, graph), SUCCESS);
-    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
     auto& queue0 = scheduler.state_.allocIssueQueue[CoreLocationType::AIV0][MemoryType::MEM_UB];
     auto& queue1 = scheduler.state_.allocIssueQueue[CoreLocationType::AIV1][MemoryType::MEM_UB];
     queue0.queue.clear();
@@ -3947,7 +3946,7 @@ TEST_F(ScheduleOoOTest, DualDst_AivUbAllocRejectsUnpairedFronts)
     auto graph = dualdst_ut::BuildOnlineSoftmaxDualDstGraph();
     OoOScheduler scheduler(*graph.func);
     ASSERT_EQ(dualdst_ut::InitDualDstScheduler(scheduler, graph), SUCCESS);
-    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
     auto& queue0 = scheduler.state_.allocIssueQueue[CoreLocationType::AIV0][MemoryType::MEM_UB];
     auto& queue1 = scheduler.state_.allocIssueQueue[CoreLocationType::AIV1][MemoryType::MEM_UB];
     queue0.queue.clear();
@@ -3980,7 +3979,7 @@ TEST_F(ScheduleOoOTest, DualDst_AivUbAllocReportsBufferFull)
     auto graph = dualdst_ut::BuildOnlineSoftmaxDualDstGraph();
     OoOScheduler scheduler(*graph.func);
     ASSERT_EQ(dualdst_ut::InitDualDstScheduler(scheduler, graph), SUCCESS);
-    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
     auto& queue0 = scheduler.state_.allocIssueQueue[CoreLocationType::AIV0][MemoryType::MEM_UB];
     auto& queue1 = scheduler.state_.allocIssueQueue[CoreLocationType::AIV1][MemoryType::MEM_UB];
     queue0.queue.clear();
@@ -4020,7 +4019,7 @@ TEST_F(ScheduleOoOTest, DualDst_AivUbAllocContinuesAfterDualDstStage)
     auto graph = dualdst_ut::BuildOnlineSoftmaxDualDstGraph();
     OoOScheduler scheduler(*graph.func);
     ASSERT_EQ(dualdst_ut::InitDualDstScheduler(scheduler, graph), SUCCESS);
-    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
     constexpr uint64_t kRegularSize = 1024;
     Operation* regular0 = dualdst_ut::AddAivUbAlloc(*graph.func, scheduler, CoreLocationType::AIV0, kRegularSize);
     Operation* regular1 = dualdst_ut::AddAivUbAlloc(*graph.func, scheduler, CoreLocationType::AIV1, kRegularSize);
@@ -4075,7 +4074,7 @@ TEST_F(ScheduleOoOTest, DualDst_AllocateDualDstAtCurrent_HappyPath)
     EXPECT_EQ(s.Init(g.func->Operations().DuplicatedOpList(), CORE_INIT_CONFIGS_HARDWARE_TWO), SUCCESS);
     dualdst_ut::InjectCoreMap(s, g);
     s.SetEnableDualDst(true);
-    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 
     Operation* dual = nullptr;
     for (auto& op : g.func->Operations()) {
@@ -4124,7 +4123,7 @@ TEST_F(ScheduleOoOTest, DualDst_SelectSpillBuffers_UsesOnlyTriggerAllocPool)
     EXPECT_EQ(s.Init(g.func->Operations().DuplicatedOpList(), CORE_INIT_CONFIGS_HARDWARE_TWO), SUCCESS);
     dualdst_ut::InjectCoreMap(s, g);
     s.SetEnableDualDst(true);
-    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 
     Operation* dual = dualdst_ut::FindDualDstOp(*g.func);
     ASSERT_NE(dual, nullptr);
@@ -4162,7 +4161,7 @@ TEST_F(ScheduleOoOTest, DualDst_SelectSpillBuffers_EmptyPoolsReturnEmpty)
     EXPECT_EQ(s.Init(g.func->Operations().DuplicatedOpList(), CORE_INIT_CONFIGS_HARDWARE_TWO), SUCCESS);
     dualdst_ut::InjectCoreMap(s, g);
     s.SetEnableDualDst(true);
-    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    EXPECT_EQ(s.dualDstEngine_.RunDualDstFuse(s.state_.orderedOps), SUCCESS);
 
     Operation* dual = nullptr;
     for (auto& op : g.func->Operations()) {
@@ -4315,7 +4314,7 @@ TEST_F(ScheduleOoOTest, DualDst_MainLoopReusesRegularAllocReleasedInPreviousRoun
     ASSERT_EQ(scheduler.Init(dualdst_ut::BuildMainLoopReuseOpList(graph), CORE_INIT_CONFIGS_HARDWARE_TWO), SUCCESS);
     dualdst_ut::ConfigureMainLoopReuseCores(scheduler, graph);
     scheduler.SetEnableDualDst(true);
-    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(), SUCCESS);
+    ASSERT_EQ(scheduler.dualDstEngine_.RunDualDstFuse(scheduler.state_.orderedOps), SUCCESS);
     ASSERT_TRUE(scheduler.state_.IsDualDstAlloc(graph.dualDst.allocUb0));
     ASSERT_TRUE(scheduler.state_.IsDualDstAlloc(graph.dualDst.allocUb1));
     dualdst_ut::DualDstSpillObserver observer;
