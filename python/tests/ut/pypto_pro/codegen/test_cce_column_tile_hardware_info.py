@@ -27,8 +27,8 @@ These read the generated C++ directly, so they need no device and no bisheng.
 
 import re
 
-from pypto_pro._arch import NpuArch
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 ROWS = 64

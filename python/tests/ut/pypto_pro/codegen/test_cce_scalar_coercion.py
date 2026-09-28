@@ -20,9 +20,9 @@ parser hands codegen the scalar exactly as it was written, and the truncation is
 """
 
 from pypto_pro import ir
-from pypto_pro._arch import NpuArch
 import pypto_pro.language as pl
 from pypto_pro.language import Vf as vf  # noqa: N813
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 _N, _M = 1, 64

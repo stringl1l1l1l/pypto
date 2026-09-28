@@ -27,9 +27,9 @@ tests/st/pypto_pro/frontend/datacopy/test_load_order_variants.py.
 
 import re
 
-from pypto_pro._arch import NpuArch
 from pypto_pro._errors import InvalidShape
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 DIM = 16

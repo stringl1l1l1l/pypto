@@ -19,7 +19,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from asc_op_compile_base.asc_op_compiler.ascendc_constants import KernelMetaType
-from pypto_pro._arch import NpuArch
 from pypto_pro._errors import InvalidArgument
 import pypto_pro.language as pl
 from pypto_pro.runtime.opc.pypto_compile import (
@@ -36,6 +35,7 @@ from pypto_pro.runtime.opc.pypto_compile import (
     prepare_binary_headers,
     pypto_compile_op,
 )
+from pypto_pro.runtime.platform import NpuArch
 from pypto_pro.runtime.tilingkey import TilingKeyField
 import pytest
 

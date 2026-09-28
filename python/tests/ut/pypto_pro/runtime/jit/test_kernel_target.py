@@ -13,10 +13,10 @@ import importlib
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from pypto_pro._arch import NpuArch, parse_arch
 from pypto_pro._errors import InvalidVal, RuntimeFailure
 import pypto_pro.language as pl
 from pypto_pro.runtime.compile_config import JitCompileConfig, KernelTarget, get_jit_compile_config
+from pypto_pro.runtime.platform import NpuArch, normalize_arch
 import pytest
 
 jit = importlib.import_module("pypto_pro.runtime.jit")
@@ -103,7 +103,7 @@ def test_architecture_specific_mixed_geometry_is_independent(future_config):
 def test_missing_architecture_is_not_assumed_to_use_a5_geometry():
     """Unknown arch names are rejected at the parse boundary; unconfigured members fail loudly."""
     with pytest.raises(InvalidVal, match="unknown arch.*a6"):
-        parse_arch("a6")
+        normalize_arch("a6")
     with pytest.raises(InvalidVal, match="does not define kernel_targets"):
         get_jit_compile_config().resolve_kernel_target(NpuArch.DAV_3113, has_cube=True, has_vector=True)
 

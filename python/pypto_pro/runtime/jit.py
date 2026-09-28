@@ -37,7 +37,7 @@ from pypto.pypto_impl.ir import ConstInt, PtrType, ScalarType, TensorType, Tuple
 from pypto_pro import DataType
 from pypto_pro.language.typing.direction import TensorDirection
 from pypto_pro.runtime.compile_config import KernelTarget, get_jit_compile_config
-from pypto_pro.runtime.platform import NpuArch, parse_arch
+from pypto_pro.runtime.platform import NpuArch, normalize_arch
 
 from .._errors import (
     CommonInner,
@@ -1726,7 +1726,7 @@ def _build_jit_so(
 def get_current_arch() -> NpuArch:
     """Return the arch configured in the current process environment."""
     raw = os.environ.get("PYPTOPRO_JIT_ARCH")
-    return parse_arch(raw) if raw else NpuArch.DAV_3510
+    return normalize_arch(raw) if raw else NpuArch.DAV_3510
 
 
 def _setup_arch_env(arch: NpuArch) -> NpuArch:
@@ -1987,7 +1987,7 @@ def jit(
         raise TypeError(f"auto_mutex must be a bool, got {type(auto_mutex).__name__}")
 
     if arch is not None:
-        arch = parse_arch(arch)
+        arch = normalize_arch(arch)
 
     # Build the tilingkey schema eagerly so malformed schemas fail at decoration time.
     tilingkey_schema = None

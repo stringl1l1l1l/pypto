@@ -22,7 +22,7 @@ import importlib
 from pathlib import Path
 import subprocess
 
-from pypto_pro._arch import NpuArch
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 jit = importlib.import_module("pypto_pro.runtime.jit")

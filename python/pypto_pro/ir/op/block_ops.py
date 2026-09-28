@@ -23,6 +23,7 @@ import enum
 import struct
 from typing import Any, Optional
 
+from pypto.pypto_impl import NpuArch
 from pypto.pypto_impl import ir as _ir_core
 from pypto.pypto_impl.ir import (
     AccPhase,
@@ -42,7 +43,6 @@ from pypto.pypto_impl.ir import (
     TilePad,
 )
 from pypto.pypto_impl.ir import TileType as _IRTileType  # IR-level TileType (C++ binding);
-from pypto_pro._arch import NpuArch
 from pypto_pro.ir._utils import _is_int, _normalize_expr, _to_make_tuple
 
 from ..._errors import (

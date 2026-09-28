@@ -13,8 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 
-from pypto_pro._arch import NpuArch
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 
 def _codegen_result(kernel):

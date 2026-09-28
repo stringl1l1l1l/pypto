@@ -21,8 +21,8 @@ import logging
 import sys
 from unittest.mock import MagicMock
 
-from pypto_pro._arch import NpuArch
 from pypto_pro._errors import InvalidShape
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 # ---------------------------------------------------------------------------

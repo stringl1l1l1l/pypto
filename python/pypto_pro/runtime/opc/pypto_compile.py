@@ -91,8 +91,8 @@ from asc_op_compile_base.common.context import op_context
 from asc_op_compile_base.common.utils import log as logger
 
 from pypto_pro import DataType
-from pypto_pro._arch import NpuArch
 from pypto_pro.runtime.compile_config import get_jit_compile_config
+from pypto_pro.runtime.platform import NpuArch
 
 from ..._errors import (
     InvalidArgument,
@@ -372,13 +372,13 @@ def _prepare_infer_cpp(
 
 def generate_binary_headers(kernel, arch: str = "3510") -> str:
     """Generate the TilingData and TilingKey headers required by binary delivery."""
-    from pypto_pro._arch import parse_arch
     from pypto_pro.runtime.jit import (
         _artifact_prefix_from_filename,
         _make_artifact_build_dir,
         _setup_arch_env,
         _TileJitKernel,
     )
+    from pypto_pro.runtime.platform import normalize_arch
 
     if not isinstance(kernel, _TileJitKernel):
         raise InvalidType("generate_binary_headers() expects a @pl.jit kernel")
@@ -388,7 +388,7 @@ def generate_binary_headers(kernel, arch: str = "3510") -> str:
             f"'{kernel.__name__}' has none; binary delivery needs a tilingkey header"
         )
 
-    arch = _setup_arch_env(parse_arch(arch))
+    arch = _setup_arch_env(normalize_arch(arch))
     schema = kernel.tilingkey_schema
     valid_combos = schema.enumerate_valid()
     if not valid_combos:
@@ -687,9 +687,9 @@ def pypto_compile_op(
 
     extend_options = extend_options or {}
     kernel_name = _op_info_get(op_info, "kernel_name")
-    from pypto_pro._arch import parse_arch
+    from pypto_pro.runtime.platform import normalize_arch
 
-    arch = _setup_arch_env(parse_arch(arch))
+    arch = _setup_arch_env(normalize_arch(arch))
     opt = _setup_options(op_info, compile_options, op_compile_option, extend_options)
 
     kernel = _load_kernel(cce_file)

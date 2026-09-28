@@ -19,13 +19,18 @@ import os
 import warnings
 
 from pypto_pro._errors import InvalidVal, NotSupported
-from pypto_pro.runtime.platform import NpuArch, parse_arch
+from pypto_pro.runtime.platform import NpuArch, normalize_arch
 import pytest
 
 
 def test_parse_arch_canonical_forms():
-    assert parse_arch("3510") == NpuArch.DAV_3510
-    assert parse_arch(" 3510 ") == NpuArch.DAV_3510
+    assert normalize_arch("3510") == NpuArch.DAV_3510
+    assert normalize_arch(" 3510 ") == NpuArch.DAV_3510
+
+
+def test_parse_arch_accepts_enum_values():
+    assert normalize_arch(NpuArch.DAV_3510) == NpuArch.DAV_3510
+    assert normalize_arch(NpuArch.DAV_2201) == NpuArch.DAV_2201
 
 
 def test_npuarch_str_is_canonical_form():
@@ -35,20 +40,20 @@ def test_npuarch_str_is_canonical_form():
 
 def test_parse_arch_legacy_a5_maps_to_3510_with_deprecation():
     with pytest.warns(DeprecationWarning, match="'a5' is deprecated"):
-        assert parse_arch("a5") == NpuArch.DAV_3510
+        assert normalize_arch("a5") == NpuArch.DAV_3510
 
 
 def test_parse_arch_legacy_a2_a3_map_to_2201_without_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        assert parse_arch("a2") == NpuArch.DAV_2201
-        assert parse_arch("a3") == NpuArch.DAV_2201
+        assert normalize_arch("a2") == NpuArch.DAV_2201
+        assert normalize_arch("a3") == NpuArch.DAV_2201
 
 
 def test_parse_arch_unknown_raises():
     for bad in ("future", "a6", ""):
         with pytest.raises(InvalidVal):
-            parse_arch(bad)
+            normalize_arch(bad)
 
 
 def test_setup_arch_env_accepts_deprecated_a5(monkeypatch):
@@ -56,7 +61,7 @@ def test_setup_arch_env_accepts_deprecated_a5(monkeypatch):
 
     monkeypatch.delenv("PYPTOPRO_JIT_ARCH", raising=False)
     with pytest.warns(DeprecationWarning):
-        parsed = parse_arch("a5")
+        parsed = normalize_arch("a5")
     assert _setup_arch_env(parsed) == NpuArch.DAV_3510
     assert os.environ["PYPTOPRO_JIT_ARCH"] == "3510"
 
@@ -99,7 +104,7 @@ def test_resolve_kernel_target_treats_a5_as_3510():
 
     cfg = get_jit_compile_config()
     with pytest.warns(DeprecationWarning):
-        legacy = parse_arch("a5")
+        legacy = normalize_arch("a5")
     canonical_target = cfg.resolve_kernel_target(NpuArch.DAV_3510, has_cube=True, has_vector=True)
     assert cfg.resolve_kernel_target(legacy, has_cube=True, has_vector=True) == canonical_target
 

@@ -39,10 +39,6 @@ void BindPlatform(py::module_& m)
          return NPUArchToString(npuArch);
      }).def("SetNPUArch", [](const std::string& value) { Platform::Instance().GetSoc().SetNPUArch(value); });
 
-    // Arch input parsing shares the C++ implementation used by the codegen entry
-    // (CCECodegen::GenerateSingle); pypto_pro's parse_arch() is a thin adapter over it.
-    m.def("ParseNPUArch", [](const std::string& arch) { return ParseNPUArch(arch); }, py::arg("arch"));
-
     m.def("GetAICoreNum", []() -> size_t { return Platform::Instance().GetSoc().GetAICoreNum(); });
 
     m.def("GetAICCoreNum", []() -> size_t { return Platform::Instance().GetSoc().GetAICCoreNum(); });

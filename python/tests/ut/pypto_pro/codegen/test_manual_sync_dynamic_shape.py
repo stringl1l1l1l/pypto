@@ -20,8 +20,8 @@ coverage.
 
 import re
 
-from pypto_pro._arch import NpuArch
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 from pypto_pro.runtime.tilingkey import TilingKeyField
 import pytest
 

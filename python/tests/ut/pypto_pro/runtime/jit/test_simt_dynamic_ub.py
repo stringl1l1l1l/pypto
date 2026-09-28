@@ -11,9 +11,9 @@
 import importlib
 from types import SimpleNamespace
 
-from pypto_pro._arch import NpuArch
 from pypto_pro._errors import OutOfRange
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 from pypto.pypto_impl import ir

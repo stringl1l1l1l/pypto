@@ -30,8 +30,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from typing import Optional
+import warnings
 
-from .._arch import NpuArch, parse_arch  # noqa: F401
+from pypto.pypto_impl import NpuArch
+
+from .._errors import InvalidVal
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,31 @@ _ARCH_MAP = {
     "DAV_2201": NpuArch.DAV_2201,
     "DAV_3510": NpuArch.DAV_3510,
 }
+
+_ARCH_INPUT_TO_ENUM = {str(member): member for member in NpuArch.__members__.values() if member != NpuArch.DAV_UNKNOWN}
+_LEGACY_TO_CANONICAL = {"a5": "3510", "a2": "2201", "a3": "2201"}
+_DEPRECATED_INPUTS = {"a5"}
+
+
+def normalize_arch(value: str | NpuArch) -> NpuArch:
+    """Resolve any accepted arch input to its canonical NpuArch.
+
+    Accepts the __NPU_ARCH__ version number ("3510"), NpuArch values, and
+    legacy internal names; "a5" emits a DeprecationWarning and resolves
+    to DAV_3510.
+    """
+    if isinstance(value, NpuArch):
+        return value
+    text = value.strip().lower()
+    canonical = _LEGACY_TO_CANONICAL.get(text)
+    if canonical is not None:
+        if text in _DEPRECATED_INPUTS:
+            warnings.warn(f"arch {value!r} is deprecated; use arch {canonical!r}", DeprecationWarning, stacklevel=2)
+        text = canonical
+    arch = _ARCH_INPUT_TO_ENUM.get(text)
+    if arch is None:
+        raise InvalidVal(f"unknown arch {value!r}; expected an __NPU_ARCH__ version name such as '3510'")
+    return arch
 
 
 @dataclass

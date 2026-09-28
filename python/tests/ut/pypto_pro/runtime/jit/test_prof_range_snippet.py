@@ -13,7 +13,6 @@
 
 import subprocess
 
-from pypto_pro._arch import NpuArch
 import pypto_pro.language as pl
 from pypto_pro.runtime.compile_config import get_jit_compile_config
 from pypto_pro.runtime.jit import (
@@ -23,6 +22,7 @@ from pypto_pro.runtime.jit import (
     _generate_prof_range_snippet,
     _parse_and_codegen_targets,
 )
+from pypto_pro.runtime.platform import NpuArch
 
 
 def _snippet(kernel_name, specs, dims):
