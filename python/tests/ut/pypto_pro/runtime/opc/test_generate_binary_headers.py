@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from asc_op_compile_base.asc_op_compiler.ascendc_constants import KernelMetaType
+from pypto_pro._arch import NpuArch
 from pypto_pro._errors import InvalidArgument
 import pypto_pro.language as pl
 from pypto_pro.runtime.opc.pypto_compile import (
@@ -134,7 +135,7 @@ def test_pypto_compile_op_sets_up_explicit_arch(monkeypatch):
     with pytest.raises(RuntimeError, match="stop after arch setup"):
         pypto_compile_op("unused.py", "kernel", {"kernel_name": "kernel"}, arch="3510")
 
-    assert received_arch == ["3510"]
+    assert received_arch == [NpuArch.DAV_3510]
 
 
 @pytest.mark.parametrize(
@@ -163,7 +164,7 @@ def test_kernel_type_from_target_uses_configured_core_ratio(aic_per_block, aiv_p
 def test_kernel_type_from_codegen_reuses_a5_target_config(has_cube, has_vector, expected):
     codegen_result = SimpleNamespace(has_cube=has_cube, has_vector=has_vector)
 
-    assert _kernel_type_from_codegen(codegen_result, "3510") is expected
+    assert _kernel_type_from_codegen(codegen_result, NpuArch.DAV_3510) is expected
 
 
 @pytest.mark.parametrize(

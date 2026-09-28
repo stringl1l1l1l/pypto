@@ -3182,19 +3182,13 @@ _A5_INSERT_QUANT_COMBOS = (
 )
 
 _LAYOUT_DTYPE_COMBOS = {
-    "load": {NpuArch.DAV_3510: _A5_LOAD_COMBOS},
-    "load_tile": {NpuArch.DAV_3510: _A5_LOAD_COMBOS},
-    "store": {NpuArch.DAV_3510: _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
-    "store_tile": {NpuArch.DAV_3510: _A5_STORE_COMBOS, "3510_quant": _A5_STORE_QUANT_COMBOS},
-    "move": {
-        NpuArch.DAV_3510: _A5_MOVE_COMBOS,
-        "3510_quant": _A5_MOVE_QUANT_COMBOS,
-    },
-    "extract": {NpuArch.DAV_3510: _A5_ACC_NZ_TO_MAT_NZ_COMBOS, "3510_quant": _A5_INSERT_QUANT_COMBOS},
-    "insert": {
-        NpuArch.DAV_3510: _A5_INSERT_COMBOS,
-        "3510_quant": _A5_INSERT_QUANT_COMBOS,
-    },
+    "load": {NpuArch.DAV_3510: (_A5_LOAD_COMBOS, None)},
+    "load_tile": {NpuArch.DAV_3510: (_A5_LOAD_COMBOS, None)},
+    "store": {NpuArch.DAV_3510: (_A5_STORE_COMBOS, _A5_STORE_QUANT_COMBOS)},
+    "store_tile": {NpuArch.DAV_3510: (_A5_STORE_COMBOS, _A5_STORE_QUANT_COMBOS)},
+    "move": {NpuArch.DAV_3510: (_A5_MOVE_COMBOS, _A5_MOVE_QUANT_COMBOS)},
+    "extract": {NpuArch.DAV_3510: (_A5_ACC_NZ_TO_MAT_NZ_COMBOS, _A5_INSERT_QUANT_COMBOS)},
+    "insert": {NpuArch.DAV_3510: (_A5_INSERT_COMBOS, _A5_INSERT_QUANT_COMBOS)},
 }
 
 
@@ -3233,7 +3227,7 @@ def _check_layout_dtype(
         dst: destination operand —— tile 或 tensor。
         is_transpose: load 专用——降序 order 时 GM 有效排布为 DN（仅 load 传入）；
                       为 None 时 GM 排布取 tensor 声明值（store 场景）。
-        quant: 量化路径时查 `a5_quant` 子表，非量化时查 `a5` 主表。
+        quant: 量化路径时查量化组合表，非量化时查主组合表（按 NpuArch 索引）。
     """
     from pypto_pro.runtime.jit import get_current_arch
 
@@ -3241,10 +3235,12 @@ def _check_layout_dtype(
     combos_by_arch = _LAYOUT_DTYPE_COMBOS.get(op)
     if combos_by_arch is None:
         return
-    key = f"{arch}_quant" if quant else arch
-    combos = combos_by_arch.get(key)
-    if combos is None:
+    combos_entry = combos_by_arch.get(arch)
+    if combos_entry is None:
         # 该平台暂未配置支持表（如 a3）——不做硬拦截，后续按平台补表后自动生效。
+        return
+    combos = combos_entry[1] if quant else combos_entry[0]
+    if combos is None:
         return
 
     src_loc = _loc_name(src.type)

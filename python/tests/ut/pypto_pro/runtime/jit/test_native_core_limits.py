@@ -22,6 +22,7 @@ import importlib
 from pathlib import Path
 import subprocess
 
+from pypto_pro._arch import NpuArch
 import pytest
 
 jit = importlib.import_module("pypto_pro.runtime.jit")
@@ -81,18 +82,18 @@ static void RecordLaunch(uint32_t dim, void*, int64_t* = nullptr)
 }
 """
     config = jit.get_jit_compile_config()
-    # A future architecture can use 1:1 without changing A5's 1:2 ABI. This target
+    # A future architecture can use 1:1 without changing 3510's 1:2 ABI. This target
     # name is only a test fixture, not a supported Bisheng architecture.
     config = replace(config, kernel_targets={
         **config.kernel_targets,
-        "future": {"cube_vec": jit.KernelTarget("test-mixed-1-1", 1, 1, True)},
+        NpuArch.DAV_3003: {"cube_vec": jit.KernelTarget("test-mixed-1-1", 1, 1, True)},
     })
     modes = {
-        "cube": ("3510", True, False, False),
-        "vector": ("3510", False, True, False),
-        "mixed": ("3510", True, True, False),
-        "mixed_1_1": ("future", True, True, False),
-        "sync": ("3510", True, True, True),
+        "cube": (NpuArch.DAV_3510, True, False, False),
+        "vector": (NpuArch.DAV_3510, False, True, False),
+        "mixed": (NpuArch.DAV_3510, True, True, False),
+        "mixed_1_1": (NpuArch.DAV_3003, True, True, False),
+        "sync": (NpuArch.DAV_3510, True, True, True),
     }
     for name, (arch, has_cube, has_vec, cross_sync) in modes.items():
         caller = jit._generate_caller_cpp(

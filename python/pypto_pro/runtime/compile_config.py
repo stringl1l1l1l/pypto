@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import os
 
 from .._errors import InvalidArgument, InvalidVal, NotSupported, RuntimeFailure
-from .platform import NpuArch, parse_arch
+from .platform import NpuArch
 
 CCE_BACKEND = "cce"
 
@@ -57,14 +57,14 @@ class JitCompileConfig:
     """Compile settings owned by one PyPTO Pro JIT backend."""
 
     backend: str
-    kernel_targets: Mapping[str, Mapping[str, KernelTarget]]
-    memory_arch_flags: Mapping[str, str]
+    kernel_targets: Mapping[NpuArch, Mapping[str, KernelTarget]]
+    memory_arch_flags: Mapping[NpuArch, str]
     arch_flags: tuple[str, ...]
     fatobj_flags: tuple[str, ...]
     common_flags: tuple[str, ...]
     print_debug_flags: tuple[str, ...]
     llvm_common_args: tuple[str, ...]
-    llvm_arch_args: Mapping[str, tuple[str, ...]]
+    llvm_arch_args: Mapping[NpuArch, tuple[str, ...]]
     runtime_include_dirs: tuple[str, ...]
     link_dirs: tuple[str, ...]
     link_libraries: tuple[str, ...]
@@ -80,13 +80,13 @@ class JitCompileConfig:
         self,
         *,
         toolkit_home: str,
-        arch: NpuArch | int | str,
+        arch: NpuArch,
         target: KernelTarget,
         enable_print_debug: bool,
     ) -> list[str]:
         variables = {
             "toolkit_home": toolkit_home,
-            "mem_arch": self._resolve_memory_arch_flag(arch),
+            "mem_arch": self._memory_arch_flag(arch),
             "npu_arch": target.npu_arch,
         }
         common = self._format_values(self.common_flags, variables)
@@ -97,11 +97,10 @@ class JitCompileConfig:
             flags.extend(self._format_values(self.fatobj_flags, variables))
         return [*flags, *common]
 
-    def build_llvm_args(self, arch: NpuArch | int | str) -> list[str]:
-        arch_key = self._arch_config_key(arch)
-        arch_args = self.llvm_arch_args.get(arch_key)
+    def build_llvm_args(self, arch: NpuArch) -> list[str]:
+        arch_args = self.llvm_arch_args.get(arch)
         if arch_args is None:
-            raise InvalidVal(f"JIT compile config does not define llvm_arch_args.{arch_key}")
+            raise InvalidVal(f"JIT compile config does not define llvm_arch_args for arch '{arch}'")
         return [*self.llvm_common_args, *arch_args]
 
     def runtime_include_flags(self, ascend_home_path: str) -> list[str]:
@@ -122,56 +121,49 @@ class JitCompileConfig:
             link_args.append(library if library.startswith("-l") else f"-l{library}")
         return link_args
 
-    def resolve_kernel_target(self, arch: NpuArch | int | str, *, has_cube: bool, has_vector: bool) -> KernelTarget:
+    def resolve_kernel_target(self, arch: NpuArch, *, has_cube: bool, has_vector: bool) -> KernelTarget:
         """Resolve once so compiler flags and launch geometry consume the same ABI."""
         if not (has_cube or has_vector):
             raise RuntimeFailure("Cannot compile a kernel without cube or vector code; add a target section")
-        arch_key = self._arch_config_key(arch)
-        arch_config = self.kernel_targets.get(arch_key)
+        arch_config = self.kernel_targets.get(arch)
         if arch_config is None:
             raise InvalidVal(f"JIT compile config does not define kernel_targets for arch '{arch}'")
         variant = "cube_vec" if has_cube and has_vector else "cube" if has_cube else "vec"
         target = arch_config.get(variant)
         if target is None:
-            raise InvalidVal(f"JIT compile config does not define kernel_targets.{arch_key}.{variant}")
+            raise InvalidVal(f"JIT compile config does not define kernel_targets.{arch}.{variant}")
         return target
 
-    def _resolve_memory_arch_flag(self, arch: NpuArch | int | str) -> str:
-        arch_key = self._arch_config_key(arch)
-        mem_arch = self.memory_arch_flags.get(arch_key)
+    def _memory_arch_flag(self, arch: NpuArch) -> str:
+        mem_arch = self.memory_arch_flags.get(arch)
         if mem_arch is None:
             raise InvalidVal(f"JIT compile config does not define memory_arch_flags for arch '{arch}'")
         return mem_arch
-
-    @staticmethod
-    def _arch_config_key(arch: NpuArch | int | str) -> str:
-        """Config-table key for an arch value; unknown names pass through unchanged."""
-        if not isinstance(arch, NpuArch):
-            text = str(arch).strip().lower()
-            try:
-                arch = parse_arch(text)
-            except InvalidVal:
-                return text
-        return "3510" if arch is NpuArch.DAV_3510 else "a2a3"
 
 
 _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
     backend=CCE_BACKEND,
     kernel_targets={
-        "a2a3": {
+        NpuArch.DAV_1001:{
             "cube_vec": KernelTarget("dav-2201", aic_per_block=1, aiv_per_block=2, fat_object=True),
             "cube": KernelTarget("dav-2201", aic_per_block=1, aiv_per_block=0, fat_object=False),
             "vec": KernelTarget("dav-2201", aic_per_block=0, aiv_per_block=1, fat_object=False),
         },
-        "3510": {
+        NpuArch.DAV_2201: {
+            "cube_vec": KernelTarget("dav-2201", aic_per_block=1, aiv_per_block=2, fat_object=True),
+            "cube": KernelTarget("dav-2201", aic_per_block=1, aiv_per_block=0, fat_object=False),
+            "vec": KernelTarget("dav-2201", aic_per_block=0, aiv_per_block=1, fat_object=False),
+        },
+        NpuArch.DAV_3510: {
             "cube_vec": KernelTarget("dav-3510", aic_per_block=1, aiv_per_block=2, fat_object=True),
             "cube": KernelTarget("dav-3510", aic_per_block=1, aiv_per_block=0, fat_object=False),
             "vec": KernelTarget("dav-3510", aic_per_block=0, aiv_per_block=1, fat_object=False),
         },
     },
     memory_arch_flags={
-        "a2a3": "-DMEMORY_BASE",
-        "3510": "-DREGISTER_BASE",
+        NpuArch.DAV_1001: "-DMEMORY_BASE",
+        NpuArch.DAV_2201: "-DMEMORY_BASE",
+        NpuArch.DAV_3510: "-DREGISTER_BASE",
     },
     arch_flags=("--npu-arch={npu_arch}",),
     # ASC derives fat objects from the explicit __mix__ entry qualifier.
@@ -207,7 +199,7 @@ _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
         "--cce-auto-sync=off",
     ),
     llvm_arch_args={
-        "a2a3": (
+        NpuArch.DAV_1001: (
             "-include",
             "kernel_operator.h",
             "-O3",
@@ -217,7 +209,17 @@ _DEFAULT_CCE_JIT_COMPILE_CONFIG = JitCompileConfig(
             "-Werror",
             "-Wno-cce-compat",
         ),
-        "3510": (
+        NpuArch.DAV_2201: (
+            "-include",
+            "kernel_operator.h",
+            "-O3",
+            "--cce-disable-kernel-global-attr-check",
+            "-Wno-parentheses-equality",
+            "-Wno-unused-command-line-argument",
+            "-Werror",
+            "-Wno-cce-compat",
+        ),
+        NpuArch.DAV_3510: (
             "-mllvm",
             "-tile-fusion-skip-reduceop-fusion=true",
             "-mllvm",

@@ -91,6 +91,7 @@ from asc_op_compile_base.common.context import op_context
 from asc_op_compile_base.common.utils import log as logger
 
 from pypto_pro import DataType
+from pypto_pro._arch import NpuArch
 from pypto_pro.runtime.compile_config import get_jit_compile_config
 
 from ..._errors import (
@@ -257,7 +258,7 @@ def _kernel_type_from_target(target) -> KernelMetaType:
     return kernel_type
 
 
-def _kernel_type_from_codegen(cg, arch: str) -> KernelMetaType:
+def _kernel_type_from_codegen(cg, arch: NpuArch) -> KernelMetaType:
     target = get_jit_compile_config().resolve_kernel_target(
         arch,
         has_cube=cg.has_cube,
@@ -369,8 +370,9 @@ def _prepare_infer_cpp(
     return infer_cpp_path, kernel_type
 
 
-def generate_binary_headers(kernel, arch="3510") -> str:
+def generate_binary_headers(kernel, arch: str = "3510") -> str:
     """Generate the TilingData and TilingKey headers required by binary delivery."""
+    from pypto_pro._arch import parse_arch
     from pypto_pro.runtime.jit import (
         _artifact_prefix_from_filename,
         _make_artifact_build_dir,
@@ -386,7 +388,7 @@ def generate_binary_headers(kernel, arch="3510") -> str:
             f"'{kernel.__name__}' has none; binary delivery needs a tilingkey header"
         )
 
-    arch = _setup_arch_env(arch)
+    arch = _setup_arch_env(parse_arch(arch))
     schema = kernel.tilingkey_schema
     valid_combos = schema.enumerate_valid()
     if not valid_combos:
@@ -405,7 +407,7 @@ def generate_binary_headers(kernel, arch="3510") -> str:
     return binary_dir
 
 
-def prepare_binary_headers(op_path: str, arch="3510") -> str:
+def prepare_binary_headers(op_path: str, arch: str = "3510") -> str:
     """Load the sole ``@pl.jit`` kernel in ``op_path`` and prepare its binary-delivery headers."""
     return generate_binary_headers(_load_kernel(op_path), arch)
 
@@ -670,7 +672,7 @@ def pypto_compile_op(
     code_channel=-1,
     op_compile_option="{}",
     extend_options=None,
-    arch="3510",
+    arch: str = "3510",
 ):
     """PyPTO leaf replacing ``asc_op_compiler.compile_op``. Signature-compatible; ``cce_file`` is the PyPTO
     DSL ``.py``. Writes the flat ``kernel_meta`` artifacts + ``<kernel>.o``/``.json`` and records the json
@@ -685,7 +687,9 @@ def pypto_compile_op(
 
     extend_options = extend_options or {}
     kernel_name = _op_info_get(op_info, "kernel_name")
-    arch = _setup_arch_env(arch)
+    from pypto_pro._arch import parse_arch
+
+    arch = _setup_arch_env(parse_arch(arch))
     opt = _setup_options(op_info, compile_options, op_compile_option, extend_options)
 
     kernel = _load_kernel(cce_file)

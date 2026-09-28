@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 
+from pypto_pro._arch import NpuArch
 import pypto_pro.language as pl
 
 
@@ -21,7 +22,7 @@ def _codegen_result(kernel):
     from pypto_pro.runtime.kernel import KernelDef
 
     kernel_def = kernel if isinstance(kernel, KernelDef) else kernel.to_kernel_def()
-    cube, vector = _parse_and_codegen_targets(kernel_def, "3510", "")
+    cube, vector = _parse_and_codegen_targets(kernel_def, NpuArch.DAV_3510, "")
     return _assemble_cv_source(cube, vector)
 
 

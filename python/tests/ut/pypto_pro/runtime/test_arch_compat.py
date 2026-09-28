@@ -24,10 +24,8 @@ import pytest
 
 
 def test_parse_arch_canonical_forms():
-    assert parse_arch("3510") is NpuArch.DAV_3510
-    assert parse_arch(" 3510 ") is NpuArch.DAV_3510
-    assert parse_arch(3510) is NpuArch.DAV_3510
-    assert parse_arch(NpuArch.DAV_3510) is NpuArch.DAV_3510
+    assert parse_arch("3510") == NpuArch.DAV_3510
+    assert parse_arch(" 3510 ") == NpuArch.DAV_3510
 
 
 def test_npuarch_str_is_canonical_form():
@@ -37,14 +35,14 @@ def test_npuarch_str_is_canonical_form():
 
 def test_parse_arch_legacy_a5_maps_to_3510_with_deprecation():
     with pytest.warns(DeprecationWarning, match="'a5' is deprecated"):
-        assert parse_arch("a5") is NpuArch.DAV_3510
+        assert parse_arch("a5") == NpuArch.DAV_3510
 
 
 def test_parse_arch_legacy_a2_a3_map_to_2201_without_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        assert parse_arch("a2") is NpuArch.DAV_2201
-        assert parse_arch("a3") is NpuArch.DAV_2201
+        assert parse_arch("a2") == NpuArch.DAV_2201
+        assert parse_arch("a3") == NpuArch.DAV_2201
 
 
 def test_parse_arch_unknown_raises():
@@ -58,8 +56,8 @@ def test_setup_arch_env_accepts_deprecated_a5(monkeypatch):
 
     monkeypatch.delenv("PYPTOPRO_JIT_ARCH", raising=False)
     with pytest.warns(DeprecationWarning):
-        parsed = _setup_arch_env("a5")
-    assert parsed is NpuArch.DAV_3510
+        parsed = parse_arch("a5")
+    assert _setup_arch_env(parsed) == NpuArch.DAV_3510
     assert os.environ["PYPTOPRO_JIT_ARCH"] == "3510"
 
 
@@ -67,15 +65,15 @@ def test_setup_arch_env_canonicalises_env_value(monkeypatch):
     from pypto_pro.runtime.jit import _setup_arch_env, get_current_arch
 
     monkeypatch.delenv("PYPTOPRO_JIT_ARCH", raising=False)
-    assert _setup_arch_env("3510") is NpuArch.DAV_3510
-    assert get_current_arch() is NpuArch.DAV_3510
+    assert _setup_arch_env(NpuArch.DAV_3510) == NpuArch.DAV_3510
+    assert get_current_arch() == NpuArch.DAV_3510
 
 
 def test_setup_arch_env_rejects_non_3510():
     from pypto_pro.runtime.jit import _setup_arch_env
 
     with pytest.raises(NotSupported, match="only supports arch '3510'"):
-        _setup_arch_env("a3")
+        _setup_arch_env(NpuArch.DAV_2201)
 
 
 def test_get_current_arch_env_a5_warns_and_canonicalises(monkeypatch):
@@ -83,7 +81,7 @@ def test_get_current_arch_env_a5_warns_and_canonicalises(monkeypatch):
 
     monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
     with pytest.warns(DeprecationWarning):
-        assert get_current_arch() is NpuArch.DAV_3510
+        assert get_current_arch() == NpuArch.DAV_3510
 
 
 def test_jit_decorator_warns_on_deprecated_a5():
@@ -101,9 +99,9 @@ def test_resolve_kernel_target_treats_a5_as_3510():
 
     cfg = get_jit_compile_config()
     with pytest.warns(DeprecationWarning):
-        legacy = cfg.resolve_kernel_target("a5", has_cube=True, has_vector=True)
-    canonical = cfg.resolve_kernel_target("3510", has_cube=True, has_vector=True)
-    assert legacy == canonical
+        legacy = parse_arch("a5")
+    canonical_target = cfg.resolve_kernel_target(NpuArch.DAV_3510, has_cube=True, has_vector=True)
+    assert cfg.resolve_kernel_target(legacy, has_cube=True, has_vector=True) == canonical_target
 
 
 def test_platform_arch_is_enum():

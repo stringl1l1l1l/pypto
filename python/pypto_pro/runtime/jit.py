@@ -1315,7 +1315,7 @@ def _codegen_target_cce(
         if wrapper is None:
             raise
         raise wrapper(str(exc), span=span_of_spec_message(str(exc))) from None
-    if "ffts_cross_core_sync" in cpp_code and arch is NpuArch.DAV_3510:
+    if "ffts_cross_core_sync" in cpp_code and arch == NpuArch.DAV_3510:
         extra_headers = "#include <pto/npu/a5/custom/TSyncCVID.hpp>"
         guard = {
             ir.SectionKind.Cube: "#if defined(__DAV_CUBE__)",
@@ -1437,7 +1437,7 @@ def _assemble_cv_source(
 
 def _parse_and_codegen_targets(
     kernel_def,
-    arch: NpuArch | str,
+    arch: NpuArch,
     build_dir: str,
     bound_signature=None,
     sanitizer: bool = False,
@@ -1448,7 +1448,6 @@ def _parse_and_codegen_targets(
     (block.sanitizer_log records injected, one per detection type and
     sanitizer_log pointer + capacity scalar appended to the kernel signature);
         the flag is carried on the returned CodegenResults."""
-    arch = parse_arch(arch)
     programs = {}
     matched = {}
     requires_simt = False
@@ -1730,18 +1729,14 @@ def get_current_arch() -> NpuArch:
     return parse_arch(raw) if raw else NpuArch.DAV_3510
 
 
-def _setup_arch_env(arch: NpuArch | int | str) -> NpuArch:
-    """Validate *arch* and export the env vars used by compilation.
-
-    The deprecated legacy name "a5" is accepted and canonicalised to DAV_3510.
-    """
+def _setup_arch_env(arch: NpuArch) -> NpuArch:
+    """Validate *arch* and export the env vars used by compilation."""
     if not arch:
         raise InvalidVal("arch must not be empty")
-    parsed = parse_arch(arch)
-    if parsed != NpuArch.DAV_3510:
-        raise NotSupported(f"PyPTO Pro only supports arch '3510', got {arch!r}")
-    os.environ["PYPTOPRO_JIT_ARCH"] = str(parsed)
-    return parsed
+    if arch != NpuArch.DAV_3510:
+        raise NotSupported(f"PyPTO Pro only supports arch '3510', got '{arch}'")
+    os.environ["PYPTOPRO_JIT_ARCH"] = str(arch)
+    return arch
 
 
 def _launch_error_message(error_code: int, requested_block_dim: int, compiled: "CompiledKernel | None") -> str:

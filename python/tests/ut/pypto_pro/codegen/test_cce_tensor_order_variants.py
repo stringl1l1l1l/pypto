@@ -27,6 +27,7 @@ tests/st/pypto_pro/frontend/datacopy/test_load_order_variants.py.
 
 import re
 
+from pypto_pro._arch import NpuArch
 from pypto_pro._errors import InvalidShape
 import pypto_pro.language as pl
 import pytest
@@ -38,7 +39,7 @@ TILE = 64
 def _compile_to_cce(kernel) -> str:
     from pypto_pro.runtime.jit import _assemble_cv_source, _parse_and_codegen_targets
 
-    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), "3510", "")
+    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), NpuArch.DAV_3510, "")
     return _assemble_cv_source(cube, vector).content
 
 

@@ -8,51 +8,35 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
-"""Compilation arch identity: NpuArch enum and its parsing (kept dependency-free; see pypto_pro._errors)."""
+"""Arch input parsing over the pybind-bound ``NpuArch`` enum (the C++ ``NPUArch`` in tilefwk/platform.h)."""
 
 from __future__ import annotations
 
-from enum import IntEnum
 import warnings
+
+from pypto.pypto_impl import NpuArch, ParseNPUArch
 
 from ._errors import InvalidVal
 
+__all__ = ["NpuArch", "parse_arch"]
 
-class NpuArch(IntEnum):
-    """Compilation arch identity, mirroring the C++ ``NPUArch`` enum in tilefwk/platform.h."""
-
-    DAV_1001 = 1001  # 910
-    DAV_2201 = 2201  # 910B/910C (Atlas A2/A3)
-    DAV_3510 = 3510  # Ascend 950PR/950DT
-    DAV_3003 = 3003
-    DAV_3113 = 3113
-
-    def __str__(self) -> str:
-        return str(self.value)
+_DEPRECATED_TO_CANONICAL = {"a5": "3510"}
 
 
-# Legacy internal arch names kept as accepted inputs for compatibility.
-_ARCH_INPUT_ALIASES = {
-    "a5": NpuArch.DAV_3510,
-    "a2": NpuArch.DAV_2201,
-    "a3": NpuArch.DAV_2201,
-}
-_DEPRECATED_ARCH_INPUTS = {"a5"}
+def parse_arch(value: str) -> NpuArch:
+    """Resolve an arch name: the __NPU_ARCH__ version number ("3510") or a legacy name.
 
-
-def parse_arch(value: NpuArch | int | str) -> NpuArch:
-    """Resolve an arch value: a NpuArch member, its __NPU_ARCH__ number, or a legacy name.
-
-    The legacy name "a5" resolves to DAV_3510 with a DeprecationWarning.
+    Deprecated names emit a DeprecationWarning and resolve to their canonical
+    replacement. Name resolution itself is the bound C++ ParseNPUArch -- the
+    same implementation the C++ codegen entry uses -- so Python and C++ accept
+    the same names.
     """
-    if isinstance(value, NpuArch):
-        return value
-    text = str(value).strip().lower()
-    if text in _DEPRECATED_ARCH_INPUTS:
-        warnings.warn(f"arch {value!r} is deprecated; use arch '3510'", DeprecationWarning, stacklevel=2)
-    if text in _ARCH_INPUT_ALIASES:
-        return _ARCH_INPUT_ALIASES[text]
-    try:
-        return NpuArch(int(text))
-    except ValueError:
-        raise InvalidVal(f"unknown arch {value!r}; expected an __NPU_ARCH__ version such as '3510'") from None
+    text = value.strip().lower()
+    canonical = _DEPRECATED_TO_CANONICAL.get(text)
+    if canonical is not None:
+        warnings.warn(f"arch {value!r} is deprecated; use arch {canonical!r}", DeprecationWarning, stacklevel=2)
+        text = canonical
+    arch = ParseNPUArch(text)
+    if arch == NpuArch.DAV_UNKNOWN:
+        raise InvalidVal(f"unknown arch {value!r}; expected an __NPU_ARCH__ version name such as '3510'")
+    return arch

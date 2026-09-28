@@ -22,10 +22,26 @@ using namespace npu::tile_fwk;
 namespace pypto {
 void BindPlatform(py::module_& m)
 {
+    auto arch_enum = py::enum_<NPUArch>(m, "NpuArch", py::arithmetic());
+    arch_enum.value("DAV_1001", NPUArch::DAV_1001);
+    arch_enum.value("DAV_2201", NPUArch::DAV_2201);
+    arch_enum.value("DAV_3510", NPUArch::DAV_3510);
+    arch_enum.value("DAV_3003", NPUArch::DAV_3003);
+    arch_enum.value("DAV_3113", NPUArch::DAV_3113);
+    arch_enum.value("DAV_UNKNOWN", NPUArch::DAV_UNKNOWN);
+    // str() must yield the canonical __NPU_ARCH__ number ("3510"): the string form crosses
+    // the std::string pybind boundaries (env var, bisheng flags, generated paths).
+    arch_enum.attr("__str__") = py::cpp_function([](NPUArch self) { return std::to_string(static_cast<int>(self)); },
+                                                 py::is_method(arch_enum), py::name("__str__"));
+
     m.def("GetNPUArch", []() -> std::string {
          auto npuArch = Platform::Instance().GetSoc().GetNPUArch();
          return NPUArchToString(npuArch);
      }).def("SetNPUArch", [](const std::string& value) { Platform::Instance().GetSoc().SetNPUArch(value); });
+
+    // Arch input parsing shares the C++ implementation used by the codegen entry
+    // (CCECodegen::GenerateSingle); pypto_pro's parse_arch() is a thin adapter over it.
+    m.def("ParseNPUArch", [](const std::string& arch) { return ParseNPUArch(arch); }, py::arg("arch"));
 
     m.def("GetAICoreNum", []() -> size_t { return Platform::Instance().GetSoc().GetAICoreNum(); });
 
