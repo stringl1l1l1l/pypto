@@ -405,28 +405,6 @@ inline std::string NPUArchToString(NPUArch npu_arch)
     }
 }
 
-// Parse an arch value: the __NPU_ARCH__ version number ("3510", "2201", ...) or a legacy
-// internal name ("a5" -> 3510, "a2"/"a3" -> 2201). Returns DAV_UNKNOWN when nothing matches.
-inline NPUArch ParseNPUArch(const std::string& arch)
-{
-    if (arch == "3510" || arch == "a5") {
-        return NPUArch::DAV_3510;
-    }
-    if (arch == "2201" || arch == "a2" || arch == "a3") {
-        return NPUArch::DAV_2201;
-    }
-    if (arch == "1001") {
-        return NPUArch::DAV_1001;
-    }
-    if (arch == "3003") {
-        return NPUArch::DAV_3003;
-    }
-    if (arch == "3113") {
-        return NPUArch::DAV_3113;
-    }
-    return NPUArch::DAV_UNKNOWN;
-}
-
 inline bool IsLiteNPU(NPUArch arch) { return arch == NPUArch::DAV_3113 || arch == NPUArch::DAV_3003; }
 
 // NPU_ARCH (core architecture) of each standard soc_version, consistent with the NpuArch key
@@ -678,5 +656,5 @@ inline constexpr char kMemorySpaceAcc[] = "Acc";
 // Buffer capacity (bytes) of ``space`` for ``arch``, read from the platform
 // ini shipped with the package. Returns 0 when the arch or space key is not
 // recognized / the ini cannot be found or parsed.
-size_t GetMemoryLimitForArch(const std::string& arch, const std::string& space);
+size_t GetMemoryLimitForArch(NPUArch arch, const std::string& space);
 } // namespace npu::tile_fwk

@@ -55,10 +55,11 @@ def normalize_arch(value: str | NpuArch) -> NpuArch:
 
     Accepts the __NPU_ARCH__ version number ("3510"), NpuArch values, and
     legacy internal names; "a5" emits a DeprecationWarning and resolves
-    to DAV_3510.
+    to DAV_3510. Unregistered NpuArch values collapse to DAV_UNKNOWN,
+    which downstream checks reject.
     """
     if isinstance(value, NpuArch):
-        return value
+        return _ARCH_INPUT_TO_ENUM.get(str(value), NpuArch.DAV_UNKNOWN)
     text = value.strip().lower()
     canonical = _LEGACY_TO_CANONICAL.get(text)
     if canonical is not None:
@@ -173,7 +174,7 @@ def get_memory_limit(arch: NpuArch, memory_space: str) -> int:
     try:
         from pypto import pypto_impl
 
-        return pypto_impl.GetMemoryLimitForArch(str(arch), str(memory_space))
+        return pypto_impl.GetMemoryLimitForArch(arch, str(memory_space))
     except (ImportError, AttributeError, RuntimeError) as e:
         logger.debug("pypto_impl memory-limit query not available: %s", e)
         return 0

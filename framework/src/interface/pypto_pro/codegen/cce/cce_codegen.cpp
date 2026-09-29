@@ -626,15 +626,15 @@ std::vector<ir::FunctionPtr> OrderSimtCallees(const std::map<std::string, ir::Fu
 
 } // namespace
 
-std::string CCECodegen::GenerateSingle(const ir::ProgramPtr& program, const std::string& arch)
+std::string CCECodegen::GenerateSingle(const ir::ProgramPtr& program, npu::tile_fwk::NPUArch arch)
 {
     PRO_CODEGEN_CHECK(npu::tile_fwk::InternalError::CODEGEN_INNER_ERROR, program != nullptr)
         << "Cannot generate code for null program";
 
     ResetFunctionGenerationState();
-    arch_ = npu::tile_fwk::ParseNPUArch(arch);
+    arch_ = arch;
     PRO_CODEGEN_CHECK(ExternalError::INVALID_VAL, arch_ != npu::tile_fwk::NPUArch::DAV_UNKNOWN)
-        << "unknown arch '" << arch << "'";
+        << "unknown arch '" << npu::tile_fwk::NPUArchToString(arch_) << "'";
 
     // Parser-produced Programs always carry the tuple metadata table created at
     // the top-level parse entry. Codegen relies on absence *within* that table to

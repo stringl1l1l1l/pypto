@@ -33,6 +33,12 @@ def test_parse_arch_accepts_enum_values():
     assert normalize_arch(NpuArch.DAV_2201) == NpuArch.DAV_2201
 
 
+def test_parse_arch_collapses_unregistered_enum_values_to_unknown():
+    assert normalize_arch(NpuArch(9999)) == NpuArch.DAV_UNKNOWN
+    assert normalize_arch(NpuArch.DAV_UNKNOWN) == NpuArch.DAV_UNKNOWN
+    assert normalize_arch(NpuArch(3510)) == NpuArch.DAV_3510
+
+
 def test_npuarch_str_is_canonical_form():
     assert str(NpuArch.DAV_3510) == "3510"
     assert f"{NpuArch.DAV_3510}" == "3510"

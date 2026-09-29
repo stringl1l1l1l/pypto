@@ -371,14 +371,13 @@ void Platform::ReloadMemoryPaths(const std::string& archType)
     }
 }
 
-size_t GetMemoryLimitForArch(const std::string& arch, const std::string& space)
+size_t GetMemoryLimitForArch(NPUArch arch, const std::string& space)
 {
-    // Arch (machine-level legacy name kept as pypto_pro API) -> standard soc_version ini.
-    // PyPTO Pro only supports A5 (NPU_ARCH 3510, Ascend950 series).
+    // Compilation arch -> standard soc_version ini. PyPTO Pro only supports 3510 (Ascend950 series).
     static const std::unordered_map<NPUArch, std::string> archToIni = {
         {NPUArch::DAV_3510, "Ascend950PR_9579"},
     };
-    const auto iniIt = archToIni.find(ParseNPUArch(arch));
+    const auto iniIt = archToIni.find(arch);
     if (iniIt == archToIni.end()) {
         return 0;
     }
@@ -398,7 +397,7 @@ size_t GetMemoryLimitForArch(const std::string& arch, const std::string& space)
             return 0;
         }
     } catch (const std::exception& e) {
-        PLATFORM_LOGW("GetMemoryLimitForArch(%s) failed: %s.", arch.c_str(), e.what());
+        PLATFORM_LOGW("GetMemoryLimitForArch(%s) failed: %s.", NPUArchToString(arch).c_str(), e.what());
         return 0;
     }
     return memoryLimit;

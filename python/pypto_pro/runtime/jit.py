@@ -1305,7 +1305,7 @@ def _codegen_target_cce(
     """
     cce_codegen = CCECodegen(target)
     try:
-        cpp_code = cce_codegen.generate_single(prog, str(arch))
+        cpp_code = cce_codegen.generate_single(prog, arch)
     except RuntimeError as exc:
         # A C++ check states its own first line, code and DSL location. Carry it into
         # the class that code names, the way the parse path does, so the location block
