@@ -57,7 +57,7 @@ def write_warp_active_mask(output: pl.Tensor[[3, WARP_SIZE], pl.DT_UINT32]):
         output[2, tid] = pl.simt.warp_active_mask()
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_active_mask(output: pl.Tensor[[3, WARP_SIZE], pl.DT_UINT32]):
     with pl.section_vector():
         write_warp_active_mask[WARP_SIZE](output)
@@ -72,7 +72,7 @@ def write_warp_all(output: pl.Tensor[[2, WARP_SIZE], pl.DT_INT32]):
     output[1, tid] = pl.simt.warp_all(lane < warp_size - 1)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_all(output: pl.Tensor[[2, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_warp_all[WARP_SIZE](output)
@@ -87,7 +87,7 @@ def write_warp_any(output: pl.Tensor[[2, WARP_SIZE], pl.DT_INT32]):
     output[1, tid] = pl.simt.warp_any(lane == warp_size)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_any(output: pl.Tensor[[2, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_warp_any[WARP_SIZE](output)
@@ -102,7 +102,7 @@ def write_warp_ballot(output: pl.Tensor[[2, WARP_SIZE], pl.DT_UINT32]):
     output[1, tid] = pl.simt.warp_ballot(lane < warp_size // 2)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_ballot(output: pl.Tensor[[2, WARP_SIZE], pl.DT_UINT32]):
     with pl.section_vector():
         write_warp_ballot[WARP_SIZE](output)

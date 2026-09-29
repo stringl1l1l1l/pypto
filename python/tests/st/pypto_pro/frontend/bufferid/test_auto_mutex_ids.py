@@ -52,7 +52,7 @@ OVER_32_DEPTH = 33
 OVER_32_FULL_ROWS = OVER_32_ROWS * OVER_32_DEPTH
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_over_32_kernel(
     source: pl.Tensor[[OVER_32_FULL_ROWS, OVER_32_COLS], pl.DT_FP16],
     output: pl.Tensor[[OVER_32_FULL_ROWS, OVER_32_COLS], pl.DT_FP16],
@@ -104,7 +104,7 @@ GUARD_CHAIN_DEPTH = 2
 GUARD_FULL_ROWS = GUARD_ROWS * (GUARD_MANUAL_DEPTH + GUARD_CHAIN_DEPTH)
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_and_manual_guard_paths_kernel(
     source: pl.Tensor[[GUARD_FULL_ROWS, GUARD_COLS], pl.DT_FP16],
     output: pl.Tensor[[GUARD_FULL_ROWS, GUARD_COLS], pl.DT_FP16],
@@ -171,7 +171,7 @@ IF_MERGE_MANUAL_IDS = (25, 26)
 IF_MERGE_FULL_ROWS = IF_MERGE_ROWS * IF_MERGE_DEPTH
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_if_merge_manual_candidates_kernel(
     source: pl.Tensor[[IF_MERGE_FULL_ROWS, IF_MERGE_COLS], pl.DT_FP16],
     output: pl.Tensor[[IF_MERGE_FULL_ROWS, IF_MERGE_COLS], pl.DT_FP16],
@@ -238,7 +238,7 @@ ALIAS_TILES = 6
 ALIAS_FULL_ROWS = ALIAS_ROWS * ALIAS_TILES
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_partial_alias_matching_manual_id_kernel(
     source: pl.Tensor[[ALIAS_FULL_ROWS, ALIAS_COLS], pl.DT_FP16],
     output: pl.Tensor[[ALIAS_FULL_ROWS, ALIAS_COLS], pl.DT_FP16],
@@ -319,7 +319,7 @@ TRIPLE_TILES = 10
 TRIPLE_FULL_ROWS = TRIPLE_ROWS * TRIPLE_TILES
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_three_groups_partial_vec_overlap_kernel(
     source: pl.Tensor[[TRIPLE_FULL_ROWS, TRIPLE_COLS], pl.DT_FP16],
     output: pl.Tensor[[TRIPLE_FULL_ROWS, TRIPLE_COLS], pl.DT_FP16],
@@ -384,7 +384,7 @@ NONCONTIG_TILES = NONCONTIG_DEPTH * 2
 NONCONTIG_FULL_ROWS = NONCONTIG_ROWS * NONCONTIG_TILES
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_noncontiguous_over_32_kernel(
     source: pl.Tensor[[NONCONTIG_FULL_ROWS, NONCONTIG_COLS], pl.DT_FP16],
     output: pl.Tensor[[NONCONTIG_FULL_ROWS, NONCONTIG_COLS], pl.DT_FP16],
@@ -450,7 +450,7 @@ def _make_nested_auto_group(tile_type, base_addr):
     return _make_nested_auto_group_leaf(tile_type, base_addr)
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_nested_helper_permuted_slots_kernel(
     lhs: pl.Tensor[[NESTED_FULL_ROWS, NESTED_COLS], pl.DT_FP16],
     rhs: pl.Tensor[[NESTED_FULL_ROWS, NESTED_COLS], pl.DT_FP16],
@@ -520,7 +520,7 @@ def _make_compile_time_branch_group(tile_type, base_addr, use_primary):
     return group
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_helper_compile_time_branches_kernel(
     source: pl.Tensor[[BRANCH_FULL_ROWS, BRANCH_COLS], pl.DT_FP16],
     output: pl.Tensor[[BRANCH_FULL_ROWS, BRANCH_COLS], pl.DT_FP16],
@@ -567,7 +567,7 @@ CV_N = 64
 CV_VEC_ROWS = 32
 
 
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def auto_cube_vector_kernel(
     a: pl.Tensor[[CV_M, CV_N], pl.DT_FP32],
     b: pl.Tensor[[CV_M, CV_K], pl.DT_FP16],

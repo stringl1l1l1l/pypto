@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from pypto_pro._errors import CommonInner, InvalidArgument, InvalidOperation, InvalidType
 import pypto_pro.language as pl
 from pypto_pro.language.parser._ast_parser import ASTParser
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 from pypto.pypto_impl import ir
@@ -107,7 +108,7 @@ def test_jit_parses_each_target_once_when_auto_is_present(monkeypatch):
         lambda program, arch, build_dir, *, target, **kwargs: SimpleNamespace(target=target, sanitizer=False),
     )
 
-    cube, vector = jit_runtime._parse_and_codegen_targets(kernel_def, "a5", "")
+    cube, vector = jit_runtime._parse_and_codegen_targets(kernel_def, NpuArch.DAV_3510, "")
 
     assert kernel_def.parse_targets == [ir.SectionKind.Cube, ir.SectionKind.Vector]
     assert cube.target == ir.SectionKind.Cube
@@ -126,7 +127,7 @@ def test_jit_skips_mutex_id_resolution_without_auto_tile_group(monkeypatch):
         lambda program, arch, build_dir, *, target, **kwargs: SimpleNamespace(target=target, sanitizer=False),
     )
 
-    cube, vector = jit_runtime._parse_and_codegen_targets(_kernel_def(k), "a5", "")
+    cube, vector = jit_runtime._parse_and_codegen_targets(_kernel_def(k), NpuArch.DAV_3510, "")
 
     assert cube.target == ir.SectionKind.Cube
     assert vector.target == ir.SectionKind.Vector
@@ -144,7 +145,7 @@ def test_jit_preserves_different_manual_ids_in_manual_only_alias_component(monke
         lambda program, arch, build_dir, *, target, **kwargs: SimpleNamespace(target=target, sanitizer=False),
     )
 
-    cube, vector = jit_runtime._parse_and_codegen_targets(_kernel_def(k), "a5", "")
+    cube, vector = jit_runtime._parse_and_codegen_targets(_kernel_def(k), NpuArch.DAV_3510, "")
 
     assert cube.target == ir.SectionKind.Cube
     assert vector.target == ir.SectionKind.Vector
@@ -164,7 +165,7 @@ def test_jit_rejects_multi_id_manual_tile_in_alias_component(monkeypatch):
     )
 
     with pytest.raises(InvalidArgument, match="must have exactly one manual mutex ID"):
-        jit_runtime._parse_and_codegen_targets(_kernel_def(k), "a5", "")
+        jit_runtime._parse_and_codegen_targets(_kernel_def(k), NpuArch.DAV_3510, "")
 
 
 def test_jit_rejects_crossing_addresses_in_auto_alias_component():

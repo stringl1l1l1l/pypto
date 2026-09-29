@@ -60,7 +60,7 @@ def write_warp_shfl(
     output[0, tid] = pl.simt.warp_shfl(values[0, tid], SOURCE_LANE, subgroup_width)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -80,7 +80,7 @@ def write_warp_shfl_down(
     output[0, tid] = pl.simt.warp_shfl_down(values[0, tid], DELTA, subgroup_width)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl_down(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -100,7 +100,7 @@ def write_warp_shfl_up(
     output[0, tid] = pl.simt.warp_shfl_up(values[0, tid], DELTA, subgroup_width)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl_up(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -120,7 +120,7 @@ def write_warp_shfl_xor(
     output[0, tid] = pl.simt.warp_shfl_xor(values[0, tid], LANE_MASK, subgroup_width)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl_xor(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -139,7 +139,7 @@ def write_warp_shfl_bf16(
     output[0, tid] = pl.simt.warp_shfl(values[0, tid], src_lane, SUBGROUP_WIDTH)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl_bf16(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_BF16],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_BF16],
@@ -157,7 +157,7 @@ def write_warp_shfl_xor_fp16(
     output[0, tid] = pl.simt.warp_shfl_xor(values[0, tid], LANE_MASK, SUBGROUP_WIDTH)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl_xor_fp16(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP16],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP16],
@@ -175,7 +175,7 @@ def write_warp_shfl_down_int64(
     output[0, tid] = pl.simt.warp_shfl_down(values[0, tid], DELTA)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl_down_int64(
     values: pl.Tensor[[1, TWO_WARPS], pl.DT_INT64],
     output: pl.Tensor[[1, TWO_WARPS], pl.DT_INT64],
@@ -193,7 +193,7 @@ def write_warp_shfl_down_uint64(
     output[0, tid] = pl.simt.warp_shfl_down(values[0, tid], DELTA)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_shfl_down_uint64(
     values: pl.Tensor[[1, TWO_WARPS], pl.DT_UINT64],
     output: pl.Tensor[[1, TWO_WARPS], pl.DT_UINT64],

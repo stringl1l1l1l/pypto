@@ -49,7 +49,7 @@ def write_lane_id(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output[0, tid] = pl.simt.lane_id()
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_lane_id(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_lane_id[WARP_SIZE](output)
@@ -61,7 +61,7 @@ def write_lanemask_eq(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output[0, tid] = pl.simt.lanemask_eq()
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_lanemask_eq(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_lanemask_eq[WARP_SIZE](output)
@@ -73,7 +73,7 @@ def write_lanemask_ge(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output[0, tid] = pl.simt.lanemask_ge()
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_lanemask_ge(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_lanemask_ge[WARP_SIZE](output)
@@ -85,7 +85,7 @@ def write_lanemask_gt(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output[0, tid] = pl.simt.lanemask_gt()
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_lanemask_gt(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_lanemask_gt[WARP_SIZE](output)
@@ -97,7 +97,7 @@ def write_lanemask_le(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output[0, tid] = pl.simt.lanemask_le()
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_lanemask_le(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_lanemask_le[WARP_SIZE](output)
@@ -109,7 +109,7 @@ def write_lanemask_lt(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output[0, tid] = pl.simt.lanemask_lt()
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_lanemask_lt(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     with pl.section_vector():
         write_lanemask_lt[WARP_SIZE](output)

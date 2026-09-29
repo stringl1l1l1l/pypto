@@ -49,7 +49,7 @@ def write_warp_reduce_add(
     output[0, tid] = pl.simt.warp_reduce_add(values[0, tid])
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_reduce_add(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -67,7 +67,7 @@ def write_warp_reduce_max(
     output[0, tid] = pl.simt.warp_reduce_max(values[0, tid])
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_reduce_max(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -85,7 +85,7 @@ def write_warp_reduce_min(
     output[0, tid] = pl.simt.warp_reduce_min(values[0, tid])
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_reduce_min(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -113,7 +113,7 @@ def write_warp_reduce_fp16_divergent(
         output[2, tid] = pl.simt.warp_reduce_min(doubled)
 
 
-@pl.jit(arch="a5")
+@pl.jit(arch="3510")
 def simt_warp_reduce_fp16_divergent(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP16],
     output: pl.Tensor[[3, WARP_SIZE], pl.DT_FP16],

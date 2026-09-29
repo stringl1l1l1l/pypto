@@ -19,6 +19,7 @@ so a non-innermost column axis would quietly transfer the wrong elements.
 
 from pypto_pro._errors import InvalidArgument, InvalidFormat, InvalidShape, InvalidType
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 B, S, N, G, D = 1, 64, 3, 2, 128
@@ -31,7 +32,7 @@ def _codegen(kernel):
     from pypto_pro.runtime.kernel import KernelDef
 
     kernel_def = kernel if isinstance(kernel, KernelDef) else kernel.to_kernel_def()
-    cube, vector = _parse_and_codegen_targets(kernel_def, "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel_def, NpuArch.DAV_3510, "")
     return _assemble_cv_source(cube, vector).content
 
 
