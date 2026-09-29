@@ -128,8 +128,8 @@ std::string MakeSimtWarpCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& 
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << op->name_ << " reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << op->name_ << " currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << op->name_ << " currently requires arch='3510'";
     PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == operand_count)
         << op->name_ << " requires exactly " << operand_count << " operand(s)";
 

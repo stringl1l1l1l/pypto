@@ -484,7 +484,7 @@ ir::ProgramPtr MakeSimtAtomicOpsProgram()
 TEST(CCESimtCodegenTest, GeneratesContextCalleesMemoryAccessAndLaunch)
 {
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeSimtProgram(), "a5");
+    std::string generated = codegen.GenerateSingle(MakeSimtProgram(), npu::tile_fwk::NPUArch::DAV_3510);
 
     auto add_pos = generated.find("__simt_callee__ inline float add_scalar(");
     auto store_pos = generated.find("__simt_callee__ inline void store_scalar(");
@@ -545,16 +545,19 @@ TEST(CCESimtCodegenTest, GeneratesContextCalleesMemoryAccessAndLaunch)
 TEST(CCESimtCodegenTest, RejectsUnsupportedTargetAndArchitecture)
 {
     CCECodegen cube_codegen(ir::SectionKind::Cube);
-    EXPECT_THROW((void)cube_codegen.GenerateSingle(MakeSimtProgram(), "a5"), npu::tile_fwk::Error);
+    EXPECT_THROW((void)cube_codegen.GenerateSingle(MakeSimtProgram(), npu::tile_fwk::NPUArch::DAV_3510),
+                 npu::tile_fwk::Error);
 
     CCECodegen vector_codegen(ir::SectionKind::Vector);
-    EXPECT_THROW((void)vector_codegen.GenerateSingle(MakeSimtProgram(), "a3"), npu::tile_fwk::Error);
+    EXPECT_THROW((void)vector_codegen.GenerateSingle(MakeSimtProgram(), npu::tile_fwk::NPUArch::DAV_2201),
+                 npu::tile_fwk::Error);
 }
 
 TEST(CCESimtCodegenTest, DoesNotInterceptOrdinaryKernelCallsWithMatchingCalleeName)
 {
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeSimtCalleeNameCollisionProgram(), "a5");
+    std::string generated = codegen.GenerateSingle(MakeSimtCalleeNameCollisionProgram(),
+                                                   npu::tile_fwk::NPUArch::DAV_3510);
 
     auto entry_pos = generated.find("__simt_vf__ __launch_bounds__(32) inline void collision_entry(");
     auto kernel_pos = generated.find("__aicore__ inline void kernel_impl_vector(");
@@ -570,7 +573,7 @@ TEST(CCESimtCodegenTest, DoesNotInterceptOrdinaryKernelCallsWithMatchingCalleeNa
 TEST(CCESimtCodegenTest, GeneratesRegisteredSynchronizationScalarCastAndMathOperations)
 {
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeSimtScalarOpsProgram(), "a5");
+    std::string generated = codegen.GenerateSingle(MakeSimtScalarOpsProgram(), npu::tile_fwk::NPUArch::DAV_3510);
 
     const std::vector<std::string> scalar_intrinsics = {
         "__sync_workitems();",
@@ -643,7 +646,7 @@ TEST(CCESimtCodegenTest, GeneratesRegisteredSynchronizationScalarCastAndMathOper
 TEST(CCESimtCodegenTest, GeneratesRegisteredWarpOperations)
 {
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeSimtWarpOpsProgram(), "a5");
+    std::string generated = codegen.GenerateSingle(MakeSimtWarpOpsProgram(), npu::tile_fwk::NPUArch::DAV_3510);
 
     const std::vector<std::string> warp_intrinsics = {
         "laneid()",       "lanemask_eq()", "lanemask_le()", "lanemask_lt()", "lanemask_ge()", "lanemask_gt()",
@@ -665,7 +668,7 @@ TEST(CCESimtCodegenTest, GeneratesRegisteredWarpOperations)
 TEST(CCESimtCodegenTest, GeneratesRegisteredAtomicOperationsForTileAndTensor)
 {
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeSimtAtomicOpsProgram(), "a5");
+    std::string generated = codegen.GenerateSingle(MakeSimtAtomicOpsProgram(), npu::tile_fwk::NPUArch::DAV_3510);
 
     for (const auto& intrinsic : {"atomicAdd(", "atomicSub(", "atomicExch(", "atomicMax(", "atomicMin(", "atomicInc(",
                                   "atomicDec(", "atomicCAS(", "atomicAnd(", "atomicOr(", "atomicXOr("}) {

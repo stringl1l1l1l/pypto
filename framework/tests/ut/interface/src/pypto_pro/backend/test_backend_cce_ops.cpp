@@ -171,7 +171,7 @@ TEST(BackendCceOpsTest, GetBlockIdx)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Cube);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("(int64_t)(get_block_idx())"), std::string::npos);
 }
 
@@ -196,7 +196,7 @@ TEST(BackendCceOpsTest, GetBlockNum)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("(int64_t)(get_block_num())"), std::string::npos);
 }
 
@@ -221,7 +221,7 @@ TEST(BackendCceOpsTest, GetSubBlockIdx)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("(int64_t)(get_subblockid())"), std::string::npos);
 }
 
@@ -250,7 +250,7 @@ TEST(BackendCceOpsTest, DebugTrap)
 
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("trap();"), std::string::npos);
 }
 
@@ -264,7 +264,7 @@ TEST(BackendCceOpsTest, BarM)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("pipe_barrier(PIPE_M);"), std::string::npos);
 }
 
@@ -295,7 +295,7 @@ TEST(BackendCceOpsTest, BarAll)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("pipe_barrier(PIPE_ALL);"), std::string::npos);
 }
 
@@ -310,7 +310,7 @@ TEST(BackendCceOpsTest, SetMaskCount)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("set_mask_count();"), std::string::npos);
 }
 
@@ -321,7 +321,7 @@ TEST(BackendCceOpsTest, SetMaskNorm)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("set_mask_norm();"), std::string::npos);
 }
 
@@ -331,7 +331,7 @@ TEST(BackendCceOpsTest, ResetMask)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("set_vector_mask(static_cast<uint64_t>(-1), static_cast<uint64_t>(-1));"),
               std::string::npos);
 }
@@ -343,7 +343,7 @@ TEST(BackendCceOpsTest, SetVecMask)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("set_vector_mask(255, 128);"), std::string::npos);
 }
 
@@ -359,7 +359,7 @@ TEST(BackendCceOpsTest, SyncSrc)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("set_flag(PIPE_V, PIPE_S, (event_t)3);"), std::string::npos);
 }
 
@@ -371,7 +371,7 @@ TEST(BackendCceOpsTest, SyncDst)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("wait_flag(PIPE_V, PIPE_S, (event_t)3);"), std::string::npos);
 }
 
@@ -405,7 +405,7 @@ TEST(BackendCceOpsTest, SyncSrcDyn)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {event_id}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {event_id}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("set_flag(PIPE_M, PIPE_V, (event_t)event_id);"), std::string::npos);
 }
 
@@ -418,7 +418,7 @@ TEST(BackendCceOpsTest, SyncDstDyn)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {event_id}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {event_id}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("wait_flag(PIPE_M, PIPE_V, (event_t)event_id);"), std::string::npos);
 }
 
@@ -434,7 +434,7 @@ TEST(BackendCceOpsTest, SetCrossCoreA3)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("ffts_cross_core_sync(PIPE_V, getFFTSMsg(0, 2));"), std::string::npos);
 }
 
@@ -446,7 +446,7 @@ TEST(BackendCceOpsTest, WaitCrossCoreA3)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("wait_flag_dev(2);"), std::string::npos);
 }
 
@@ -458,7 +458,7 @@ TEST(BackendCceOpsTest, SetCrossCoreDynA3)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("ffts_cross_core_sync(PIPE_V, getFFTSMsg(0, 7));"), std::string::npos);
 }
 
@@ -470,7 +470,7 @@ TEST(BackendCceOpsTest, WaitCrossCoreDynA3)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("wait_flag_dev(7);"), std::string::npos);
 }
 
@@ -486,7 +486,7 @@ TEST(BackendCceOpsTest, SetCrossCoreA5InterBlock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("ffts_cross_core_sync(PIPE_V, getFFTSMsg(0, 2));"), std::string::npos);
 }
 
@@ -498,7 +498,7 @@ TEST(BackendCceOpsTest, WaitCrossCoreA5InterBlock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("wait_flag_dev(PIPE_V, 2);"), std::string::npos);
 }
 
@@ -514,7 +514,7 @@ TEST(BackendCceOpsTest, SetCrossCoreA5IntraBlock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("set_intra_block(PIPE_V, 3);"), std::string::npos);
 }
 
@@ -526,7 +526,7 @@ TEST(BackendCceOpsTest, WaitCrossCoreA5IntraBlock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("wait_intra_block(PIPE_V, 3);"), std::string::npos);
 }
 
@@ -538,7 +538,7 @@ TEST(BackendCceOpsTest, SetCrossCoreDynA5IntraBlock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("set_intra_block(PIPE_V, 8);"), std::string::npos);
 }
 
@@ -550,7 +550,7 @@ TEST(BackendCceOpsTest, WaitCrossCoreDynA5IntraBlock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("wait_intra_block(PIPE_V, 8);"), std::string::npos);
 }
 
@@ -567,7 +567,7 @@ TEST(BackendCceOpsTest, CubeCrossCoreA5IntraBlockSignalsBothVectorSubcores)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Cube);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("set_intra_block(PIPE_V, 3);"), std::string::npos);
     EXPECT_NE(generated.find("set_intra_block(PIPE_V, 19);"), std::string::npos);
     EXPECT_NE(generated.find("wait_intra_block(PIPE_V, 3);"), std::string::npos);
@@ -588,7 +588,7 @@ TEST(BackendCceOpsTest, CubeCrossCoreDynamicA5IntraBlockSignalsBothVectorSubcore
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Cube);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {event_id}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {event_id}), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("set_intra_block(PIPE_V, event_id);"), std::string::npos);
     EXPECT_NE(generated.find("set_intra_block(PIPE_V, event_id + 16);"), std::string::npos);
     EXPECT_NE(generated.find("wait_intra_block(PIPE_V, event_id);"), std::string::npos);
@@ -605,7 +605,7 @@ TEST(BackendCceOpsTest, MutexLock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("get_buf(PIPE_S, 1, 0);"), std::string::npos);
 }
 
@@ -615,7 +615,7 @@ TEST(BackendCceOpsTest, MutexUnlock)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("rls_buf(PIPE_S, 1, 0);"), std::string::npos);
 }
 
@@ -625,7 +625,7 @@ TEST(BackendCceOpsTest, MutexLockDyn)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("get_buf(PIPE_S, 2, 0);"), std::string::npos);
 }
 
@@ -635,7 +635,7 @@ TEST(BackendCceOpsTest, MutexUnlockDyn)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("rls_buf(PIPE_S, 2, 0);"), std::string::npos);
 }
 
@@ -649,7 +649,7 @@ TEST(BackendCceOpsTest, VMutexWithoutCandidateIdsIsNotSkipped)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("get_buf(PIPE_V, 6, 0);"), std::string::npos);
     EXPECT_NE(generated.find("rls_buf(PIPE_V, 7, 0);"), std::string::npos);
 }
@@ -660,7 +660,7 @@ TEST(BackendCceOpsTest, AutoVMutexIsSkippedWhenAllCandidatesAreVOnly)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_EQ(generated.find("get_buf(PIPE_V, 6, 0);"), std::string::npos);
 }
 
@@ -675,7 +675,7 @@ TEST(BackendCceOpsTest, AutoVMutexUsesTheWholeCandidateSetBeforeSkipping)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("get_buf(PIPE_V, dynamic_id, 0);"), std::string::npos);
     EXPECT_NE(generated.find("get_buf(PIPE_MTE2, 7, 0);"), std::string::npos);
 }
@@ -690,7 +690,7 @@ TEST(BackendCceOpsTest, StaticVMutexConservativelyKeepsBroadCandidates)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("get_buf(PIPE_V, 6, 0);"), std::string::npos);
     EXPECT_NE(generated.find("get_buf(PIPE_MTE2, 7, 0);"), std::string::npos);
 }
@@ -705,7 +705,7 @@ TEST(BackendCceOpsTest, ManualConstantMutexDoesNotAffectAutoVMutexSkipForSameId)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_EQ(generated.find("get_buf(PIPE_V, 6, 0);"), std::string::npos);
     EXPECT_NE(generated.find("get_buf(PIPE_MTE2, 6, 0);"), std::string::npos);
 }
@@ -720,7 +720,7 @@ TEST(BackendCceOpsTest, ManualConstantMutexOnAnotherPipeDoesNotBlockAutoVMutexSk
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_EQ(generated.find("get_buf(PIPE_V, 6, 0);"), std::string::npos);
     EXPECT_NE(generated.find("get_buf(PIPE_MTE2, 7, 0);"), std::string::npos);
 }
@@ -736,7 +736,7 @@ TEST(BackendCceOpsTest, ManualDynamicMutexDoesNotGloballyDisableAutoVMutexSkip)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_EQ(generated.find("get_buf(PIPE_V, 6, 0);"), std::string::npos);
     EXPECT_NE(generated.find("get_buf(PIPE_MTE2, manual_id, 0);"), std::string::npos);
 }
@@ -755,7 +755,7 @@ TEST(BackendCceOpsTest, MutexDynDedupSkipsRepeatedDynamicExpression)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {id0, id1}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {id0, id1}), npu::tile_fwk::NPUArch::DAV_3510);
     const std::string acquire_id0 = "get_buf(PIPE_S, id0, 0);";
     const std::string acquire_id1 = "get_buf(PIPE_S, id1, 0);";
     const std::string release_id0 = "rls_buf(PIPE_S, id0, 0);";
@@ -783,7 +783,7 @@ TEST(BackendCceOpsTest, MutexDynFoldsConstantDedup)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     const std::string acquire7 = "get_buf(PIPE_S, 7, 0);";
     const std::string release7 = "rls_buf(PIPE_S, 7, 0);";
     auto first_acquire7 = generated.find(acquire7);
@@ -805,7 +805,7 @@ TEST(BackendCceOpsTest, MutexDynKeepsOnlyDynamicGuardTerms)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("if ((dynamic_id != 5)) {"), std::string::npos);
     EXPECT_NE(generated.find("if ((7 != dynamic_id)) {"), std::string::npos);
     EXPECT_EQ(generated.find("7 != 5"), std::string::npos);
@@ -820,7 +820,7 @@ TEST(BackendCceOpsTest, MutexDynStaticIdsOverrideBroadCandidates)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {dynamic_id}), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("get_buf(PIPE_S, 5, 0);"), std::string::npos);
     EXPECT_NE(generated.find("get_buf(PIPE_S, dynamic_id, 0);"), std::string::npos);
     EXPECT_EQ(generated.find("dynamic_id != 5"), std::string::npos);
@@ -835,7 +835,8 @@ TEST(BackendCceOpsTest, MutexDynUsesPerIdCandidatesInMixedTile)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {prior_id, current_id}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {prior_id, current_id}),
+                                            npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("get_buf(PIPE_S, 0, 0);"), std::string::npos);
     EXPECT_NE(generated.find("if ((current_id != prior_id)) {"), std::string::npos);
     EXPECT_EQ(generated.find("0 != prior_id"), std::string::npos);
@@ -856,7 +857,8 @@ TEST(BackendCceOpsTest, MutexDynGuardPairsSkipDedupWithinOneTile)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {output0, output1, source}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {output0, output1, source}),
+                                            npu::tile_fwk::NPUArch::DAV_3510);
     const std::string same_tile_guard = "if ((output1 != output0)) {";
     const std::string cross_tile_guard = "if ((source != output0) && (source != output1)) {";
     auto acquire_output0 = generated.find("get_buf(PIPE_S, output0, 0);");
@@ -886,7 +888,7 @@ TEST(BackendCceOpsTest, MutexDynDisjointCandidateGroupsEmitWithoutIf)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {id0, id1}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {id0, id1}), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("get_buf(PIPE_S, id0, 0);"), std::string::npos);
     EXPECT_NE(generated.find("get_buf(PIPE_S, id1, 0);"), std::string::npos);
     EXPECT_EQ(generated.find("if ((id1 != id0)) {"), std::string::npos);
@@ -902,7 +904,8 @@ TEST(BackendCceOpsTest, MutexDynChecksOnlyOverlappingCandidateGroups)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {output0, output1, source}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {output0, output1, source}),
+                                            npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("if ((source != output0)) {"), std::string::npos);
     EXPECT_EQ(generated.find("source != output1"), std::string::npos);
 }
@@ -919,7 +922,7 @@ TEST(BackendCceOpsTest, SetMmLayoutTransformEnabled)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("set_ctrl(sbitset1(get_ctrl(), 51));"), std::string::npos);
 }
 
@@ -931,7 +934,7 @@ TEST(BackendCceOpsTest, SetMmLayoutTransformDisabled)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("set_ctrl(sbitset0(get_ctrl(), 51));"), std::string::npos);
 }
 
@@ -949,7 +952,7 @@ TEST(BackendCceOpsTest, PtrAddPtr)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {ptr_var}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {ptr_var}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("+ 10)"), std::string::npos);
 }
 
@@ -963,7 +966,7 @@ TEST(BackendCceOpsTest, PtrMakePtr)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {ptr_var}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {ptr_var}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("__gm__ float*"), std::string::npos);
 }
 
@@ -1035,7 +1038,7 @@ TEST(BackendCceOpsTest, BlockMakeTileAndSetValTile)
                                                      ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find(".SetValue(5, 42);"), std::string::npos);
 }
 
@@ -1057,7 +1060,7 @@ TEST(BackendCceOpsTest, BlockGetValTile)
                                                      ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("(int64_t)(tile.GetValue(3))"), std::string::npos);
 }
 
@@ -1075,7 +1078,7 @@ TEST(BackendCceOpsTest, BlockGetValTensor)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("*((__gm__ float*)"), std::string::npos);
     EXPECT_NE(generated.find("+ 5)"), std::string::npos);
 }
@@ -1090,7 +1093,7 @@ TEST(BackendCceOpsTest, BlockGetValTensorInt32CastsResult)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("(int64_t)(*((__gm__ int32_t*)"), std::string::npos);
 }
 
@@ -1104,7 +1107,7 @@ TEST(BackendCceOpsTest, BlockGetValTensorUint64DoesNotCastResult)
     auto body = std::make_shared<const ir::AssignStmt>(result, call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("*((__gm__ uint64_t*)"), std::string::npos);
     EXPECT_EQ(generated.find("(uint64_t)(*((__gm__ uint64_t*)"), std::string::npos);
 }
@@ -1117,7 +1120,7 @@ TEST(BackendCceOpsTest, BlockSetValTensor)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("*((__gm__ float*)"), std::string::npos);
     EXPECT_NE(generated.find("+ 5) = 42;"), std::string::npos);
 }
@@ -1259,7 +1262,7 @@ TEST(BackendCceOpsTest, SyncAllHardMix)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("SYNCALL<SyncCoreType::Mix>();"), std::string::npos);
 }
 
@@ -1271,7 +1274,7 @@ TEST(BackendCceOpsTest, SyncAllHardAIVOnly)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("SYNCALL<SyncCoreType::AIVOnly>();"), std::string::npos);
 }
 
@@ -1286,7 +1289,7 @@ TEST(BackendCceOpsTest, DcciTensorDefaultKwargs)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("dcci("), std::string::npos);
     EXPECT_NE(generated.find("ENTIRE_DATA_CACHE"), std::string::npos);
     EXPECT_NE(generated.find("CACHELINE_OUT"), std::string::npos);
@@ -1301,7 +1304,7 @@ TEST(BackendCceOpsTest, DcciTensorWithOffsetAndKwargs)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("dcci("), std::string::npos);
     EXPECT_NE(generated.find("SINGLE_CACHE_LINE"), std::string::npos);
     EXPECT_NE(generated.find("CACHELINE_UB"), std::string::npos);
@@ -1338,7 +1341,7 @@ TEST(BackendCceOpsTest, DcciTileDefaultKwargs)
                                                      ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("dcci("), std::string::npos);
     EXPECT_NE(generated.find("__ubuf__ void*"), std::string::npos);
     EXPECT_NE(generated.find("ENTIRE_DATA_CACHE"), std::string::npos);
@@ -1637,7 +1640,7 @@ TEST(BackendCceOpsTest, DebugPrintf)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("pypto_printf"), std::string::npos);
 }
 
@@ -1649,7 +1652,7 @@ TEST(BackendCceOpsTest, DebugAssert)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("if (!("), std::string::npos);
     EXPECT_NE(generated.find("kernel.py"), std::string::npos);
     EXPECT_NE(generated.find("Assertion failed: x > 0"), std::string::npos);
@@ -1663,7 +1666,7 @@ TEST(BackendCceOpsTest, DebugAssertWithFormatAndArgs)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("if (!("), std::string::npos);
     EXPECT_NE(generated.find("pypto_printf"), std::string::npos);
 }
@@ -1676,7 +1679,7 @@ TEST(BackendCceOpsTest, DebugAssertWithTextOnlyFormat)
     auto body = std::make_shared<const ir::EvalStmt>(call, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(generated.find("pypto_printf(\"flag is false\\n\")"), std::string::npos);
 }
 
