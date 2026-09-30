@@ -25,6 +25,7 @@ from pypto_pro.runtime.opc.pypto_compile import (
     prepare_binary_headers,
     pypto_compile_op,
 )
+from pypto_pro.runtime.platform import NpuArch
 from pypto_pro.runtime.tilingkey import TilingKeyField
 import pytest
 
@@ -75,8 +76,8 @@ def test_generate_binary_headers_emits_only_tiling_headers(monkeypatch, tmp_path
         "_codegen",
         lambda *args, **kwargs: pytest.fail("generate_binary_headers must not run full codegen"),
     )
-    binary_dir = Path(generate_binary_headers(header_generation_kernel, "a5"))
-    assert os.environ["PYPTOPRO_JIT_ARCH"] == "a5"
+    binary_dir = Path(generate_binary_headers(header_generation_kernel, "3510"))
+    assert os.environ["PYPTOPRO_JIT_ARCH"] == "3510"
     assert binary_dir.is_dir(), f"binary dir not created: {binary_dir}"
 
     tiling_header = binary_dir / "HeaderTiling_tiling.h"
@@ -103,7 +104,7 @@ def test_prepare_binary_headers_loads_the_kernel_file(monkeypatch, tmp_path):
 
     binary_dir = Path(prepare_binary_headers(__file__))
 
-    assert os.environ["PYPTOPRO_JIT_ARCH"] == "a5"
+    assert os.environ["PYPTOPRO_JIT_ARCH"] == "3510"
     assert (binary_dir / "HeaderTiling_tiling.h").is_file()
     assert (binary_dir / "HeaderTilingKey_tilingkey.h").is_file()
     assert not list(binary_dir.glob("*_pypto_infer.cpp"))
@@ -122,9 +123,9 @@ def test_pypto_compile_op_sets_up_explicit_arch(monkeypatch):
     monkeypatch.setattr(compile_module, "_setup_options", stop_after_arch_setup)
 
     with pytest.raises(RuntimeError, match="stop after arch setup"):
-        pypto_compile_op("unused.py", "kernel", {"kernel_name": "kernel"}, arch="a5")
+        pypto_compile_op("unused.py", "kernel", {"kernel_name": "kernel"}, arch="3510")
 
-    assert received_arch == ["a5"]
+    assert received_arch == [NpuArch.DAV_3510]
 
 
 @pytest.mark.parametrize("kernel_count", [0, 2])

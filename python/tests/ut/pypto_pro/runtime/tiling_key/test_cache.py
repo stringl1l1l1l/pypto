@@ -37,7 +37,7 @@ def _compiled_cache(kernel):
     return getattr(kernel, "_compiled_by_signature")
 
 
-@pl.jit(arch="a5", auto_mutex=True, tiling_key=TkPermutation)
+@pl.jit(arch="3510", auto_mutex=True, tiling_key=TkPermutation)
 def kernel_permutation(
     x: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
     y: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],

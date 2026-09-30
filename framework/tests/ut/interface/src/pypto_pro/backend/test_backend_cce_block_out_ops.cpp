@@ -157,7 +157,7 @@ std::string RunSsbufCodegen(const std::string& op_name)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    return codegen.GenerateSingle(MakeProgram(body, {}, debug_info), "a5");
+    return codegen.GenerateSingle(MakeProgram(body, {}, debug_info), npu::tile_fwk::NPUArch::DAV_3510);
 }
 
 // A `tile = block.make_tile()` statement, which is what declares *tile* in the generated code.
@@ -174,7 +174,7 @@ std::string GenerateKernel(const std::vector<ir::StmtPtr>& stmts, const std::vec
 {
     auto body = std::make_shared<const ir::SeqStmts>(stmts, ir::Span::Unknown());
     codegen::CCECodegen codegen(section);
-    return codegen.GenerateSingle(MakeProgram(body, params), "a5");
+    return codegen.GenerateSingle(MakeProgram(body, params), npu::tile_fwk::NPUArch::DAV_3510);
 }
 
 // One MX scale load, run through full codegen: declare *tile*, then load it from tensor *scale*.
@@ -983,7 +983,7 @@ TEST(BackendCCEBlockOutOps, GeneratesLoadAndStoreThroughFullCodegen)
         ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {tensor}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_CONTAINS(generated, "TASSIGN(tensor, tensor_ptr + ");
     EXPECT_CONTAINS(generated, "TLOAD(tile");
@@ -1654,7 +1654,7 @@ TEST(BackendCCEBlockOutOps, GeneratesStructCreateThroughAssignStmt)
     auto body = std::make_shared<const ir::AssignStmt>(result, create, ir::Span::Unknown());
 
     codegen::CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_CONTAINS(generated, "class MyStruct");
     EXPECT_CONTAINS(generated, "MyStruct result = {");

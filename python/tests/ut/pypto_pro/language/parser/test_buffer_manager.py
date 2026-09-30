@@ -219,7 +219,7 @@ def test_auto_mutex_single_tile():
 
 
 def test_auto_mutex_locks_scale_kwarg_tile(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "a5")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
 
     @pl.jit(auto_mutex=True)
     def k(out: pl.Tensor[[64, 64], pl.DT_INT8]):

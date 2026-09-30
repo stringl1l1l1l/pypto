@@ -56,7 +56,7 @@ def atomic_add_loaded_gm_value(
     pl.simt.atomic_add(target[0, 0], value_tensor[0, 0])
 
 
-@pl.jit(auto_mutex=True, arch="a5")
+@pl.jit(auto_mutex=True, arch="3510")
 def simt_atomic_add_loaded_gm_value(
     target: pl.Tensor[[1, THREADS], pl.DT_INT32],
     value_tensor: pl.Tensor[[1, 1], pl.DT_INT32],

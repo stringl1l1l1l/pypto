@@ -36,6 +36,7 @@ from pypto_pro._errors import (
 )
 import pypto_pro.language as pl
 from pypto_pro.language import Vf as vf  # noqa: N813
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 from pypto.pypto_impl import ir
@@ -246,7 +247,7 @@ def test_a_codegen_check_renders_its_location_block_like_a_parse_one():
             pl.store(out, t_u0, [0, 0])
 
     with pytest.raises(PyptoProError) as excinfo:
-        _parse_and_codegen_targets(kernel.to_kernel_def(), "a5", "")
+        _parse_and_codegen_targets(kernel.to_kernel_def(), NpuArch.DAV_3510, "")
     rendered = Rendered(excinfo.value)
 
     # The C++ first line is passed through whole: its own file, module and code.

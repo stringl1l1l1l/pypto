@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 from pypto_pro._errors import OutOfRange
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 from pypto.pypto_impl import ir
@@ -115,7 +116,7 @@ def test_cube_and_vector_facts_are_aggregated_for_one_kernel(monkeypatch):
 
     monkeypatch.setattr(jit, "_codegen_target_cce", fake_codegen)
 
-    jit._parse_and_codegen_targets(FakeKernelDef(), "a5", "unused")
+    jit._parse_and_codegen_targets(FakeKernelDef(), NpuArch.DAV_3510, "unused")
 
     assert recorded_dynamic_ub == {
         ir.SectionKind.Cube: 208 * 1024,

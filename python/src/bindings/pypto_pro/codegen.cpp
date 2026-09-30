@@ -63,7 +63,7 @@ void BindCodegen(py::module_& m)
              "Create a CCE code generator for one fixed Cube or Vector target")
         .def(
             "generate_single",
-            [](CCECodegen& self, const ProgramPtr& program, const std::string& arch) {
+            [](CCECodegen& self, const ProgramPtr& program, npu::tile_fwk::NPUArch arch) {
                 return self.GenerateSingle(program, arch);
             },
             py::arg("program"), py::arg("arch"),

@@ -18,10 +18,11 @@ import pypto_pro.language as pl
 import pytest
 
 
-def _compile_to_cce(kernel, arch: str = "a5") -> str:
+def _compile_to_cce(kernel, arch: str = "3510") -> str:
     from pypto_pro.runtime.jit import _assemble_cv_source, _parse_and_codegen_targets
+    from pypto_pro.runtime.platform import normalize_arch
 
-    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), arch, "")
+    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), normalize_arch(arch), "")
     return _assemble_cv_source(cube, vector).content
 
 
@@ -520,5 +521,5 @@ def test_simt_auto_mutex_emits_pipe_v_lock_unlock_around_launch():
 
 
 def test_simt_codegen_rejects_pre_a5_architecture():
-    with pytest.raises(NotSupported, match="requires arch='a5'"):
+    with pytest.raises(NotSupported, match="requires arch='3510'"):
         _compile_to_cce(_simt_tile_codegen_kernel, arch="a3")

@@ -31,7 +31,7 @@ class TkBits16:
 
 
 def _make_kernel(tiling_key_cls):
-    @pl.jit(arch="a5", auto_mutex=True, tiling_key=tiling_key_cls)
+    @pl.jit(arch="3510", auto_mutex=True, tiling_key=tiling_key_cls)
     def _kernel(
         x: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
         y: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
