@@ -23,7 +23,7 @@ def bitcast_loaded_gm_value(
     dst[0, 0] = pl.simt.bitcast(src[0, 0], pl.DT_FP32)
 
 
-@pl.jit(auto_mutex=True, arch="a5")
+@pl.jit(auto_mutex=True, arch="3510")
 def simt_bitcast_loaded_gm_value(
     src: pl.Tensor[[1, 1], pl.DT_INT32],
     dst: pl.Tensor[[1, 1], pl.DT_FP32],

@@ -29,12 +29,12 @@ sanitizer默认为False，不开启时，Kernel的编译和执行行为完全不
 
 ### 检测报告说明
 
-报告文件中每段结果以kernel标签行开头，括号内为该次启动所用kernel的编译产物目录，如`(./build/view_over_source_kernel__a5__d0/tk_none)`。同名kernel存在多个编译实例（不同TilingKey、数据类型或设备）时，该目录用于区分检测结果来自哪个实例；该目录下同时有检测结果文件`pypto_sanitizer_report.txt`和原始记录`sanitizer_report.bin`。
+报告文件中每段结果以kernel标签行开头，括号内为该次启动所用kernel的编译产物目录，如`(./build/view_over_source_kernel__3510__d0/tk_none)`。同名kernel存在多个编译实例（不同TilingKey、数据类型或设备）时，该目录用于区分检测结果来自哪个实例；该目录下同时有检测结果文件`pypto_sanitizer_report.txt`和原始记录`sanitizer_report.bin`。
 
 每段结果先给出检出数量，再逐条列出检出项，以GM访问越界为例：
 
 ```text
-===== kernel 'oob_kernel' (./build/oob_kernel__a5__d0/tk_none) =====
+===== kernel 'oob_kernel' (./build/oob_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] GM_OUT_OF_BOUNDS: offsets [32, 0] + valid_shape [64, 64] exceed tensor shape (64, 64) — dim0: offset 32 + valid_shape 64 = 96 > 64 (over by 32) at demo.py:68
       Hint: The tile valid_shape plus the loop offsets must stay inside the tensor logical shape on every dimension
@@ -78,7 +78,7 @@ def oob_kernel(x: pypto_pro.language.Tensor[[64, 64], pypto_pro.language.DT_FP16
 ```
 
 ```text
-===== kernel 'oob_kernel' (./build/oob_kernel__a5__d0/tk_none) =====
+===== kernel 'oob_kernel' (./build/oob_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] GM_OUT_OF_BOUNDS: offsets [32, 0] + valid_shape [64, 64] exceed tensor shape (64, 64) — dim0: offset 32 + valid_shape 64 = 96 > 64 (over by 32) at demo.py:68
       Hint: The tile valid_shape plus the loop offsets must stay inside the tensor logical shape on every dimension
@@ -104,7 +104,7 @@ def gm_scalar_oob_kernel(out: pypto_pro.language.Tensor[[64], pypto_pro.language
 ```
 
 ```text
-===== kernel 'gm_scalar_oob_kernel' (./build/gm_scalar_oob_kernel__a5__d0/tk_none) =====
+===== kernel 'gm_scalar_oob_kernel' (./build/gm_scalar_oob_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] GM_OUT_OF_BOUNDS: scalar access at linear offset 64 exceeds 64 elements at demo.py:17
       Hint: getval/setval offsets must stay inside the tensor element count
@@ -126,7 +126,7 @@ t2 = pypto_pro.language.make_tensor(x, [200, 200])
 ```
 
 ```text
-===== kernel 'view_over_source_kernel' (./build/view_over_source_kernel__a5__d0/tk_none) =====
+===== kernel 'view_over_source_kernel' (./build/view_over_source_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] GM_OUT_OF_BOUNDS: make_tensor view [200, 200] covers 80000 bytes, source tensor [128, 128] holds 32768 bytes at demo.py:1255
       Hint: A view shares its source's storage; keep its shape/stride size within the source
@@ -154,7 +154,7 @@ pypto_pro.language.move(a_l0a, cur_a, offset=[32, 0])
 ```
 
 ```text
-===== kernel 'tile_move_offset_oob_kernel' (./build/tile_move_offset_oob_kernel__a5__d0/tk_none) =====
+===== kernel 'tile_move_offset_oob_kernel' (./build/tile_move_offset_oob_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] TILE_OUT_OF_BOUNDS: offsets [32, 0] + valid_shape [64, 64] exceed tile shape [64, 64] — dim0: offset 32 + valid_shape 64 = 96 > 64 (over by 32) at demo.py:227
       Hint: Keep the tile's valid shape within the declared TileType dims
@@ -176,7 +176,7 @@ pypto_pro.language.insert(dst, src, offset=[96, 0])
 ```
 
 ```text
-===== kernel 'insert_oob_kernel' (./build/insert_oob_kernel__a5__d0/tk_none) =====
+===== kernel 'insert_oob_kernel' (./build/insert_oob_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] TILE_OUT_OF_BOUNDS: offsets [96, 0] + valid_shape [64, 64] exceed tile shape [128, 64] — dim0: offset 96 + valid_shape 64 = 160 > 128 (over by 32) at demo.py:64
       Hint: Keep the tile's valid shape within the declared TileType dims
@@ -201,7 +201,7 @@ pypto_pro.language.store(out, t, [0, 0])
 ```
 
 ```text
-===== kernel 'validshape_oob_kernel' (./build/validshape_oob_kernel__a5__d0/tk_none) =====
+===== kernel 'validshape_oob_kernel' (./build/validshape_oob_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 3 issue(s) detected
 [1/3] GM_OUT_OF_BOUNDS: offsets [0, 0] + valid_shape [65, 64] exceed tensor shape (64, 64) — dim0: offset 0 + valid_shape 65 = 65 > 64 (over by 1) at demo.py:46
       Hint: The tile valid_shape plus the loop offsets must stay inside the tensor logical shape on every dimension
@@ -228,7 +228,7 @@ pypto_pro.language.setval(out, 0, pypto_pro.language.getval(t, 4096))
 ```
 
 ```text
-===== kernel 'tile_scalar_oob_kernel' (./build/tile_scalar_oob_kernel__a5__d0/tk_none) =====
+===== kernel 'tile_scalar_oob_kernel' (./build/tile_scalar_oob_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] TILE_OUT_OF_BOUNDS: scalar tile access at linear offset 4096 exceeds 4096 elements (dims [64,64]) at demo.py:31
       Hint: getval/setval offsets must stay inside the tile element count
@@ -252,7 +252,7 @@ tb = tb_group.current()
 ```
 
 ```text
-===== kernel 'overlap_kernel' (./build/overlap_kernel__a5__d0/tk_none) =====
+===== kernel 'overlap_kernel' (./build/overlap_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] TILE_OVERLAP: tile range [Vec 0x0, 0x2000) overlaps another tile [Vec 0x1000, 0x3000) at demo.py:124
       Hint: Two tiles must not share on-chip address space
@@ -276,7 +276,7 @@ pypto_pro.language.system.mutex_unlock(mutex_id=7, pipe=pypto_pro.language.PipeT
 ```
 
 ```text
-===== kernel 'mutex_unlock_before_lock_kernel' (./build/mutex_unlock_before_lock_kernel__a5__d0/tk_none) =====
+===== kernel 'mutex_unlock_before_lock_kernel' (./build/mutex_unlock_before_lock_kernel__3510__d0/tk_none) =====
 PyPTO Sanitizer: 1 issue(s) detected
 [1/1] MUTEX_UNLOCK_BEFORE_LOCK: mutex_unlock(mutex_id=7, pipe=MTE2, region=1) without a preceding mutex_lock at demo.py:705
       Hint: Every mutex_unlock must be paired with a mutex_lock on the same (region, mutex_id, pipe)

@@ -32,13 +32,13 @@ from pypto_pro._errors import (
     NotSupported,
 )
 import pypto_pro.language as pl
-from pypto_pro.runtime.platform import get_platform_info
+from pypto_pro.runtime.platform import NpuArch, get_platform_info
 import pytest
 import torch
 
 pytestmark = pytest.mark.skipif(
-    get_platform_info().arch != "a5",
-    reason="PyPTO Pro only supports arch 'a5'",
+    get_platform_info().arch != NpuArch.DAV_3510,
+    reason="PyPTO Pro only supports arch '3510'",
 )
 
 

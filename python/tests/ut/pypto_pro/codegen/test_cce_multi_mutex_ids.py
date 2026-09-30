@@ -11,12 +11,13 @@
 """CCE codegen tests for per-tile-aware dynamic mutex deduplication."""
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 
 def _compile_to_cce(kernel) -> str:
     from pypto_pro.runtime.jit import _assemble_cv_source, _parse_and_codegen_targets
 
-    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), NpuArch.DAV_3510, "")
     return _assemble_cv_source(cube, vector).content
 
 

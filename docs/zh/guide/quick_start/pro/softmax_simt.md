@@ -79,7 +79,7 @@ THREADS = 256
    与SIMD版相同，Kernel先分配片上Tile Group，再在Vector段完成数据搬入、计算和数据搬出。输入与输出Tile各占1024字节；归约状态Tile占32字节，其中前两个FP32元素分别保存最大值与指数和。三个Tile Group使用互不重叠的片上地址和不同的Mutex ID。
 
    ```python
-   @pl.jit(arch="a5", auto_mutex=True)
+   @pl.jit(arch="3510", auto_mutex=True)
    def softmax_simt_kernel(
        src: pl.Tensor[[1, THREADS], pl.DT_FP32],
        dst: pl.Tensor[[1, THREADS], pl.DT_FP32],

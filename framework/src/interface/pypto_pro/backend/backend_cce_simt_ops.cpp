@@ -310,8 +310,8 @@ std::string MakeSimtCastCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& 
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << "simt.cast reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << "simt.cast currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << "simt.cast currently requires arch='3510'";
     PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == 1)
         << "simt.cast requires one scalar argument";
 
@@ -351,8 +351,8 @@ std::string MakeSimtBitcastCodegenCCE(const ir::CallPtr& op, codegen::CodegenBas
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << "simt.bitcast reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << "simt.bitcast currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << "simt.bitcast currently requires arch='3510'";
     PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == 1)
         << "simt.bitcast requires one scalar argument";
 
@@ -448,8 +448,8 @@ SimtUnaryCodegenInput GetSimtUnaryCodegenInput(const ir::CallPtr& op, codegen::C
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << op->name_ << " reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << op->name_ << " currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << op->name_ << " currently requires arch='3510'";
     auto scalar_type = ir::As<ir::ScalarType>(op->args_[0]->GetType());
     PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, scalar_type != nullptr) << op->name_ << " operand must be a scalar";
     return {scalar_type->dtype_, codegen.GetExprAsCode(op->args_[0])};
@@ -822,8 +822,8 @@ std::string MakeSimtMinCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& c
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << "simt.min reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << "simt.min currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << "simt.min currently requires arch='3510'";
     auto scalar_type = ir::As<ir::ScalarType>(op->args_[0]->GetType());
     PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, scalar_type != nullptr) << "simt.min operand must be a scalar";
     const auto& dtype = scalar_type->dtype_;
@@ -851,8 +851,8 @@ std::string MakeSimtMaxCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& c
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << "simt.max reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << "simt.max currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << "simt.max currently requires arch='3510'";
     auto scalar_type = ir::As<ir::ScalarType>(op->args_[0]->GetType());
     PRO_CODEGEN_CHECK(ExternalError::INVALID_TYPE, scalar_type != nullptr) << "simt.max operand must be a scalar";
     const auto& dtype = scalar_type->dtype_;
@@ -880,8 +880,8 @@ std::string MakeSimtFmaCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase& c
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << "simt.fma reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << "simt.fma currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << "simt.fma currently requires arch='3510'";
     return "__fma(" + codegen.GetExprAsCode(op->args_[0]) + ", " + codegen.GetExprAsCode(op->args_[1]) + ", " +
            codegen.GetExprAsCode(op->args_[2]) + ")";
 }
@@ -936,8 +936,8 @@ std::string MakeSimtAtomicCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase
     SimtAtomicSpec spec = GetSimtAtomicSpec(op->name_);
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.IsInSimtContext())
         << op->name_ << " reached CCE codegen outside a SIMT function";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << op->name_ << " currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << op->name_ << " currently requires arch='3510'";
     PRO_CODEGEN_CHECK(ExternalError::INVALID_ARGUMENT, op->args_.size() == spec.operand_count + 2)
         << op->name_ << " requires container, offset, and " << spec.operand_count << " scalar operand(s)";
 
@@ -981,8 +981,8 @@ std::string MakeSimtLaunchCodegenCCE(const ir::CallPtr& op, codegen::CodegenBase
         << "Nested simt.launch is not supported";
     PRO_CODEGEN_CHECK(ExternalError::INVALID_OPERATION, codegen.GetTarget() == ir::SectionKind::Vector)
         << "simt.launch requires the Vector target";
-    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == "a5")
-        << "simt.launch currently requires arch='a5'";
+    PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510)
+        << "simt.launch currently requires arch='3510'";
     int64_t thread_dims[3] = {};
     for (size_t i = 0; i < 3; ++i) {
         auto dim = ir::As<ir::ConstInt>(op->args_[i]);

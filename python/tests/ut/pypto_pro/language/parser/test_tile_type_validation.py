@@ -89,7 +89,7 @@ def test_tile_type_bias_single_row_allowed():
 
 
 def test_tile_type_bias_non_nd_layout_rejected():
-    @pl.jit(arch="a5")
+    @pl.jit(arch="3510")
     def k(x: pl.Tensor[[1, 128], pl.DT_FP32]):
         tt = pl.TileType(
             shape=[1, 128], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Bias, layout=pl.DN

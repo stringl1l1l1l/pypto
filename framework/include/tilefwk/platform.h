@@ -655,5 +655,5 @@ inline constexpr char kMemorySpaceAcc[] = "Acc";
 // Buffer capacity (bytes) of ``space`` for ``arch``, read from the platform
 // ini shipped with the package. Returns 0 when the arch or space key is not
 // recognized / the ini cannot be found or parsed.
-size_t GetMemoryLimitForArch(const std::string& arch, const std::string& space);
+size_t GetMemoryLimitForArch(NPUArch arch, const std::string& space);
 } // namespace npu::tile_fwk

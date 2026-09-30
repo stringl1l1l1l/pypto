@@ -1393,7 +1393,7 @@ static std::string MakeCrossCoreSetCodegenCCE(const ir::CallPtr& op, codegen::Co
     auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
     auto pipe = op->GetKwarg<int>("pipe");
     std::string pipe_str = PipeTypeToCCEString(static_cast<ir::PipeType>(pipe));
-    bool is_a5 = (codegen.GetArch() == "a5");
+    bool is_a5 = (codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510);
     auto sync_mode = static_cast<ir::CrossCoreSyncMode>(op->GetKwarg<int>("sync_mode"));
     bool is_intra_unicast = sync_mode == ir::CrossCoreSyncMode::INTRA_BLOCK ||
                             sync_mode == ir::CrossCoreSyncMode::UNICAST_BLOCK;
@@ -1461,7 +1461,7 @@ static std::string MakeCrossCoreWaitCodegenCCE(const ir::CallPtr& op, codegen::C
     bool is_intra_unicast = (sync_mode == ir::CrossCoreSyncMode::INTRA_BLOCK ||
                              sync_mode == ir::CrossCoreSyncMode::UNICAST_BLOCK);
     bool wait_two_vec_subcores = (sync_mode == ir::CrossCoreSyncMode::INTRA_BLOCK);
-    bool is_a5 = (codegen.GetArch() == "a5");
+    bool is_a5 = (codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510);
     if (is_a5 && is_intra_unicast) {
         // A5 + INTRA_BLOCK(2) or UNICAST_BLOCK(3): wait_intra_block
         //     CUBE waiting for VEC: INTRA_BLOCK expands to two calls (v0: id, v1: id+16); UNICAST_BLOCK single call
@@ -2096,7 +2096,7 @@ REGISTER_BACKEND_OP(BackendCCE, "system.set_mm_layout_transform")
     .f_codegen([](const ir::CallPtr& op, codegen::CodegenBase& codegen_base) {
         auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
         auto enabled = op->GetKwarg<int>("enabled");
-        if (codegen.GetArch() == "a5") {
+        if (codegen.GetArch() == npu::tile_fwk::NPUArch::DAV_3510) {
             // Direct register manipulation: MM_LAYOUT_MODE_BIT = 51
             if (enabled) {
                 codegen.Emit("set_ctrl(sbitset1(get_ctrl(), 51));");

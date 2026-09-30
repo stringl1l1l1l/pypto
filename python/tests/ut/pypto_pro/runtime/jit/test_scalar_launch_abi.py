@@ -14,6 +14,7 @@ import shutil
 import struct
 import subprocess
 
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 jit = importlib.import_module("pypto_pro.runtime.jit")
@@ -75,7 +76,7 @@ static void probe_impl({signature})
     out[12] = *ffts_addr;
 }}
 """)
-    target = jit.get_jit_compile_config().resolve_kernel_target("a5", has_cube=False, has_vector=True)
+    target = jit.get_jit_compile_config().resolve_kernel_target(NpuArch.DAV_3510, has_cube=False, has_vector=True)
     entry = jit._make_global_entry("probe", entry_params, target=target)
     entry += """template<class... Args> void CheckLaunchSlots(Args... args)
 {

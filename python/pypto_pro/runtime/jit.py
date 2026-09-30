@@ -37,6 +37,7 @@ from pypto.pypto_impl.ir import ConstInt, PtrType, ScalarType, TensorType, Tuple
 from pypto_pro import DataType
 from pypto_pro.language.typing.direction import TensorDirection
 from pypto_pro.runtime.compile_config import KernelTarget, get_jit_compile_config
+from pypto_pro.runtime.platform import NpuArch, normalize_arch
 
 from .._errors import (
     CommonInner,
@@ -309,7 +310,9 @@ def _process_identity_tag() -> str:
     return f"__{'_'.join(parts)}" if parts else ""
 
 
-def _make_artifact_build_dir(prog, arch: str, test_prefix: str | None = None, tilingkey_suffix: str = "") -> str:
+def _make_artifact_build_dir(
+    prog, arch: NpuArch, test_prefix: str | None = None, tilingkey_suffix: str = ""
+) -> str:
     """The per-kernel build dir. All tilingkeys of one kernel share this dir; each concrete
     key gets a ``tk_<packed>`` subdir under it (see :func:`_make_tilingkey_dir`)."""
     prog_name = getattr(prog, "name", None) or getattr(prog, "_name", None)
@@ -1138,7 +1141,7 @@ def _detect_print_debug_from_cpp(content: str) -> bool:
 
 def _build_bisheng_flags(
     toolkit_home: str,
-    arch: str,
+    arch: NpuArch,
     target: KernelTarget,
     has_cross_sync: bool,
     enable_print_debug: bool,
@@ -1157,7 +1160,7 @@ def _build_bisheng_flags(
     )
 
 
-def _build_llvm_args(arch: str) -> list[str]:
+def _build_llvm_args(arch: NpuArch) -> list[str]:
     """Build architecture-specific LLVM/CCE arguments for C++ compilation."""
     return get_jit_compile_config().build_llvm_args(arch)
 
@@ -1171,7 +1174,7 @@ def _static_signature_suffix(static_signature: tuple[tuple[int, int, int], ...])
 
 def _prepare_codegen_inputs(
     kernel_def,
-    arch: str,
+    arch: NpuArch,
     tilingkey_packed: int | None = None,
     out_dir: str | None = None,
     datatype_hash: str | None = None,
@@ -1288,7 +1291,7 @@ def _make_global_entry(
 
 def _codegen_target_cce(
     prog,
-    arch: str,
+    arch: NpuArch,
     build_dir: str,
     target: ir.SectionKind,
     declared_directions: dict[int, TensorDirection] | None = None,
@@ -1300,7 +1303,7 @@ def _codegen_target_cce(
     """
     cce_codegen = CCECodegen(target)
     cpp_code = cce_codegen.generate_single(prog, arch)
-    if "ffts_cross_core_sync" in cpp_code and arch == "a5":
+    if "ffts_cross_core_sync" in cpp_code and arch == NpuArch.DAV_3510:
         extra_headers = "#include <pto/npu/a5/custom/TSyncCVID.hpp>"
         guard = {
             ir.SectionKind.Cube: "#if defined(__DAV_CUBE__)",
@@ -1422,7 +1425,7 @@ def _assemble_cv_source(
 
 def _parse_and_codegen_targets(
     kernel_def,
-    arch: str,
+    arch: NpuArch,
     build_dir: str,
     bound_signature=None,
     sanitizer: bool = False,
@@ -1432,7 +1435,7 @@ def _parse_and_codegen_targets(
     With ``sanitizer`` enabled, each parsed target program is instrumented
     (block.sanitizer_log records injected, one per detection type and
     sanitizer_log pointer + capacity scalar appended to the kernel signature);
-    the flag is carried on the returned CodegenResults."""
+        the flag is carried on the returned CodegenResults."""
     programs = {}
     matched = {}
     requires_simt = False
@@ -1531,7 +1534,7 @@ def _runtime_link_args(ascend_home_path: str) -> list[str]:
 def _run_bisheng(
     bisheng_path: str,
     flags: list[str],
-    arch: str,
+    arch: NpuArch,
     paths: CompilePaths,
     link_args: list[str],
     compile_timeout: int,
@@ -1562,7 +1565,7 @@ def _run_bisheng(
 
 def _compile_shared_library(
     paths: CompilePaths,
-    arch: str,
+    arch: NpuArch,
     generated: GeneratedKernel,
     clean_up: bool,
     compile_timeout: int,
@@ -1623,7 +1626,7 @@ def _compile_shared_library(
 
 def _codegen(
     prog,
-    arch: str,
+    arch: NpuArch,
     clean_up: bool,
     tilingkey_packed: int | None = None,
     out_dir: str | None = None,
@@ -1708,19 +1711,19 @@ def _build_jit_so(
     return _compile_shared_library(paths, arch, generated, clean_up, compile_timeout)
 
 
-def get_current_arch() -> str:
+def get_current_arch() -> NpuArch:
     """Return the arch configured in the current process environment."""
-    return os.environ.get("PYPTOPRO_JIT_ARCH", "a5")
+    raw = os.environ.get("PYPTOPRO_JIT_ARCH")
+    return normalize_arch(raw) if raw else NpuArch.DAV_3510
 
 
-def _setup_arch_env(arch: str) -> str:
+def _setup_arch_env(arch: NpuArch) -> NpuArch:
     """Validate *arch* and export the env vars used by compilation."""
     if not arch:
         raise InvalidVal("arch must not be empty")
-    arch = arch.strip().lower()
-    if arch != "a5":
-        raise NotSupported(f"PyPTO Pro only supports arch 'a5', got {arch!r}")
-    os.environ["PYPTOPRO_JIT_ARCH"] = arch
+    if arch != NpuArch.DAV_3510:
+        raise NotSupported(f"PyPTO Pro only supports arch '3510', got '{arch}'")
+    os.environ["PYPTOPRO_JIT_ARCH"] = str(arch)
     return arch
 
 
@@ -1948,7 +1951,8 @@ def jit(
     performs lazy compilation on first call and supports bracket-launch syntax.
 
     Args:
-        arch: Target architecture ("a5", or None for auto-detect).
+        arch: Target architecture ("3510" -- the __NPU_ARCH__ version; "a5" is a
+            deprecated alias; or None for auto-detect).
         auto_mutex: Boolean flag to enable automatic mutex lock/unlock insertion.
         name: Custom kernel name for build artifact path isolation.
         pipeline: PipelineConfig for automatic preload pipeline transformation.
@@ -1956,7 +1960,7 @@ def jit(
 
     Usage (Tile-programming kernel with bracket-launch)::
 
-        @pl.jit(arch="a5")
+        @pl.jit(arch="3510")
         def add_kernel(
             x: pl.Tensor[[64, 128], pl.DT_FP16],
             y: pl.Tensor[[64, 128], pl.DT_FP16],
@@ -1969,6 +1973,9 @@ def jit(
 
     if not isinstance(auto_mutex, bool):
         raise TypeError(f"auto_mutex must be a bool, got {type(auto_mutex).__name__}")
+
+    if arch is not None:
+        arch = normalize_arch(arch)
 
     # Build the tilingkey schema eagerly so malformed schemas fail at decoration time.
     tilingkey_schema = None
@@ -2225,10 +2232,9 @@ class _TileJitKernel:
         platform_arch = get_platform_info().arch
         if self._arch is None:
             self._arch = platform_arch
-        elif self._arch.strip().lower() != platform_arch:
-            raise NotSupported(
-                f"JIT arch {self._arch!r} does not match current platform arch {platform_arch!r}"
-            )
+        elif self._arch != platform_arch:
+            plat = f"'{platform_arch}'" if platform_arch is not None else "unknown"
+            raise NotSupported(f"JIT arch '{self._arch}' does not match current platform arch {plat}")
 
     @property
     def arch(self):

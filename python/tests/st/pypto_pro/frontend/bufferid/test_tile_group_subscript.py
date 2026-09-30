@@ -91,7 +91,7 @@ def const_index_kernel(
 # Test 2: TileGroup 动态下标访问
 #         TileGroup dynamic subscript
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def dynamic_index_kernel(
     a: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
@@ -113,7 +113,7 @@ def dynamic_index_kernel(
 # Test 3: mutex_ids=None 时通过 depth 创建 TileGroup
 #         TileGroup depth with mutex_ids=None
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def no_mutex_none_kernel(
     a: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
@@ -174,7 +174,7 @@ def pipeline_mixed_subscript_stage(k, a, out, g):
     pl.store(out, tile, [k * TILE_M, 0])
 
 
-@pl.jit(arch="a5", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def pipeline_stage_subscript_kernel(
     a: pl.Tensor[[PIPELINE_FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[PIPELINE_FULL_M, TILE_N], pl.DT_FP16],
@@ -189,7 +189,7 @@ def pipeline_stage_subscript_kernel(
 # Test 6: 重复 mutex ID 的 16 槽轮转访问
 #         Round-robin access with repeated mutex IDs
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def repeated_mutex_ids_kernel(
     a: pl.Tensor[[REPEATED_FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[REPEATED_FULL_M, TILE_N], pl.DT_FP16],
@@ -241,7 +241,7 @@ def next_reference_kernel(
 # Test 8: 两个 Tile 槽并行存活的预取场景
 #         Prefetch with two live Tile slots
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def prefetch_kernel(
     a: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
@@ -271,7 +271,7 @@ def prefetch_kernel(
 # Test 9: 同一算子访问两个 Tile 槽
 #          Two Tile slots used by one operation
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def two_slots_one_op_kernel(
     a: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
@@ -298,7 +298,7 @@ def two_slots_one_op_kernel(
 # Test 10: 循环携带 g[0] 和 g[3] 后执行 add
 #          Loop-carried g[0] and g[3] add
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def four_slots_loop_carried_add_kernel(
     a: pl.Tensor[[TILE_M, TILE_N], pl.DT_FP16],
     b: pl.Tensor[[TILE_M, TILE_N], pl.DT_FP16],
@@ -327,7 +327,7 @@ def four_slots_loop_carried_add_kernel(
 # Test 11: if/else 合并重叠 mutex 候选 ID
 #          Merge overlapping mutex candidates across if/else
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def ifelse_overlapping_mutex_ids_kernel(
     a: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
@@ -381,7 +381,7 @@ def single_slot_kernel(
 # Test 13: TileGroup 边界内常量下标访问
 #          TileGroup bounded constant subscripts
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def bounded_constant_index_kernel(
     a: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
@@ -407,7 +407,7 @@ def bounded_constant_index_kernel(
 # Test 14: 下标 Tile 的 getval/setval 标量访问
 #          Scalar getval/setval on a subscript-selected Tile
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def getval_setval_kernel(
     a: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TILE_N], pl.DT_FP16],
@@ -461,7 +461,7 @@ def mixed_cursor_and_subscript_kernel(
 # Test 16: Cube 双缓冲矩阵乘
 #          Cube double-buffered matmul
 # =============================================================================
-@pl.jit(arch="a5", auto_mutex=True)
+@pl.jit(arch="3510", auto_mutex=True)
 def matmul_subscript_kernel(
     a: pl.Tensor[[MM_M, MM_K], pl.DT_FP16],
     b: pl.Tensor[[MM_K, MM_N], pl.DT_FP16],

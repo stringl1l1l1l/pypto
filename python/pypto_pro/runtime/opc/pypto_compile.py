@@ -302,7 +302,7 @@ def _prepare_infer_cpp(
     return infer_cpp_path
 
 
-def generate_binary_headers(kernel, arch="a5") -> str:
+def generate_binary_headers(kernel, arch: str = "3510") -> str:
     """Generate the TilingData and TilingKey headers required by binary delivery."""
     from pypto_pro.runtime.jit import (
         _artifact_prefix_from_filename,
@@ -310,6 +310,7 @@ def generate_binary_headers(kernel, arch="a5") -> str:
         _setup_arch_env,
         _TileJitKernel,
     )
+    from pypto_pro.runtime.platform import normalize_arch
 
     if not isinstance(kernel, _TileJitKernel):
         raise InvalidType("generate_binary_headers() expects a @pl.jit kernel")
@@ -319,7 +320,7 @@ def generate_binary_headers(kernel, arch="a5") -> str:
             f"'{kernel.__name__}' has none; binary delivery needs a tilingkey header"
         )
 
-    arch = _setup_arch_env(arch)
+    arch = _setup_arch_env(normalize_arch(arch))
     schema = kernel.tilingkey_schema
     valid_combos = schema.enumerate_valid()
     if not valid_combos:
@@ -338,7 +339,7 @@ def generate_binary_headers(kernel, arch="a5") -> str:
     return binary_dir
 
 
-def prepare_binary_headers(op_path: str, arch="a5") -> str:
+def prepare_binary_headers(op_path: str, arch: str = "3510") -> str:
     """Load the sole ``@pl.jit`` kernel in ``op_path`` and prepare its binary-delivery headers."""
     return generate_binary_headers(_load_kernel(op_path), arch)
 
@@ -579,7 +580,7 @@ def pypto_compile_op(
     code_channel=-1,
     op_compile_option="{}",
     extend_options=None,
-    arch="a5",
+    arch: str = "3510",
 ):
     """PyPTO leaf replacing ``asc_op_compiler.compile_op``. Signature-compatible; ``cce_file`` is the PyPTO
     DSL ``.py``. Writes the flat ``kernel_meta`` artifacts + ``<kernel>.o``/``.json`` and records the json
@@ -594,7 +595,9 @@ def pypto_compile_op(
 
     extend_options = extend_options or {}
     kernel_name = _op_info_get(op_info, "kernel_name")
-    arch = _setup_arch_env(arch)
+    from pypto_pro.runtime.platform import normalize_arch
+
+    arch = _setup_arch_env(normalize_arch(arch))
     opt = _setup_options(op_info, compile_options, op_compile_option, extend_options)
 
     kernel = _load_kernel(cce_file)

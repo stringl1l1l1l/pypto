@@ -30,15 +30,46 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from typing import Optional
+import warnings
+
+from pypto.pypto_impl import NpuArch
+
+from .._errors import InvalidVal
 
 logger = logging.getLogger(__name__)
 
 # NPUArch string → compilation arch mapping
 _ARCH_MAP = {
-    "DAV_1001": "a3",  # 910
-    "DAV_2201": "a3",  # 910B/910C
-    "DAV_3510": "a5",  # 950
+    "DAV_1001": NpuArch.DAV_1001,
+    "DAV_2201": NpuArch.DAV_2201,
+    "DAV_3510": NpuArch.DAV_3510,
 }
+
+_ARCH_INPUT_TO_ENUM = {str(member): member for member in NpuArch.__members__.values() if member != NpuArch.DAV_UNKNOWN}
+_LEGACY_TO_CANONICAL = {"a5": "3510", "a2": "2201", "a3": "2201"}
+_DEPRECATED_INPUTS = {"a5"}
+
+
+def normalize_arch(value: str | NpuArch) -> NpuArch:
+    """Resolve any accepted arch input to its canonical NpuArch.
+
+    Accepts the __NPU_ARCH__ version number ("3510"), NpuArch values, and
+    legacy internal names; "a5" emits a DeprecationWarning and resolves
+    to DAV_3510. Unregistered NpuArch values collapse to DAV_UNKNOWN,
+    which downstream checks reject.
+    """
+    if isinstance(value, NpuArch):
+        return _ARCH_INPUT_TO_ENUM.get(str(value), NpuArch.DAV_UNKNOWN)
+    text = value.strip().lower()
+    canonical = _LEGACY_TO_CANONICAL.get(text)
+    if canonical is not None:
+        if text in _DEPRECATED_INPUTS:
+            warnings.warn(f"arch {value!r} is deprecated; use arch {canonical!r}", DeprecationWarning, stacklevel=2)
+        text = canonical
+    arch = _ARCH_INPUT_TO_ENUM.get(text)
+    if arch is None:
+        raise InvalidVal(f"unknown arch {value!r}; expected an __NPU_ARCH__ version name such as '3510'")
+    return arch
 
 
 @dataclass
@@ -54,15 +85,16 @@ class PlatformInfo:
     vector_core_num: int = 0
 
     @property
-    def arch(self) -> str:
+    def arch(self) -> Optional[NpuArch]:
         """Infer compilation arch from SOC version string.
 
         Returns:
-            "a5" for DAV_3510 (950 series), "a3" for DAV_2201/DAV_1001, "" if unknown.
+            NpuArch.DAV_3510 for DAV_3510 (950 series), NpuArch.DAV_2201 for DAV_2201,
+            NpuArch.DAV_1001 for DAV_1001, None if unknown.
         """
         if not self.soc_version:
-            return ""
-        return _ARCH_MAP.get(self.soc_version, "a3")
+            return None
+        return _ARCH_MAP.get(self.soc_version, NpuArch.DAV_2201)
 
 
 _cached_info: Optional[PlatformInfo] = None
@@ -128,11 +160,11 @@ def _get_aiv_core_num() -> int:
         return 0
 
 
-def get_memory_limit(arch: str, memory_space: str) -> int:
+def get_memory_limit(arch: NpuArch, memory_space: str) -> int:
     """Query on-chip buffer capacity (bytes) for the target arch.
 
     Args:
-        arch: Compilation arch ("a5", from PYPTOPRO_JIT_ARCH).
+        arch: Compilation arch (NpuArch, from get_current_arch).
         memory_space: pypto_pro MemorySpace name (e.g. "Vec"/"Mat"/"Left"/
               "Right"/"Acc") of the buffer to query.
 
@@ -179,7 +211,7 @@ def get_platform_info(force_refresh: bool = False) -> PlatformInfo:
         logger.info(
             "Platform: %s (arch=%s), core_num=%d, cube_core_num=%d, vector_core_num=%d",
             info.soc_version,
-            info.arch,
+            info.arch if info.arch is not None else "unknown",
             info.core_num,
             info.cube_core_num,
             info.vector_core_num,

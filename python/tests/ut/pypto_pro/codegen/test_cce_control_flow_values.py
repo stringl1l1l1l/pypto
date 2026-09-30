@@ -13,6 +13,7 @@
 import subprocess
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 
@@ -354,7 +355,7 @@ def control_flow_binary(request, tmp_path_factory):
     kernel, expected = request.param
     build = tmp_path_factory.mktemp(kernel.__name__)
     (build / "pypto_tprint.h").write_text("")
-    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), "a5", "")
+    cube, vector = _parse_and_codegen_targets(kernel.to_kernel_def(), NpuArch.DAV_3510, "")
     source = build / "kernel.cpp"
     source.write_text(
         "#include <cstdint>\n#include <cstdio>\n#include <cstdlib>\n"

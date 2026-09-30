@@ -22,6 +22,18 @@ using namespace npu::tile_fwk;
 namespace pypto {
 void BindPlatform(py::module_& m)
 {
+    auto arch_enum = py::enum_<NPUArch>(m, "NpuArch", py::arithmetic());
+    arch_enum.value("DAV_1001", NPUArch::DAV_1001);
+    arch_enum.value("DAV_2201", NPUArch::DAV_2201);
+    arch_enum.value("DAV_3510", NPUArch::DAV_3510);
+    arch_enum.value("DAV_3003", NPUArch::DAV_3003);
+    arch_enum.value("DAV_3113", NPUArch::DAV_3113);
+    arch_enum.value("DAV_UNKNOWN", NPUArch::DAV_UNKNOWN);
+    // str() must yield the canonical __NPU_ARCH__ number ("3510"): the string form crosses
+    // the std::string pybind boundaries (env var, bisheng flags, generated paths).
+    arch_enum.attr("__str__") = py::cpp_function([](NPUArch self) { return std::to_string(static_cast<int>(self)); },
+                                                 py::is_method(arch_enum), py::name("__str__"));
+
     m.def("GetNPUArch", []() -> std::string {
          auto npuArch = Platform::Instance().GetSoc().GetNPUArch();
          return NPUArchToString(npuArch);
@@ -33,8 +45,7 @@ void BindPlatform(py::module_& m)
 
     m.def("GetAIVCoreNum", []() -> size_t { return Platform::Instance().GetSoc().GetAIVCoreNum(); });
 
-    m.def("GetMemoryLimitForArch", [](const std::string& arch, const std::string& space) -> size_t {
-        return GetMemoryLimitForArch(arch, space);
-    });
+    m.def("GetMemoryLimitForArch",
+          [](NPUArch arch, const std::string& space) -> size_t { return GetMemoryLimitForArch(arch, space); });
 }
 } // namespace pypto

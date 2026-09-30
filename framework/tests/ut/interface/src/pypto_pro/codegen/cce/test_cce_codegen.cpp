@@ -77,7 +77,7 @@ TEST(CCECodegenHeaderTest, CoversHeaderOnlyStateAccessors)
     CCECodegen codegen(ir::SectionKind::Vector);
 
     EXPECT_TRUE(codegen.GetCurrentResultTarget().empty());
-    EXPECT_EQ(codegen.GetArch(), "a3");
+    EXPECT_EQ(codegen.GetArch(), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_EQ(codegen.GetTarget(), ir::SectionKind::Vector);
     EXPECT_FALSE(codegen.IsInVFSection());
     EXPECT_EQ(codegen.GetTileAddress("unknown_tile"), "0x0");
@@ -135,14 +135,14 @@ TEST(CCECodegenTest, EmitsTargetSpecificGuardsNamesAndVectorSetup)
     auto body = std::make_shared<const ir::ReturnStmt>(ir::Span::Unknown());
 
     CCECodegen cube_codegen(ir::SectionKind::Cube);
-    auto cube = cube_codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto cube = cube_codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(cube.find("#if defined(__DAV_CUBE__)"), std::string::npos);
     EXPECT_NE(cube.find("kernel_impl_cube("), std::string::npos);
     EXPECT_EQ(cube.find("set_mask_norm();"), std::string::npos);
     EXPECT_EQ(cube.find("set_vector_mask(-1, -1);"), std::string::npos);
 
     CCECodegen vector_codegen(ir::SectionKind::Vector);
-    auto vector = vector_codegen.GenerateSingle(MakeProgram(body), "a3");
+    auto vector = vector_codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_2201);
     EXPECT_NE(vector.find("#if defined(__DAV_VEC__)"), std::string::npos);
     EXPECT_NE(vector.find("kernel_impl_vector("), std::string::npos);
     EXPECT_NE(vector.find("set_mask_norm();"), std::string::npos);
@@ -162,7 +162,7 @@ TEST(CCECodegenTest, EmitsInt64DynamicTensorDimensions)
     auto body = std::make_shared<const ir::ReturnStmt>(ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {x}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {x}), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("int64_t __pypto_dyn_x_0"), std::string::npos);
     EXPECT_NE(generated.find("int64_t __pypto_dyn_x_1"), std::string::npos);
     EXPECT_EQ(generated.find("int32_t __pypto_dyn_x_0"), std::string::npos);
@@ -183,12 +183,12 @@ TEST(CCECodegenTest, EmitsTargetSpecificTilingStructCopy)
     auto program = MakeProgram(body, {tiling}, debug_info);
 
     CCECodegen cube_codegen(ir::SectionKind::Cube);
-    auto cube = cube_codegen.GenerateSingle(program, "a5");
+    auto cube = cube_codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(cube.find("copy_data_align64((uint8_t*)&tiling, (__gm__ uint8_t *)tiling_ptr"), std::string::npos);
     EXPECT_EQ(cube.find("copy_gm_to_ubuf_align_v2"), std::string::npos);
 
     CCECodegen vector_codegen(ir::SectionKind::Vector);
-    auto vector = vector_codegen.GenerateSingle(program, "a5");
+    auto vector = vector_codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(vector.find("tiling_in_ub"), std::string::npos);
     EXPECT_NE(vector.find("copy_gm_to_ubuf_align_v2"), std::string::npos);
     EXPECT_NE(vector.find("copy_data_align64((uint8_t*)&tiling, (__ubuf__ uint8_t *)tiling_in_ub"), std::string::npos);
@@ -199,11 +199,13 @@ TEST(CCECodegenTest, RejectsUnprojectedOrWrongTargetSections)
     auto body = std::make_shared<const ir::ReturnStmt>(ir::Span::Unknown());
     auto cube_section = std::make_shared<const ir::SectionStmt>(ir::SectionKind::Cube, body, ir::Span::Unknown());
     CCECodegen vector_codegen(ir::SectionKind::Vector);
-    EXPECT_THROW((void)vector_codegen.GenerateSingle(MakeProgram(cube_section), "a5"), pypto::ir::InternalError);
+    EXPECT_THROW((void)vector_codegen.GenerateSingle(MakeProgram(cube_section), npu::tile_fwk::NPUArch::DAV_3510),
+                 pypto::ir::InternalError);
 
     auto vf_section = std::make_shared<const ir::SectionStmt>(ir::SectionKind::VF, body, ir::Span::Unknown());
     CCECodegen cube_codegen(ir::SectionKind::Cube);
-    EXPECT_THROW((void)cube_codegen.GenerateSingle(MakeProgram(vf_section), "a5"), pypto::ir::InternalError);
+    EXPECT_THROW((void)cube_codegen.GenerateSingle(MakeProgram(vf_section), npu::tile_fwk::NPUArch::DAV_3510),
+                 pypto::ir::InternalError);
 }
 
 TEST(CCECodegenTest, RejectsProgramWithoutDebugInfo)
@@ -216,7 +218,7 @@ TEST(CCECodegenTest, RejectsProgramWithoutDebugInfo)
                                                        ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    EXPECT_THROW((void)codegen.GenerateSingle(program, "a5"), pypto::ir::InternalError);
+    EXPECT_THROW((void)codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510), pypto::ir::InternalError);
 }
 
 TEST(CCECodegenHeaderTest, CoversPointerAndBasicCodegenHelpers)
@@ -295,7 +297,7 @@ TEST(CCECodegenTest, GeneratesNativeLoopJumpsAndReturn)
         ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body, {condition}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body, {condition}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("for (int64_t i"), std::string::npos);
     EXPECT_NE(generated.find("continue;"), std::string::npos);
@@ -321,7 +323,7 @@ TEST(CCECodegenTest, WritesBackLoopCarriedValueBeforeContinue)
                                                         std::vector<ir::VarPtr>{return_var}, ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(for_loop), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(for_loop), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("acc = acc_updated;"), std::string::npos);
     EXPECT_NE(generated.find("continue;"), std::string::npos);
@@ -351,7 +353,7 @@ TEST(CCECodegenTest, SnapshotsCyclicCarriedValuesBeforeForJump)
             ir::Span::Unknown());
 
         CCECodegen codegen(ir::SectionKind::Vector);
-        auto generated = codegen.GenerateSingle(MakeProgram(loop), "a5");
+        auto generated = codegen.GenerateSingle(MakeProgram(loop), npu::tile_fwk::NPUArch::DAV_3510);
         auto save_left = generated.find("int64_t left__next = right;");
         auto save_right = generated.find("int64_t right__next = left;");
         auto write_left = generated.find("left = left__next;");
@@ -381,7 +383,7 @@ TEST(CCECodegenTest, SnapshotsWhileCarriedExpressionsBeforeWritingSlots)
         ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(loop), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(loop), npu::tile_fwk::NPUArch::DAV_3510);
     auto save = generated.find("int64_t right__next = (left + right);");
     auto write = generated.find("left = left__next;");
     ASSERT_NE(save, std::string::npos);
@@ -412,7 +414,7 @@ TEST(CCECodegenTest, SnapshotsCarriedTupleStorageBeforeWritingSlots)
         ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     auto save = generated.find("right__next[1] = left[1];");
     auto write = generated.find("left[0] = left__next[0];");
     ASSERT_NE(save, std::string::npos);
@@ -446,7 +448,7 @@ TEST(CCECodegenTest, SnapshotsSingleAggregateBeforePermutingItsLeaves)
     debug_info->RegisterTupleTypeInfo(type, {ir::TupleTypeKind::NAMED_TUPLE, std::nullopt, {"first", "second"}});
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {}, debug_info), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {}, debug_info), npu::tile_fwk::NPUArch::DAV_3510);
     auto save = generated.find("int64_t state__next__item_1 = state__item_0;");
     auto write = generated.find("state__item_0 = state__next__item_0;");
     ASSERT_NE(save, std::string::npos);
@@ -468,7 +470,7 @@ TEST(CCECodegenTest, PreservesSingleIterationLoopForAddrReg)
                                                         std::vector<ir::VarPtr>{}, ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(for_loop), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(for_loop), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("for (int64_t i"), std::string::npos);
     EXPECT_NE(generated.find("AddrReg addr"), std::string::npos);
@@ -496,7 +498,7 @@ TEST(CCECodegenTest, UsesOneBackingArrayForDynamicAndStaticTupleReads)
                                                      ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body, {index}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body, {index}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_EQ(generated.find("const int64_t values"), std::string::npos);
     EXPECT_NE(generated.find("int64_t values"), std::string::npos);
@@ -523,7 +525,7 @@ TEST(CCECodegenTest, SharesBackingArrayAcrossTupleAliases)
                                                      ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {index}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {index}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_EQ(generated.find("const int64_t first"), std::string::npos);
     EXPECT_EQ(CountOccurrences(generated, "int64_t first"), 1);
@@ -547,8 +549,8 @@ TEST(CCECodegenTest, ClearsTupleBackingArraysBetweenGenerations)
     auto program = MakeProgram(body, {index});
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto first = codegen.GenerateSingle(program, "a5");
-    auto second = codegen.GenerateSingle(program, "a5");
+    auto first = codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
+    auto second = codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_EQ(first.find("const int64_t values"), std::string::npos);
     EXPECT_EQ(second.find("const int64_t values"), std::string::npos);
@@ -568,8 +570,8 @@ TEST(CCECodegenTest, ClearsTileTypeStateBetweenGenerations)
     auto program = MakeProgram(body);
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto first = codegen.GenerateSingle(program, "a5");
-    auto second = codegen.GenerateSingle(program, "a5");
+    auto first = codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
+    auto second = codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
 
     constexpr const char* tile_type_declaration = "using tile_Type = ";
     EXPECT_NE(first.find(tile_type_declaration), std::string::npos);
@@ -605,7 +607,7 @@ TEST(CCECodegenTest, MaterializesHomogeneousTileTuple)
         ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    auto generated = codegen.GenerateSingle(MakeProgram(body, {index}), "a5");
+    auto generated = codegen.GenerateSingle(MakeProgram(body, {index}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("tiles"), std::string::npos);
     EXPECT_NE(generated.find("[] = {tile0"), std::string::npos);
@@ -698,7 +700,7 @@ TEST(CCECodegenTest, EmitsArrayAccessForUnmaterializedTupleVar)
     auto body = std::make_shared<const ir::ReturnStmt>(ir::Span::Unknown());
     auto program = MakeProgram(body);
     CCECodegen codegen(ir::SectionKind::Vector);
-    (void)codegen.GenerateSingle(program, "a5");
+    (void)codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_EQ(codegen.GetExprAsCode(item), "values[1]");
 }
 
@@ -714,7 +716,7 @@ TEST(CCECodegenTest, EmitsFieldAccessForUnmaterializedStructVar)
     auto body = std::make_shared<const ir::ReturnStmt>(ir::Span::Unknown());
     auto program = MakeProgram(body, {}, debug_info);
     CCECodegen codegen(ir::SectionKind::Vector);
-    (void)codegen.GenerateSingle(program, "a5");
+    (void)codegen.GenerateSingle(program, npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_EQ(codegen.GetExprAsCode(item), "config.cols");
 }
 
@@ -744,7 +746,7 @@ TEST(CCECodegenTest, EmitsUnusedIfPhiWithoutDce)
                                                       std::vector<ir::VarPtr>{unused_phi}, ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(if_stmt, {condition}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(if_stmt, {condition}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("if (condition"), std::string::npos);
     EXPECT_NE(generated.find("unused_phi"), std::string::npos);
@@ -778,7 +780,8 @@ TEST(CCECodegenTest, MergesArrayTuplePhiThroughOneBackingArray)
         ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body, {condition, index}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body, {condition, index}),
+                                                   npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_EQ(CountOccurrences(generated, "int64_t selected[2];"), 1);
     EXPECT_NE(generated.find("selected[0] = left[0];"), std::string::npos);
@@ -801,7 +804,7 @@ TEST(CCECodegenTest, DoesNotMaterializeHomogeneousTupleOfTuples)
         ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_EQ(generated.find("nested[]"), std::string::npos);
     EXPECT_EQ(generated.find("nested[2]"), std::string::npos);
@@ -840,7 +843,8 @@ TEST(CCECodegenTest, FlattensAggregateTuplePhiIntoLeafSlots)
                                       {ir::TupleTypeKind::NAMED_TUPLE, std::nullopt, {"first", "second"}});
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body, {condition}, debug_info), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body, {condition}, debug_info),
+                                                   npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_EQ(generated.find("selected[2]"), std::string::npos);
     EXPECT_NE(generated.find("int64_t selected__item_0;"), std::string::npos);
@@ -865,7 +869,8 @@ TEST(CCECodegenTest, WritesBackWhileCarriedValueBeforeBreak)
                                                             std::vector<ir::VarPtr>{return_var}, ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(while_loop, {condition}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(while_loop, {condition}),
+                                                   npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("int64_t acc = 0;"), std::string::npos);
     EXPECT_NE(generated.find("while (condition"), std::string::npos);
@@ -895,7 +900,7 @@ TEST(CCECodegenTest, GeneratesTensorDescriptorAndLoadFromAccessShape)
                                                      ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body, {input}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body, {input}), npu::tile_fwk::NPUArch::DAV_3510);
 
     // The declaration's dims are DYNAMIC and each access resizes them in place, so the access
     // shape shows up in the load's SetShape rather than in the hoisted type.
@@ -933,7 +938,7 @@ TEST(CCECodegenTest, ResolvesTensorAliasAndTransposeLayout)
                                                      ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body, {input}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body, {input}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("inputStrideDim5, Layout::DN"), std::string::npos);
     EXPECT_NE(generated.find("inputStrideDim5(1, 1, 1, 1, 128)"), std::string::npos);
@@ -962,7 +967,8 @@ TEST(CCECodegenTest, HoistsAutoDeclaredVFDestinations)
     auto vf_section = std::make_shared<const ir::SectionStmt>(ir::SectionKind::VF, vf_body, ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(vf_section, {src0, src1, mask}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(vf_section, {src0, src1, mask}),
+                                                   npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_EQ(CountOccurrences(generated, "RegTensor<float> "), 2);
     size_t first_decl = generated.find("RegTensor<float>");
@@ -987,7 +993,7 @@ TEST(CCECodegenTest, HoistsDynamicVFLoopBoundAsUint16)
     auto vf_section = std::make_shared<const ir::SectionStmt>(ir::SectionKind::VF, for_loop, ir::Span::Unknown());
 
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(vf_section, {limit}), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(vf_section, {limit}), npu::tile_fwk::NPUArch::DAV_3510);
 
     EXPECT_NE(generated.find("const uint16_t i_ub = (uint16_t)(limit)"), std::string::npos);
     EXPECT_NE(generated.find("for (uint16_t i = 0; i < i_ub; i += 1)"), std::string::npos);
@@ -1015,7 +1021,7 @@ TEST(CCECodegenTest, EmitsKernelTileValidShapeGetters)
         },
         ir::Span::Unknown());
     CCECodegen codegen(ir::SectionKind::Vector);
-    std::string generated = codegen.GenerateSingle(MakeProgram(body), "a5");
+    std::string generated = codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
     EXPECT_NE(generated.find("(int64_t)(tile.GetValidRow())"), std::string::npos);
     EXPECT_NE(generated.find("(int64_t)(tile.GetValidCol())"), std::string::npos);
 }
@@ -1076,7 +1082,7 @@ TEST(CCECodegenTest, AddsExpressionSpanToCodegenErrors)
 
     CCECodegen codegen(ir::SectionKind::Vector);
     try {
-        (void)codegen.GenerateSingle(MakeProgram(body), "a5");
+        (void)codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_3510);
         FAIL() << "Expected an unknown backend operation to fail code generation";
     } catch (const std::exception& error) {
         std::string message = error.what();
