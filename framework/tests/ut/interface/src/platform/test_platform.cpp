@@ -147,3 +147,9 @@ TEST_F(TestPlatform, A5Stub)
     EXPECT_EQ(path.size(), Num2);
     path.clear();
 }
+
+TEST(PlatformArchTest, GetMemoryLimitForArchRejectsUnconfiguredArchAndSpace)
+{
+    EXPECT_EQ(GetMemoryLimitForArch(NPUArch::DAV_2201, kMemorySpaceVec), 0u);
+    EXPECT_EQ(GetMemoryLimitForArch(NPUArch::DAV_3510, "UnmappedSpace"), 0u);
+}

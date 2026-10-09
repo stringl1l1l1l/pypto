@@ -1092,5 +1092,13 @@ TEST(CCECodegenTest, AddsExpressionSpanToCodegenErrors)
     }
 }
 
+TEST(CCECodegenTest, RejectsUnknownArch)
+{
+    auto body = std::make_shared<const ir::ReturnStmt>(ir::Span::Unknown());
+    CCECodegen codegen(ir::SectionKind::Vector);
+    EXPECT_THROW((void)codegen.GenerateSingle(MakeProgram(body), npu::tile_fwk::NPUArch::DAV_UNKNOWN),
+                 npu::tile_fwk::Error);
+}
+
 } // namespace codegen
 } // namespace pypto
