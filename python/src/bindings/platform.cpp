@@ -29,10 +29,17 @@ void BindPlatform(py::module_& m)
     arch_enum.value("DAV_3003", NPUArch::DAV_3003);
     arch_enum.value("DAV_3113", NPUArch::DAV_3113);
     arch_enum.value("DAV_UNKNOWN", NPUArch::DAV_UNKNOWN);
-    // str() must yield the canonical __NPU_ARCH__ number ("3510"): the string form crosses
-    // the std::string pybind boundaries (env var, bisheng flags, generated paths).
+    // str() yields the canonical __NPU_ARCH__ number ("3510"): artifact/build dir
+    // names embed that numeric form. Use .name for the member-name form.
     arch_enum.attr("__str__") = py::cpp_function([](NPUArch self) { return std::to_string(static_cast<int>(self)); },
                                                  py::is_method(arch_enum), py::name("__str__"));
+
+    // Members are the only valid instances: reject value-based construction.
+    arch_enum.attr("__init__") = py::cpp_function(
+        [](py::object, py::object) {
+            throw py::type_error("NpuArch cannot be constructed from a value; use an NpuArch member");
+        },
+        py::is_method(arch_enum), py::name("__init__"), py::arg("value"));
 
     m.def("GetNPUArch", []() -> std::string {
          auto npuArch = Platform::Instance().GetSoc().GetNPUArch();

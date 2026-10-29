@@ -13,6 +13,7 @@
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -28,7 +29,7 @@ def write_warp_reduce_add(
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.warp_reduce_add(values[0, tid])
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_reduce_add(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -72,7 +73,7 @@ def write_warp_reduce_max(
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.warp_reduce_max(values[0, tid])
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_reduce_max(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -116,7 +117,7 @@ def write_warp_reduce_min(
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.warp_reduce_min(values[0, tid])
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_reduce_min(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
     output: pl.Tensor[[1, WARP_SIZE], pl.DT_FP32],
@@ -170,7 +171,7 @@ def write_warp_reduce_fp16_divergent(
         output[1, tid] = pl.simt.warp_reduce_max(doubled)
         output[2, tid] = pl.simt.warp_reduce_min(doubled)
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_reduce_fp16_divergent(
     values: pl.Tensor[[1, WARP_SIZE], pl.DT_FP16],
     output: pl.Tensor[[3, WARP_SIZE], pl.DT_FP16],

@@ -1931,7 +1931,7 @@ def _apply_default_layout(tt: "TileType") -> None:
 
     if tt.target_memory in (MemorySpace.ScaleLeft, MemorySpace.ScaleRight):
         if default_layout is None:
-            raise InvalidVal(f"{tt.target_memory.name} is only supported on 3510, got architecture '{arch}'")
+            raise InvalidVal(f"{tt.target_memory.name} is only supported on 3510, got architecture '{arch.name}'")
 
     if default_layout is None:
         return
@@ -1968,7 +1968,7 @@ def _apply_default_layout(tt: "TileType") -> None:
         and tt.layout in _REJECTED_LAYOUTS_ON_A5
     ):
         raise InvalidVal(
-            f"{tt.target_memory.name} tiles do not support {tt.layout.name} layout on '{arch}'; "
+            f"{tt.target_memory.name} tiles do not support {tt.layout.name} layout on '{arch.name}'; "
             f"use the default {default_layout.name} layout instead."
         )
 
@@ -1978,7 +1978,7 @@ def _apply_default_layout(tt: "TileType") -> None:
         raise InvalidVal(
             f"{space_name} tiles require layout in {{{allowed_text}}}, "
             f"got {tt.layout.name}. "
-            f"Default for '{arch}' is {default_layout.name}."
+            f"Default for '{arch.name}' is {default_layout.name}."
         )
 
     if tt.target_memory == MemorySpace.Acc and tt.fractal is None:
@@ -3523,7 +3523,7 @@ def _get_memory_capacity(target_memory: MemorySpace, span: Span | None = None) -
         MemorySpace.ScaleLeft, MemorySpace.ScaleRight,
     ):
         _warn_located(
-            f"Cannot determine {target_memory.name} capacity for arch {arch}; tile capacity validation "
+            f"Cannot determine {target_memory.name} capacity for arch {arch.name}; tile capacity validation "
             "was skipped. Check the installed platform ini and native bindings.",
             CapacityUnknown,
             span,

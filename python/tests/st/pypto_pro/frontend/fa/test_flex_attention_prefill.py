@@ -76,6 +76,7 @@ import math
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -836,7 +837,7 @@ def scalar_bound(spans_gm, b_idx, span_num, q_abs):
 # ================================================================
 #  Kernel with NBuffer + auto_mutex
 # ================================================================
-@pl.jit(arch="3510", auto_mutex=True, compile_timeout=200)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, compile_timeout=200)
 def flex_attention_bf16(
     q: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC, pl.DYNAMIC], pl.DT_BF16],
     # PagedAttention NHD, exactly as the operator declares them:

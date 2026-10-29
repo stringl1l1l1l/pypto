@@ -110,7 +110,7 @@ def test_missing_architecture_is_not_assumed_to_use_a5_geometry():
 
 def test_missing_kernel_mode_is_not_replaced_with_mixed_target(future_config):
     """A missing single-engine compiler target cannot safely use a mixed binary's launch ABI."""
-    with pytest.raises(InvalidVal, match=r"kernel_targets.3003.cube"):
+    with pytest.raises(InvalidVal, match=r"kernel_targets\.DAV_3003\.cube"):
         future_config.resolve_kernel_target(NpuArch.DAV_3003, has_cube=True, has_vector=False)
 
 
@@ -198,7 +198,7 @@ def test_debug_command_reuses_compiled_target_without_resolving(monkeypatch, tmp
     monkeypatch.setenv("ASCEND_WORK_PATH", str(tmp_path))
     monkeypatch.setenv("ASCEND_HOME_PATH", "/toolkit")
     monkeypatch.setenv("ASCEND_TOOLKIT_HOME", "/toolkit")
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
     monkeypatch.setattr(dump.shutil, "which", lambda _: "/toolkit/bin/bisheng")
     monkeypatch.setattr(
         JitCompileConfig, "resolve_kernel_target", MagicMock(side_effect=AssertionError("Already resolved")),

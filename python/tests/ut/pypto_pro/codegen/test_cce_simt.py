@@ -19,10 +19,11 @@ import re
 
 from pypto_pro._errors import NotSupported
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 
-def _compile_to_cce(kernel, arch: str = "3510") -> str:
+def _compile_to_cce(kernel, arch: NpuArch = NpuArch.DAV_3510) -> str:
     from pypto_pro.runtime.jit import _add_kernel_header, _assemble_cv_source, _parse_and_codegen_targets
     from pypto_pro.runtime.platform import normalize_arch
 
@@ -478,7 +479,7 @@ def test_simt_auto_mutex_emits_pipe_v_lock_unlock_around_launch():
 
 def test_simt_codegen_rejects_pre_a5_architecture():
     with pytest.raises(NotSupported, match="requires arch='3510'"):
-        _compile_to_cce(_simt_tile_codegen_kernel, arch="a3")
+        _compile_to_cce(_simt_tile_codegen_kernel, arch=NpuArch.DAV_2201)
 
 
 @pl.vector_function(mode="simt", max_threads=1)

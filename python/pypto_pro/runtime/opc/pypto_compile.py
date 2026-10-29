@@ -370,7 +370,7 @@ def _prepare_infer_cpp(
     return infer_cpp_path, kernel_type
 
 
-def generate_binary_headers(kernel, arch: str = "3510") -> str:
+def generate_binary_headers(kernel, arch: NpuArch = NpuArch.DAV_3510) -> str:
     """Generate the TilingData and TilingKey headers required by binary delivery."""
     from pypto_pro.runtime.jit import (
         _artifact_prefix_from_filename,
@@ -407,7 +407,7 @@ def generate_binary_headers(kernel, arch: str = "3510") -> str:
     return binary_dir
 
 
-def prepare_binary_headers(op_path: str, arch: str = "3510") -> str:
+def prepare_binary_headers(op_path: str, arch: NpuArch = NpuArch.DAV_3510) -> str:
     """Load the sole ``@pl.jit`` kernel in ``op_path`` and prepare its binary-delivery headers."""
     return generate_binary_headers(_load_kernel(op_path), arch)
 
@@ -672,7 +672,7 @@ def pypto_compile_op(
     code_channel=-1,
     op_compile_option="{}",
     extend_options=None,
-    arch: str = "3510",
+    arch: NpuArch = NpuArch.DAV_3510,
 ):
     """PyPTO leaf replacing ``asc_op_compiler.compile_op``. Signature-compatible; ``cce_file`` is the PyPTO
     DSL ``.py``. Writes the flat ``kernel_meta`` artifacts + ``<kernel>.o``/``.json`` and records the json

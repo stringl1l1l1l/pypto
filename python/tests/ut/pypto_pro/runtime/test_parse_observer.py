@@ -12,10 +12,11 @@
 
 from pypto_pro import ir
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def grouped_copy(a: pl.Tensor[[1, 64], pl.DT_FP32], out: pl.Tensor[[1, 64], pl.DT_FP32]):
     tt = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
     group = pl.make_tile_group(type=tt, addrs=[0, 256], mutex_ids="auto", depth=2)

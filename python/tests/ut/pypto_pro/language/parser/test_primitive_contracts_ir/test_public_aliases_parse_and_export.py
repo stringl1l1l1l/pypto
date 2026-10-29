@@ -20,10 +20,11 @@ import re
 from pypto_pro import ir
 from pypto_pro._errors import InvalidOperation
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 
-@pl.jit(arch="3510", auto_mutex=False)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
 def scalar_aliases(x: pl.Tensor[[1], pl.DT_FP32]):
     tt = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
     a = pl.make_tile(tt, addr=0)

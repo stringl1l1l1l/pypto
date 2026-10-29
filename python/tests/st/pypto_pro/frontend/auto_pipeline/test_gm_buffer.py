@@ -36,6 +36,7 @@ import re
 import pypto_pro.language as pl
 from pypto_pro.runtime.pipeline._analyzer import probe_kernel_facts
 from pypto_pro.runtime.pipeline._transformer import transform_pipeline
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -139,7 +140,7 @@ def _vcv_kernel(preload: int, depth_a: int, depth_b: int, pitched: bool, name: s
     fwd_a, bwd_a = _ids(0, depth_a), _ids(depth_a, depth_a)
     fwd_b, bwd_b = _ids(2 * depth_a, depth_b), _ids(2 * depth_a + depth_b, depth_b)
 
-    @pl.jit(arch="3510", auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=preload))
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=preload))
     def vcv(
         src: pl.Tensor[[CORES * NT * TM, K], pl.DT_FP16],
         b: pl.Tensor[[K, N], pl.DT_FP16],
@@ -255,7 +256,7 @@ def _cvc_kernel(preload: int, depth_a: int, depth_b: int, pitched: bool, name: s
     fwd_a, bwd_a = _ids(0, depth_a), _ids(depth_a, depth_a)
     fwd_b, bwd_b = _ids(2 * depth_a, depth_b), _ids(2 * depth_a + depth_b, depth_b)
 
-    @pl.jit(arch="3510", auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=preload))
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=preload))
     def cvc(
         a: pl.Tensor[[CORES * NT * TM, K], pl.DT_FP16],
         b: pl.Tensor[[K, N], pl.DT_FP16],
@@ -454,7 +455,7 @@ def dyn_matmul(k, gm_a, b, out, mat_a, mat_b, left, right, acc):
 
 
 def _dyn_kernel(name: str):
-    @pl.jit(arch="3510", auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=1))
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=1))
     def dyn(
         src: pl.Tensor[[CORES * NT * TM, K], pl.DT_FP16],
         b: pl.Tensor[[K, N], pl.DT_FP16],
@@ -522,7 +523,7 @@ def dyn3_matmul(k, gm_a, b, out, mat_a, mat_b, left, right, acc):
 
 
 def _dyn3_kernel(name: str):
-    @pl.jit(arch="3510", auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=1))
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=1))
     def dyn3(
         src: pl.Tensor[[CORES * NT * TM, K], pl.DT_FP16],
         b: pl.Tensor[[K, N], pl.DT_FP16],
@@ -617,7 +618,7 @@ def test_gm_dynamic_slot_shape_3d():
 
 
 def _gm_decl_kernel(depth, name):
-    @pl.jit(arch="3510", auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=1))
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, name=name, pipeline=pl.pipeline.PipelineConfig(preload=1))
     def k(
         src: pl.Tensor[[NT * TM, K], pl.DT_FP16],
         b: pl.Tensor[[K, N], pl.DT_FP16],
@@ -678,7 +679,7 @@ def consume(gm_a, mat_a):
     pl.load(ma, gm_a, [0, 0])
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def helper_decl_kernel(src: pl.Tensor[[NT * TM, K], pl.DT_FP16], ws: pl.Ptr[pl.DT_FP16]):
     gm_a = pl.make_tensor(ws, [TM, K], depth=2, fwd_ids=[0, 1], bwd_ids=[2, 3])
     with pl.section_cube():
@@ -703,7 +704,7 @@ def scale(k, src, gm_a, ub_a):
     pl.store(gm_a, t, [0, 0])
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def outside_stage_kernel(src: pl.Tensor[[NT * TM, K], pl.DT_FP16], ws: pl.Ptr[pl.DT_FP16]):
     gm_a = pl.make_tensor(ws, [TM, K], depth=2, fwd_ids=[0, 1], bwd_ids=[2, 3])
     with pl.section_cube():
@@ -722,7 +723,7 @@ def outside_stage_kernel(src: pl.Tensor[[NT * TM, K], pl.DT_FP16], ws: pl.Ptr[pl
         _ = gm_a[0, 0]
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def no_depth_kernel(src: pl.Tensor[[NT * TM, K], pl.DT_FP16], ws: pl.Ptr[pl.DT_FP16]):
     gm_a = pl.make_tensor(ws, [TM, K], fwd_ids=[0, 1], bwd_ids=[2, 3])
     with pl.section_cube():
@@ -740,7 +741,7 @@ def no_depth_kernel(src: pl.Tensor[[NT * TM, K], pl.DT_FP16], ws: pl.Ptr[pl.DT_F
             consume(gm_a, mat_a)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def unknown_shape_kernel(src: pl.Tensor[[NT * TM, K], pl.DT_FP16], ws: pl.Ptr[pl.DT_FP16]):
     gm_a = pl.make_tensor(ws, src.shape, depth=2, fwd_ids=[0, 1], bwd_ids=[2, 3])
     with pl.section_cube():

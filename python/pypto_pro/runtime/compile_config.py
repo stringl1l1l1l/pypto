@@ -100,7 +100,7 @@ class JitCompileConfig:
     def build_llvm_args(self, arch: NpuArch) -> list[str]:
         arch_args = self.llvm_arch_args.get(arch)
         if arch_args is None:
-            raise InvalidVal(f"JIT compile config does not define llvm_arch_args for arch '{arch}'")
+            raise InvalidVal(f"JIT compile config does not define llvm_arch_args for arch '{arch.name}'")
         return [*self.llvm_common_args, *arch_args]
 
     def runtime_include_flags(self, ascend_home_path: str) -> list[str]:
@@ -127,17 +127,17 @@ class JitCompileConfig:
             raise RuntimeFailure("Cannot compile a kernel without cube or vector code; add a target section")
         arch_config = self.kernel_targets.get(arch)
         if arch_config is None:
-            raise InvalidVal(f"JIT compile config does not define kernel_targets for arch '{arch}'")
+            raise InvalidVal(f"JIT compile config does not define kernel_targets for arch '{arch.name}'")
         variant = "cube_vec" if has_cube and has_vector else "cube" if has_cube else "vec"
         target = arch_config.get(variant)
         if target is None:
-            raise InvalidVal(f"JIT compile config does not define kernel_targets.{arch}.{variant}")
+            raise InvalidVal(f"JIT compile config does not define kernel_targets.{arch.name}.{variant}")
         return target
 
     def _memory_arch_flag(self, arch: NpuArch) -> str:
         mem_arch = self.memory_arch_flags.get(arch)
         if mem_arch is None:
-            raise InvalidVal(f"JIT compile config does not define memory_arch_flags for arch '{arch}'")
+            raise InvalidVal(f"JIT compile config does not define memory_arch_flags for arch '{arch.name}'")
         return mem_arch
 
 

@@ -23,6 +23,7 @@ consumed by InsertSync, so the frontend never handles mutex ids or manual lock/u
 
 from pypto_pro._errors import InvalidShape, InvalidType, InvalidVal, NameNotFound, OutOfRange, PyptoProError
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 from pypto.pypto_impl import ir
@@ -313,7 +314,7 @@ def test_auto_mutex_ids_from_closure():
 
 
 def test_auto_mutex_locks_scale_kwarg_tile(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     @pl.jit(auto_mutex=True)
     def k(out: pl.Tensor[[64, 64], pl.DT_INT8]):

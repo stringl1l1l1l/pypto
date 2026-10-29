@@ -9,6 +9,7 @@
 """Limit a synchronized mixed matmul; independent scalar probes cannot detect missing CV participants."""
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 from test_core_limits import DEVICE_ID
 import torch
@@ -21,7 +22,7 @@ CV_NUM_TILES = 13
 CV_M = CV_TILE_M * CV_NUM_TILES
 
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def limited_matmul(
     a: pl.Tensor[[CV_M, CV_TILE_K], pl.DT_FP16],
     b: pl.Tensor[[CV_TILE_K, CV_TILE_N], pl.DT_FP16],

@@ -13,6 +13,8 @@
 import pytest
 import torch
 
+from pypto.pypto_impl import NpuArch
+
 
 def pytest_configure(config):
     """Patch NPU APIs before any test module is imported.
@@ -105,7 +107,7 @@ def _compile_only_no_launch(monkeypatch):
         with pypto.options("jit_scope"):
             self._set_config_option()
             # Re-apply after jit option merge so the 950 stage sticks.
-            if pypto.platform.npuarch == "DAV_3510":
+            if pypto.platform.npuarch == NpuArch.DAV_3510.name:
                 pypto.set_host_options(compile_stage=pypto.CompStage.EXECUTE_GRAPH)
             pypto_impl.DeviceInit()
             self.compile(pto_tensors)

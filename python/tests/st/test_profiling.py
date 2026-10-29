@@ -21,6 +21,7 @@ import torch
 import torch_npu
 
 import pypto
+from pypto.pypto_impl import NpuArch
 
 
 def _get_root_dir() -> str:
@@ -80,7 +81,7 @@ def _get_pmu_event_type() -> int:
 
 
 def _get_pmu_arch() -> str:
-    return "dav_3510" if pypto.platform.npuarch == "DAV_3510" else "dav_2201"
+    return "dav_3510" if pypto.platform.npuarch == NpuArch.DAV_3510.name else "dav_2201"
 
 
 def _collect_device_data_dirs(prof_dirs):

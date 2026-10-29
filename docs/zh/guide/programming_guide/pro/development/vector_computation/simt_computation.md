@@ -14,6 +14,7 @@ SIMT计算以线程为基本执行单元，适合表达运行时索引、逐线�
 
 ```python
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 
 ELEMENTS = 1000
@@ -46,8 +47,9 @@ def transform(
 
 ```python
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def transform_kernel(
     input_tensor: pl.Tensor[[1, ELEMENTS], pl.DT_FP32],
     output: pl.Tensor[[1, ELEMENTS], pl.DT_FP32],
@@ -94,6 +96,7 @@ Host启动参数`block_dim`用于配置逻辑核数；SIMT函数内的`pypto_pro
 
 ```python
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 @pl.vector_function(mode="simt", max_threads=256)
 def copy_3d(
@@ -143,6 +146,7 @@ SIMT函数均通过完整标量下标访问Tile或Tensor元素。以二维对象
 
 ```python
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 @pl.vector_function(mode="simt", max_threads=256)
 def add_valid(data, delta: pl.DT_FP32):
@@ -192,6 +196,7 @@ output[row, col] = input_tensor[indices[0, row], col]
 
 ```python
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 
 INPUT_ROWS = 100000
@@ -216,7 +221,7 @@ def gather_rows(
             output[row, col] = input_tensor[input_row, col]
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def gather_kernel(
     input_tensor: pl.Tensor[[INPUT_ROWS, WIDTH], pl.DT_FP32],
     indices: pl.Tensor[[1, OUTPUT_ROWS], pl.DT_INT32],

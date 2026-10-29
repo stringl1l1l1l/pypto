@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 from pypto_pro.runtime.tilingkey import TilingKeyField
 
 
@@ -37,7 +38,7 @@ def _compiled_cache(kernel):
     return getattr(kernel, "_compiled_by_signature")
 
 
-@pl.jit(arch="3510", auto_mutex=True, tiling_key=TkPermutation)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, tiling_key=TkPermutation)
 def kernel_permutation(
     x: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
     y: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],

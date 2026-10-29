@@ -23,43 +23,67 @@ from pypto_pro.runtime.platform import NpuArch, normalize_arch
 import pytest
 
 
-def test_parse_arch_canonical_forms():
-    assert normalize_arch("3510") == NpuArch.DAV_3510
-    assert normalize_arch(" 3510 ") == NpuArch.DAV_3510
+def test_parse_arch_rejects_numeric_strings():
+    for bad in ("3510", "DAV_3510"):
+        with pytest.raises(InvalidVal, match="expect a valid NpuArch value"):
+            normalize_arch(bad)
+
+
+def test_parse_arch_rejects_non_str_non_enum_inputs():
+    for bad in (None, 3510):
+        with pytest.raises(InvalidVal, match="expected str or NpuArch"):
+            normalize_arch(bad)
 
 
 def test_parse_arch_accepts_enum_values():
-    assert normalize_arch(NpuArch.DAV_3510) == NpuArch.DAV_3510
-    assert normalize_arch(NpuArch.DAV_2201) == NpuArch.DAV_2201
+    members = (
+        NpuArch.DAV_3510,
+        NpuArch.DAV_2201,
+        NpuArch.DAV_1001,
+        NpuArch.DAV_3003,
+        NpuArch.DAV_3113,
+        NpuArch.DAV_UNKNOWN,
+    )
+    for member in members:
+        assert normalize_arch(member) == member
 
 
-def test_parse_arch_collapses_unregistered_enum_values_to_unknown():
-    assert normalize_arch(NpuArch(9999)) == NpuArch.DAV_UNKNOWN
-    assert normalize_arch(NpuArch.DAV_UNKNOWN) == NpuArch.DAV_UNKNOWN
-    assert normalize_arch(NpuArch(3510)) == NpuArch.DAV_3510
+def test_npuarch_construction_from_value_is_forbidden():
+    for value in (3510, "DAV_3510"):
+        with pytest.raises(TypeError, match="cannot be constructed from a value"):
+            NpuArch(value)
 
 
-def test_npuarch_str_is_canonical_form():
+def test_npuarch_name_is_canonical_form():
+    assert NpuArch.DAV_3510.name == "DAV_3510"
+    assert NpuArch.DAV_2201.name == "DAV_2201"
+
+
+def test_npuarch_str_is_numeric_for_artifact_paths():
     assert str(NpuArch.DAV_3510) == "3510"
     assert f"{NpuArch.DAV_3510}" == "3510"
 
 
-def test_parse_arch_legacy_a5_maps_to_3510_with_deprecation():
+def test_parse_arch_legacy_names_warn_and_resolve():
     with pytest.warns(DeprecationWarning, match="'a5' is deprecated"):
         assert normalize_arch("a5") == NpuArch.DAV_3510
-
-
-def test_parse_arch_legacy_a2_a3_map_to_2201_without_warning():
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with pytest.warns(DeprecationWarning):
+        assert normalize_arch(" A5 ") == NpuArch.DAV_3510
         assert normalize_arch("a2") == NpuArch.DAV_2201
         assert normalize_arch("a3") == NpuArch.DAV_2201
 
 
 def test_parse_arch_unknown_raises():
-    for bad in ("future", "a6", ""):
+    for bad in ("future", "a6"):
         with pytest.raises(InvalidVal):
             normalize_arch(bad)
+
+
+def test_jit_rejects_numeric_string_arch():
+    import pypto_pro.language as pl
+
+    with pytest.raises(InvalidVal, match="expect a valid NpuArch value"):
+        pl.jit(arch="3510")
 
 
 def test_setup_arch_env_accepts_deprecated_a5(monkeypatch):
@@ -69,7 +93,7 @@ def test_setup_arch_env_accepts_deprecated_a5(monkeypatch):
     with pytest.warns(DeprecationWarning):
         parsed = normalize_arch("a5")
     assert _setup_arch_env(parsed) == NpuArch.DAV_3510
-    assert os.environ["PYPTOPRO_JIT_ARCH"] == "3510"
+    assert os.environ["PYPTOPRO_JIT_ARCH"] == NpuArch.DAV_3510.name
 
 
 def test_setup_arch_env_canonicalises_env_value(monkeypatch):
@@ -77,7 +101,10 @@ def test_setup_arch_env_canonicalises_env_value(monkeypatch):
 
     monkeypatch.delenv("PYPTOPRO_JIT_ARCH", raising=False)
     assert _setup_arch_env(NpuArch.DAV_3510) == NpuArch.DAV_3510
-    assert get_current_arch() == NpuArch.DAV_3510
+    assert os.environ["PYPTOPRO_JIT_ARCH"] == NpuArch.DAV_3510.name
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert get_current_arch() == NpuArch.DAV_3510
 
 
 def test_setup_arch_env_rejects_non_3510():
@@ -103,16 +130,6 @@ def test_jit_decorator_warns_on_deprecated_a5():
         @pl.jit(arch="a5")
         def kernel(x):
             return x
-
-
-def test_resolve_kernel_target_treats_a5_as_3510():
-    from pypto_pro.runtime.compile_config import get_jit_compile_config
-
-    cfg = get_jit_compile_config()
-    with pytest.warns(DeprecationWarning):
-        legacy = normalize_arch("a5")
-    canonical_target = cfg.resolve_kernel_target(NpuArch.DAV_3510, has_cube=True, has_vector=True)
-    assert cfg.resolve_kernel_target(legacy, has_cube=True, has_vector=True) == canonical_target
 
 
 def test_platform_arch_is_enum():

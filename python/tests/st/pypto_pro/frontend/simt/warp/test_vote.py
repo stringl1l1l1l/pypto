@@ -13,6 +13,7 @@
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -33,7 +34,7 @@ def write_warp_active_mask(output):
         output[1, tid] = 0
         output[2, tid] = pl.simt.warp_active_mask()
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_active_mask(output: pl.Tensor[[3, WARP_SIZE], pl.DT_UINT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[3, WARP_SIZE], dtype=pl.DT_UINT32, target_memory=pl.MemorySpace.Vec),
@@ -81,7 +82,7 @@ def write_warp_all(output):
     output[0, tid] = pl.simt.warp_all(lane < warp_size)
     output[1, tid] = pl.simt.warp_all(lane < warp_size - 1)
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_all(output: pl.Tensor[[2, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[2, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),
@@ -113,7 +114,7 @@ def write_warp_any(output):
     output[0, tid] = pl.simt.warp_any(lane == warp_size - 1)
     output[1, tid] = pl.simt.warp_any(lane == warp_size)
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_any(output: pl.Tensor[[2, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[2, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),
@@ -145,7 +146,7 @@ def write_warp_ballot(output):
     output[0, tid] = pl.simt.warp_ballot((lane % 2) == 0)
     output[1, tid] = pl.simt.warp_ballot(lane < warp_size // 2)
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_warp_ballot(output: pl.Tensor[[2, WARP_SIZE], pl.DT_UINT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[2, WARP_SIZE], dtype=pl.DT_UINT32, target_memory=pl.MemorySpace.Vec),

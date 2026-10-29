@@ -27,6 +27,7 @@ from pypto_pro._errors import (
 )
 from pypto_pro.ir.op import block_ops
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 
@@ -87,7 +88,7 @@ def test_builder_capacity_warning_uses_explicit_or_current_span(monkeypatch, exp
 @pytest.mark.parametrize("acc_addr", [0x40000, -1])
 @pytest.mark.parametrize("probe", [False, True])
 def test_kernel_stops_at_first_over_capacity_declaration(acc_addr, probe):
-    @pl.jit(arch="3510")
+    @pl.jit(arch=NpuArch.DAV_3510)
     def oversized(x: pl.Tensor[[1], pl.DT_FP32]):
         vec_type = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
         acc_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Acc)
@@ -117,7 +118,7 @@ def test_builder_error_inherits_the_active_call_span():
 
 
 def test_registered_builder_error_keeps_the_dsl_call_location():
-    @pl.jit(arch="3510")
+    @pl.jit(arch=NpuArch.DAV_3510)
     def invalid_move(x: pl.Tensor[[1], pl.DT_FP16]):
         tile = pl.make_tile(pl.TileType(shape=[16, 16], dtype=pl.DT_FP16,
                                         target_memory=pl.MemorySpace.Vec), addr=0)
@@ -133,7 +134,7 @@ def test_registered_builder_error_keeps_the_dsl_call_location():
 
 
 def test_nested_builder_error_keeps_the_inner_call_location():
-    @pl.jit(arch="3510")
+    @pl.jit(arch=NpuArch.DAV_3510)
     def invalid_scalar(x: pl.Tensor[[1], pl.DT_FP16]):
         tile = pl.make_tile(pl.TileType(shape=[16, 16], dtype=pl.DT_FP16,
                                         target_memory=pl.MemorySpace.Vec), addr=0)
@@ -156,7 +157,7 @@ def test_nested_builder_error_keeps_the_inner_call_location():
     ([17, 16], InvalidVal), ([16, 17], InvalidVal),
 ])
 def test_validshape_error_keeps_the_dsl_call_location(shape, error):
-    @pl.jit(arch="3510")
+    @pl.jit(arch=NpuArch.DAV_3510)
     def invalid_validshape(x: pl.Tensor[[1], pl.DT_FP16]):
         tile_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
@@ -172,7 +173,7 @@ def test_validshape_error_keeps_the_dsl_call_location(shape, error):
 
 @pytest.mark.parametrize("cols,error", [(-1, InvalidVal), (17, InvalidVal)])
 def test_validshape_checks_static_dimension_alongside_dynamic_dimension(cols, error):
-    @pl.jit(arch="3510")
+    @pl.jit(arch=NpuArch.DAV_3510)
     def invalid_validshape(x: pl.Tensor[[1], pl.DT_FP16], rows: pl.DT_INT64):
         tile_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
@@ -185,7 +186,7 @@ def test_validshape_checks_static_dimension_alongside_dynamic_dimension(cols, er
 
 @pytest.mark.parametrize("shape", [[0, 0], [0, 16], [16, 0], [16, 16]])
 def test_validshape_accepts_zero_and_full_tile_dimensions(shape):
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def valid_validshape(x: pl.Tensor[[1], pl.DT_FP16]):
         tile_type = pl.TileType(shape=[16, 16], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
         tile = pl.make_tile(tile_type, addr=0)
@@ -197,7 +198,7 @@ def test_validshape_accepts_zero_and_full_tile_dimensions(shape):
 
 
 def _manual_alias_kernel(addrs, ids, auto_mutex=True, include_auto=False):
-    @pl.jit(arch="3510", auto_mutex=auto_mutex)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=auto_mutex)
     def kernel(x: pl.Tensor[[1], pl.DT_FP32]):
         tt = pl.TileType(shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec)
         group = pl.make_tile_group(type=tt, addrs=addrs, mutex_ids=ids, depth=2)
