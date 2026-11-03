@@ -25,6 +25,7 @@ from pypto_pro._errors import (
     NotSupported,
 )
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 from pypto.pypto_impl import ir as _ir
@@ -383,7 +384,7 @@ def test_load_with_dynamic_valid_shape():
 
 
 def test_fillpad_accepts_empty_valid_region_from_tile_group():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def main(_jit_entry: pl.DT_INT64):
         tile_type = pl.TileType(
             shape=[1, 64], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec,
@@ -585,7 +586,7 @@ def test_move_allows_static_window_to_exceed_shape(offset):
 
 
 def test_move_allows_window_that_fits_runtime_valid_shape():
-    @pl.jit(arch="a5", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def main(_jit_entry: pl.DT_INT64):
         src_type = pl.TileType(
             shape=[128, 192], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Mat, layout=pl.NZ
@@ -619,7 +620,7 @@ def test_insert_allows_static_window_to_exceed_shape(offset):
 
 
 def test_insert_transpose_checks_destination_axes_in_source_order():
-    @pl.jit(arch="a5", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def main(_jit_entry: pl.DT_INT64):
         src_type = pl.TileType(
             shape=[64, 16], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec, layout=pl.NZ
@@ -635,7 +636,7 @@ def test_insert_transpose_checks_destination_axes_in_source_order():
 
 
 def test_insert_accepts_tile_slice_window():
-    @pl.jit(arch="a5", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def main(_jit_entry: pl.DT_INT64):
         src_type = pl.TileType(
             shape=[16, 4096], dtype=pl.DT_INT8, target_memory=pl.MemorySpace.Vec, layout=pl.ND
@@ -770,7 +771,7 @@ def test_acc_to_mat_insert_with_scaling_tile_preserves_operand():
 
 @pytest.mark.parametrize("layout", [pl.ND, pl.DN])
 def test_a5_acc_to_mat_move_accepts_supported_destination_layouts(monkeypatch, layout):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     @pl.jit(auto_mutex=False)
     def main(_jit_entry: pl.DT_INT64):
@@ -1483,7 +1484,7 @@ def test_make_tile_addr_from_constant_expression():
 @pytest.mark.parametrize("memory", [pl.MemorySpace.Left, pl.MemorySpace.Right, pl.MemorySpace.Acc])
 @pytest.mark.parametrize("layout", [pl.ZZ, pl.NN])
 def test_a5_rejects_zz_nn_for_cube_buffers(monkeypatch, memory, layout):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     with pytest.raises(InvalidVal, match="do not support"):
 
@@ -1501,7 +1502,7 @@ def test_a5_rejects_zz_nn_for_cube_buffers(monkeypatch, memory, layout):
 
 
 def test_a5_allows_regular_cube_buffer_layouts(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     @pl.jit(auto_mutex=False)
     def create_tile(_jit_entry: pl.DT_INT64):
@@ -1530,7 +1531,7 @@ def test_a5_allows_regular_cube_buffer_layouts(monkeypatch):
     ],
 )
 def test_dump_data_rejects_l0a_l0b_buffers(monkeypatch, memory):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     with pytest.raises(NotSupported, match=rf"does not support {memory.name} tiles"):
 
@@ -1575,7 +1576,7 @@ def test_high_dimensional_nz_load_store_use_last_two_axes_by_default():
 
 
 def test_store_and_store_tile_with_scaling_tile_use_store_op(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     @pl.jit(auto_mutex=False)
     def main(out: pl.Tensor[[64, 64], pl.DT_INT8]):
@@ -1644,7 +1645,7 @@ def test_single_column_vec_tile_rejects_explicit_nd_with_dn_hint():
 
 
 def test_single_column_mat_tile_rejects_explicit_nd_with_dn_hint(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     with pytest.raises(
         InvalidFormat,
@@ -1676,7 +1677,7 @@ def test_non_column_dn_load_requires_descending_order():
 
 
 def test_nz_tensor_to_non_column_dn_tile_reports_layout_incompatibility(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     with pytest.raises(InvalidType, match="load: unsupported layout/dtype combination"):
 

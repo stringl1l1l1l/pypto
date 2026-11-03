@@ -69,6 +69,7 @@ linear_thread_idx = thread_x + thread_y × block_x + thread_z × block_x × bloc
 
 ```python
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 
 @pl.vector_function(mode="simt", max_threads=8)
@@ -85,7 +86,7 @@ def copy_by_index(
     output[0, global_idx] = source[0, global_idx]
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def copy_kernel(
     source: pl.Tensor[[1, 24], pl.DT_FP32],
     output: pl.Tensor[[1, 24], pl.DT_FP32],

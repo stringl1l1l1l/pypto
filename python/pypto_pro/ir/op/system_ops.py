@@ -17,6 +17,7 @@ System operations handle hardware synchronization primitives:
 
 from __future__ import annotations
 
+from pypto.pypto_impl import NpuArch
 from pypto.pypto_impl import ir as _ir_core
 from pypto.pypto_impl.ir import (
     CacheLine,
@@ -120,7 +121,7 @@ def _validate_sync_pipes(
     if wait_pipe not in supported_wait_pipes:
         supported = ", ".join(str(pipe) for pipe in supported_wait_pipes)
         raise NotSupported(
-            f"unsupported 3510 synchronization path{side}: {set_pipe} -> {wait_pipe}; "
+            f"unsupported {NpuArch.DAV_3510.name} synchronization path{side}: {set_pipe} -> {wait_pipe}; "
             f"supported wait_pipe values for {set_pipe}: {supported}"
         )
 

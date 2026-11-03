@@ -257,7 +257,7 @@ def test_sync_rejects_aic_only_path_in_vector_section():
                 event_id=0,
             )
 
-    with pytest.raises(NotSupported, match="unsupported 3510 synchronization path on AIV"):
+    with pytest.raises(NotSupported, match="unsupported DAV_3510 synchronization path on AIV"):
         func.to_kernel_def().parse_target_program(ir.SectionKind.Vector)
 
 
@@ -271,7 +271,7 @@ def test_sync_rejects_aiv_only_path_in_cube_section():
                 event_id=0,
             )
 
-    with pytest.raises(NotSupported, match="unsupported 3510 synchronization path on AIC"):
+    with pytest.raises(NotSupported, match="unsupported DAV_3510 synchronization path on AIC"):
         func.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
 
 
@@ -285,7 +285,7 @@ def test_sync_rejects_unsupported_aic_pipe_path():
                 event_id=0,
             )
 
-    with pytest.raises(NotSupported, match="unsupported 3510 synchronization path on AIC"):
+    with pytest.raises(NotSupported, match="unsupported DAV_3510 synchronization path on AIC"):
         func.to_kernel_def().parse_target_program(ir.SectionKind.Cube)
 
 

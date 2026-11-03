@@ -45,13 +45,13 @@ def test_simt_kernel_jit_requires_and_owns_max_threads():
 
 
 def test_simt_kernel_jit_accepts_3510_arch_and_rejects_2201():
-    kernel = pl.jit(mode="simt", max_threads=32, arch="3510")(lambda: None)
+    kernel = pl.jit(mode="simt", max_threads=32, arch=NpuArch.DAV_3510)(lambda: None)
     assert kernel._arch == NpuArch.DAV_3510
     enum_kernel = pl.jit(mode="simt", max_threads=32, arch=NpuArch.DAV_3510)(lambda: None)
     assert enum_kernel._arch == NpuArch.DAV_3510
 
-    with pytest.raises(NotSupported, match="only support arch '3510'"):
-        pl.jit(mode="simt", max_threads=32, arch="2201")
+    with pytest.raises(NotSupported, match="only support arch 'DAV_3510'"):
+        pl.jit(mode="simt", max_threads=32, arch=NpuArch.DAV_2201)
 
 
 def test_jit_rejects_invalid_mode():

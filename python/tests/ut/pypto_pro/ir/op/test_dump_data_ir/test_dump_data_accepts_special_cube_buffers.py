@@ -15,10 +15,11 @@ import re
 
 from pypto_pro import ir
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 
 def test_dump_data_accepts_special_cube_buffers(monkeypatch):
-    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", "3510")
+    monkeypatch.setenv("PYPTOPRO_JIT_ARCH", NpuArch.DAV_3510.name)
 
     @pl.jit(auto_mutex=False)
     def main():

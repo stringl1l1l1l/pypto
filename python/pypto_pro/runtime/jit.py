@@ -2201,7 +2201,7 @@ def _make_sk_caller_parts(
 
 def _build_jit_so(
     cg: CodegenResult,
-    arch: str,
+    arch: NpuArch,
     clean_up: bool,
     compile_timeout: int,
     *,
@@ -2256,7 +2256,12 @@ def _build_jit_so(
 def get_current_arch() -> NpuArch:
     """Return the arch configured in the current process environment."""
     raw = os.environ.get("PYPTOPRO_JIT_ARCH")
-    return normalize_arch(raw) if raw else NpuArch.DAV_3510
+    if not raw:
+        return NpuArch.DAV_3510
+    member = NpuArch.__members__.get(raw)
+    if member is not None:
+        return member
+    return normalize_arch(raw)
 
 
 def _setup_arch_env(arch: NpuArch) -> NpuArch:
@@ -2264,8 +2269,8 @@ def _setup_arch_env(arch: NpuArch) -> NpuArch:
     if not arch:
         raise InvalidVal("arch must not be empty")
     if arch != NpuArch.DAV_3510:
-        raise NotSupported(f"PyPTO Pro only supports arch '3510', got '{arch}'")
-    os.environ["PYPTOPRO_JIT_ARCH"] = str(arch)
+        raise NotSupported(f"PyPTO Pro only supports arch '{NpuArch.DAV_3510.name}', got '{arch.name}'")
+    os.environ["PYPTOPRO_JIT_ARCH"] = arch.name
     return arch
 
 
@@ -2499,7 +2504,7 @@ def _validate_tilingkey_no_var_conflict(f, tilingkey_schema, closure_vars):
 def jit(
     target=None,
     *,
-    arch: str | None = None,
+    arch: NpuArch | None = None,
     auto_mutex: bool = True,
     name: str | None = None,
     pipeline=None,
@@ -2519,8 +2524,9 @@ def jit(
     performs lazy compilation on first call and supports bracket-launch syntax.
 
     Args:
-        arch: Target architecture ("3510" -- the __NPU_ARCH__ version; "a5" is a
-            deprecated alias; or None for auto-detect).
+        arch: Target architecture as a ``NpuArch`` value (e.g. ``NpuArch.DAV_3510``);
+            the legacy names ``"a5"``/``"a2"``/``"a3"`` are still accepted with a
+            DeprecationWarning; None for auto-detect.
         auto_mutex: Boolean flag to enable automatic mutex lock/unlock insertion.
         name: Custom kernel name for build artifact path isolation.
         pipeline: PipelineConfig for automatic preload pipeline transformation.
@@ -2554,7 +2560,7 @@ def jit(
 
     Usage (Tile-programming kernel with bracket-launch)::
 
-        @pl.jit(arch="3510")
+        @pl.jit(arch=NpuArch.DAV_3510)
         def add_kernel(
             x: pl.Tensor[[64, 128], pl.DT_FP16],
             y: pl.Tensor[[64, 128], pl.DT_FP16],
@@ -2606,7 +2612,7 @@ def jit(
         if unsupported:
             raise NotSupported(f"jit(mode='simt') does not support: {', '.join(unsupported)}")
         if arch is not None and arch != NpuArch.DAV_3510:
-            raise NotSupported(f"SIMT kernels only support arch '3510', got {arch!r}")
+            raise NotSupported(f"SIMT kernels only support arch '{NpuArch.DAV_3510.name}', got {arch!r}")
         arch = NpuArch.DAV_3510
         auto_mutex = False
         func_type = ir.FunctionType.SimtKernel
@@ -2688,7 +2694,7 @@ class _TileJitKernel:
     def __init__(
         self,
         func,
-        arch: str | None,
+        arch: NpuArch | None,
         auto_mutex=True,
         name=None,
         closure_vars=None,
@@ -2846,8 +2852,8 @@ class _TileJitKernel:
         if self._arch is None:
             self._arch = platform_arch
         elif self._arch != platform_arch:
-            plat = f"'{platform_arch}'" if platform_arch is not None else "unknown"
-            raise NotSupported(f"JIT arch '{self._arch}' does not match current platform arch {plat}")
+            plat = f"'{platform_arch.name}'" if platform_arch is not None else "unknown"
+            raise NotSupported(f"JIT arch '{self._arch.name}' does not match current platform arch {plat}")
 
     @property
     def arch(self):

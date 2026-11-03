@@ -13,10 +13,11 @@
 from pypto_pro import ir
 from pypto_pro._errors import NotSupported
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 
-@pl.jit(arch="3510", auto_mutex=False)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
 def cube_barriers(x: pl.Tensor[[1], pl.DT_FP32]):
     with pl.section_cube():
         pl.system.bar_m()
@@ -25,7 +26,7 @@ def cube_barriers(x: pl.Tensor[[1], pl.DT_FP32]):
 
 
 def _vector_barrier(which):
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(x: pl.Tensor[[1], pl.DT_FP32]):
         with pl.section_vector():
             if which == 0:

@@ -24,7 +24,7 @@ def _parse(kernel):
 
 
 def _reinterpret_kernel(selection, depth=2):
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(index: pl.DT_INT32):
         tt = pl.TileType(shape=[16, 16], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Mat)
         group = pl.make_tile_group(type=tt, addrs=0, depth=depth)
@@ -58,7 +58,7 @@ def test_static_single_slot_and_group_aliases_remain_supported(selection, depth)
 
 def _mx_kernel(plane_addrs, mode=0, plane_depth=2, data_index=0, plane_index=0,
                data_addrs=0, accumulate=False):
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(x: pl.Tensor[[1], pl.DT_FP32], index: pl.DT_INT32):
         at = pl.TileType(shape=[64, 64], dtype=pl.DT_FP8E4M3FN, target_memory=pl.MemorySpace.Left)
         bt = pl.TileType(shape=[64, 64], dtype=pl.DT_FP8E4M3FN, target_memory=pl.MemorySpace.Right)

@@ -33,6 +33,7 @@ import pypto_pro.language as pl
 from pypto_pro.language.parser._span_tracker import SpanTracker
 from pypto_pro.runtime.pipeline import transform_pipeline
 from pypto_pro.runtime.pipeline._analyzer import probe_kernel_facts
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -125,7 +126,7 @@ def hand_back_slot(g):
 # ---------------------------------------------------------------------------
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def loop_body_shapes(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -206,7 +207,7 @@ def test_allowed_shapes_are_placed_correctly():
     assert at("consume(") < at("tick = tick + 1")
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def struct_filled_in_by_helper(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -246,7 +247,7 @@ def test_zone1_call_runs_before_the_snapshot():
 # ---------------------------------------------------------------------------
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def stmt_between_stages(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -270,7 +271,7 @@ def stmt_between_stages(
             consume(ki, sh, leftg)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def section_without_stage_between_stages(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -298,7 +299,7 @@ def section_without_stage_between_stages(
             consume(ki, sh, leftg)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def stmt_beside_stage_in_section(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -321,7 +322,7 @@ def stmt_beside_stage_in_section(
             consume(ki, sh, leftg)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def slot_taken_in_loop_body(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -344,7 +345,7 @@ def slot_taken_in_loop_body(
             consume(ki, sh, leftg)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def slot_taken_inside_a_helper(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -368,7 +369,7 @@ def slot_taken_inside_a_helper(
             consume(ki, sh, leftg)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def cross_core_touched_outside_stage(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -401,7 +402,7 @@ def take_slot(k, sh, leftg):
     pl.move(left, shared)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def helper_returns_a_slot(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -423,7 +424,7 @@ def helper_returns_a_slot(
             take_slot(ki, sh, leftg)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def stage_call_without_a_section(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -445,7 +446,7 @@ def stage_call_without_a_section(
             consume(ki, sh, leftg)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def one_stage_called_twice(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -469,7 +470,7 @@ def one_stage_called_twice(
             produce(ki, 3.0, src, out, sh, ub)   # sync belongs to the NAME
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def return_in_pipeline_loop(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):
@@ -493,7 +494,7 @@ def return_in_pipeline_loop(
             return                            # skips the drain after the loop
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=1))
 def return_in_outer_loop(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16], out: pl.Tensor[[FULL_M, TN], pl.DT_FP16]
 ):

@@ -37,7 +37,7 @@ import torch
 
 pytestmark = pytest.mark.skipif(
     get_platform_info().arch != NpuArch.DAV_3510,
-    reason="PyPTO Pro only supports arch '3510'",
+    reason=f"PyPTO Pro only supports arch{NpuArch.DAV_3510.name}",
 )
 
 

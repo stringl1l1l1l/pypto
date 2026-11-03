@@ -13,6 +13,7 @@
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -25,7 +26,7 @@ def write_lane_id(output):
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.lane_id()
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_lane_id(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[1, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),
@@ -54,7 +55,7 @@ def write_lanemask_eq(output):
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.lanemask_eq()
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_lanemask_eq(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[1, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),
@@ -84,7 +85,7 @@ def write_lanemask_ge(output):
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.lanemask_ge()
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_lanemask_ge(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[1, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),
@@ -114,7 +115,7 @@ def write_lanemask_gt(output):
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.lanemask_gt()
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_lanemask_gt(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[1, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),
@@ -144,7 +145,7 @@ def write_lanemask_le(output):
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.lanemask_le()
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_lanemask_le(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[1, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),
@@ -174,7 +175,7 @@ def write_lanemask_lt(output):
     tid = pl.simt.linear_thread_idx()
     output[0, tid] = pl.simt.lanemask_lt()
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def simt_lanemask_lt(output: pl.Tensor[[1, WARP_SIZE], pl.DT_INT32]):
     output_tile_group = pl.make_tile_group(
         type=pl.TileType(shape=[1, WARP_SIZE], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec),

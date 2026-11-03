@@ -19,6 +19,7 @@ import logging
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -40,7 +41,7 @@ def _require_a5(device):
 # Chain attribute access: t.a.b (nested make_tuple)
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_attr_kernel(
     out: pl.Tensor[[1], pl.DT_INT32],
 ):
@@ -65,7 +66,7 @@ def test_make_tuple_chain_attr():
 # Three-level chain: t.a.b.v
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_three_level_kernel(
     out: pl.Tensor[[1], pl.DT_INT32],
 ):
@@ -90,7 +91,7 @@ def test_make_tuple_chain_three_level():
 # make_tuple wrapping tile_group: t.field.next()
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_tile_group_next_kernel(
     a: pl.Tensor[[64, 128], pl.DT_FP16],
 ):
@@ -118,7 +119,7 @@ def test_make_tuple_chain_tile_group_next():
 # make_tuple wrapping tile_group: t.field.current()
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_tile_group_current_kernel(
     a: pl.Tensor[[64, 128], pl.DT_FP16],
 ):
@@ -147,7 +148,7 @@ def test_make_tuple_chain_tile_group_current():
 # Four-level chain: t.a.b.c.d
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_four_level_kernel(
     out: pl.Tensor[[1], pl.DT_INT32],
 ):
@@ -173,7 +174,7 @@ def test_make_tuple_chain_four_level():
 # Chain reads in arithmetic: t.a.x * 2 + t.a.y
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_arithmetic_kernel(
     out: pl.Tensor[[1], pl.DT_INT32],
 ):
@@ -197,7 +198,7 @@ def test_make_tuple_chain_arithmetic():
 # make_tuple wrapping a struct_array element: t.s.v
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_struct_array_elem_kernel(
     out: pl.Tensor[[1], pl.DT_INT32],
 ):
@@ -222,7 +223,7 @@ def test_make_tuple_chain_struct_array_elem():
 # make_tuple wrapping tile_group: t.field.previous()
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_tile_group_previous_kernel(
     a: pl.Tensor[[64, 128], pl.DT_FP16],
 ):
@@ -250,7 +251,7 @@ def test_make_tuple_chain_tile_group_previous():
 # make_tuple wrapping tile_group: double buffer via t.field.next() in a loop
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_double_buffer_loop_kernel(
     a: pl.Tensor[[128, 128], pl.DT_FP16],
 ):
@@ -279,7 +280,7 @@ def test_make_tuple_chain_double_buffer_loop():
 # make_tuple wrapping tile_group: ring buffer wraps around 3 slots
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_ring_buffer_loop_kernel(
     a: pl.Tensor[[256, 128], pl.DT_FP16],
 ):
@@ -308,7 +309,7 @@ def test_make_tuple_chain_ring_buffer_loop():
 # Chain reads accumulated in a for loop
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_loop_accum_kernel(
     out: pl.Tensor[[1], pl.DT_INT32],
 ):
@@ -335,7 +336,7 @@ def test_make_tuple_chain_loop_accum():
 # Chain reads selected by an if/else branch
 # =============================================================================
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def make_tuple_chain_if_branch_kernel(
     out: pl.Tensor[[1], pl.DT_INT32],
 ):

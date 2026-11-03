@@ -41,6 +41,7 @@ import logging
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -133,7 +134,7 @@ def b_use_hi(k, sh, leftg):
     pl.move(left, shared)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=[1, 2]))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=[1, 2]))
 def four_stage_kernel(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TN], pl.DT_FP16],
@@ -200,7 +201,7 @@ def four_stage_kernel(
             b_use_hi(j, b_hi, b_left)
 
 
-@pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=[0, 2]))
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=[0, 2]))
 def mixed_preload_kernel(
     src: pl.Tensor[[FULL_M, TN], pl.DT_FP16],
     out: pl.Tensor[[FULL_M, TN], pl.DT_FP16],

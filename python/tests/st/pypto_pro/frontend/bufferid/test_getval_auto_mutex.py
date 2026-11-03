@@ -26,6 +26,7 @@ import logging
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -45,7 +46,7 @@ def _require_a5(device):
         pytest.skip(f"Current device is {name}, not A5 (Ascend950). Skip.")
 
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def getval_setval_am_kernel(a: pl.Tensor[[64, 128], pl.DT_FP16]):
     tt = pl.TileType(shape=[64, 128], dtype=pl.DT_FP16, target_memory=pl.MemorySpace.Vec)
     a_db = pl.make_tile_group(type=tt, addrs=[0x00000], mutex_ids=[20])
@@ -60,7 +61,7 @@ def getval_setval_am_kernel(a: pl.Tensor[[64, 128], pl.DT_FP16]):
         pl.store(a, t, [0, 0])  # MTE3 consumer
 
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def getval_struct_field_am_kernel(
     a: pl.Tensor[[64, 128], pl.DT_FP32],
     out: pl.Tensor[[2], pl.DT_FP32],
@@ -79,7 +80,7 @@ def getval_struct_field_am_kernel(
         out[1] = message.values[0]
 
 
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def getval_while_condition_am_kernel(
     a: pl.Tensor[[64, 128], pl.DT_FP16],
     out: pl.Tensor[[1], pl.DT_INT64],

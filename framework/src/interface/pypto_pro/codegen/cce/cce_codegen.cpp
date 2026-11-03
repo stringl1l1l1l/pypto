@@ -669,7 +669,7 @@ std::string CCECodegen::GenerateSingle(const ir::ProgramPtr& program, npu::tile_
         PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, target_ == ir::SectionKind::Vector)
             << "SIMT functions can only be generated for the Vector target";
         PRO_CODEGEN_CHECK(ExternalError::NOT_IMPLEMENTED_ERROR, arch_ == npu::tile_fwk::NPUArch::DAV_3510)
-            << "SIMT direct CCE generation currently requires arch='3510'";
+            << "SIMT direct CCE generation currently requires arch='DAV_3510'";
     }
 
     emitter_.Clear();

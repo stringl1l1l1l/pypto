@@ -23,6 +23,7 @@ from pypto_pro import ir
 from pypto_pro._errors import InvalidArgument, InvalidOperation, InvalidShape, InvalidType, InvalidVal
 import pypto_pro.language as pl
 import pypto_pro.language.distribute as pld
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 
 
@@ -47,7 +48,7 @@ def _op_calls(func, op_name):
 
 
 def test_barrier_defaults_and_static_attrs():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.barrier(win)
@@ -61,7 +62,7 @@ def test_barrier_defaults_and_static_attrs():
 
 
 def test_barrier_literal_timeout_by_position_and_keyword():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.barrier(win, 1000)
@@ -75,7 +76,7 @@ def test_barrier_literal_timeout_by_position_and_keyword():
 def test_barrier_explicit_timeout_none_waits_forever():
     """``timeout=None`` is the documented default and must parse like omission."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.barrier(win, timeout=None)
@@ -85,7 +86,7 @@ def test_barrier_explicit_timeout_none_waits_forever():
 
 
 def test_barrier_timeout_must_be_compile_time():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window, i: pl.Tensor[[1], pl.DT_INT64]):
         with pl.section_vector():
             pld.barrier(win, i[0])
@@ -102,7 +103,7 @@ def test_barrier_timeout_must_be_compile_time():
 
 
 def test_make_dtensor_shape_must_be_positive_and_bounded():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def zero_dim(win: pld.Window):
         with pl.section_vector():
             pld.make_dtensor(win, 0, [0, 8], pl.DT_INT32)
@@ -111,7 +112,7 @@ def test_make_dtensor_shape_must_be_positive_and_bounded():
         _parse(zero_dim)
     assert "must have 1-5 positive dims" in str(caught.value)
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def six_dims(win: pld.Window):
         with pl.section_vector():
             pld.make_dtensor(win, 0, [1, 8, 2, 4, 8, 16], pl.DT_INT32)
@@ -122,7 +123,7 @@ def test_make_dtensor_shape_must_be_positive_and_bounded():
 
 
 def _dtensor_kernel(shape):
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.make_dtensor(win, 0, shape, pl.DT_INT32)
@@ -131,7 +132,7 @@ def _dtensor_kernel(shape):
 
 
 def test_make_dtensor_rejects_coordinate_offset():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.make_dtensor(win, [0, 0], [1, 8], pl.DT_INT32)
@@ -142,7 +143,7 @@ def test_make_dtensor_rejects_coordinate_offset():
 
 
 def test_make_dtensor_negative_offset_is_rejected():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.make_dtensor(win, -64, [1, 8], pl.DT_INT32)
@@ -153,7 +154,7 @@ def test_make_dtensor_negative_offset_is_rejected():
 
 
 def test_signal_rejects_negative_literal():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.signal(win, -1)
@@ -169,7 +170,7 @@ def test_signal_rejects_negative_literal():
 
 
 def test_transfer_ops_parse():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -190,7 +191,7 @@ def test_transfer_ops_parse():
 def test_transfer_offsets_may_come_from_a_variable():
     """Parity with pl.load: offsets are operands, not syntax."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -203,7 +204,7 @@ def test_transfer_offsets_may_come_from_a_variable():
 
 
 def test_put_tile_block_indices_lower_to_scaled_offsets():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -219,7 +220,7 @@ def test_put_tile_block_indices_lower_to_scaled_offsets():
 
 
 def test_get_offset_rank_must_match_view():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -233,7 +234,7 @@ def test_get_offset_rank_must_match_view():
 
 
 def test_get_static_offset_bounds_check():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -247,7 +248,7 @@ def test_get_static_offset_bounds_check():
 
 
 def test_get_order_arity_is_checked():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -261,7 +262,7 @@ def test_get_order_arity_is_checked():
 
 
 def test_put_atomic_mode_lowers_to_the_atomic_kwarg():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -277,7 +278,7 @@ def test_put_atomic_mode_lowers_to_the_atomic_kwarg():
 
 
 def test_put_tile_accepts_atomic_mode_too():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -292,7 +293,7 @@ def test_put_tile_accepts_atomic_mode_too():
 def test_put_atomic_mode_must_be_an_atomic_type_member():
     """A raw int (parsed as ConstInt) is rejected; only the enum member lowers."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -308,7 +309,7 @@ def test_put_atomic_mode_must_be_an_atomic_type_member():
 def test_put_atomic_add_rejects_unsupported_dtype():
     """The MTE3 atomic-add engine covers 8/16/32-bit ints and fp16/bf16/fp32, not 64-bit."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT64, target_memory=pl.MemorySpace.Vec)
@@ -324,7 +325,7 @@ def test_put_atomic_add_rejects_unsupported_dtype():
 def test_get_has_no_atomic_mode():
     """A load cannot accumulate; the kwarg is put-only and the gate rejects it on get."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             tt = pl.TileType(shape=[1, 8], dtype=pl.DT_INT32, target_memory=pl.MemorySpace.Vec)
@@ -343,7 +344,7 @@ def test_get_has_no_atomic_mode():
 
 
 def test_notify_remote_local_and_enum_forms():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             sig = pld.signal(win, 0)
@@ -362,7 +363,7 @@ def test_notify_remote_local_and_enum_forms():
 def test_notify_explicit_val_none_is_the_local_form():
     """``val=None`` follows the declared binding: the call is the local two-argument form."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             sig = pld.signal(win, 0)
@@ -373,7 +374,7 @@ def test_notify_explicit_val_none_is_the_local_form():
 
 
 def test_notify_requires_a_signal_handle():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.notify(3, 1, 1)
@@ -384,7 +385,7 @@ def test_notify_requires_a_signal_handle():
 
 
 def test_notify_all_lowers_with_the_set_default():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             sig = pld.signal(win, 3)
@@ -397,7 +398,7 @@ def test_notify_all_lowers_with_the_set_default():
 
 
 def test_notify_all_atomic_add_op_mode():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             sig = pld.signal(win, 3)
@@ -408,7 +409,7 @@ def test_notify_all_atomic_add_op_mode():
 
 
 def test_notify_all_requires_a_signal_handle():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.notify_all(win, 1)
@@ -419,7 +420,7 @@ def test_notify_all_requires_a_signal_handle():
 
 
 def test_notify_all_rejects_an_unknown_op_mode():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             sig = pld.signal(win, 3)
@@ -431,7 +432,7 @@ def test_notify_all_rejects_an_unknown_op_mode():
 
 
 def test_wait_explicit_timeout_none_waits_forever():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             sig = pld.signal(win, 0)
@@ -443,7 +444,7 @@ def test_wait_explicit_timeout_none_waits_forever():
 
 
 def test_wait_cmp_accepts_variable_bound_enum():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             sig = pld.signal(win, 0)
@@ -460,7 +461,7 @@ def test_wait_cmp_accepts_variable_bound_enum():
 
 
 def test_atomic_value_operand_keeps_the_parsed_form():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -473,7 +474,7 @@ def test_atomic_value_operand_keeps_the_parsed_form():
 
 
 def test_atomic_sub_negates_in_the_view_dtype():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -487,7 +488,7 @@ def test_atomic_sub_negates_in_the_view_dtype():
 
 
 def test_atomic_unsigned_sub_wraps_modulo_2n():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_UINT32)
@@ -500,7 +501,7 @@ def test_atomic_unsigned_sub_wraps_modulo_2n():
 
 
 def test_atomic_cas_expect_and_desired_operands():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -512,7 +513,7 @@ def test_atomic_cas_expect_and_desired_operands():
 
 
 def test_atomic_scalar_linear_offset_form():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -526,7 +527,7 @@ def test_atomic_scalar_linear_offset_form():
 def test_atomic_offsets_may_come_from_a_variable():
     """Parity with pl.load: per-axis offsets are operands, not syntax."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -539,7 +540,7 @@ def test_atomic_offsets_may_come_from_a_variable():
 
 
 def test_atomic_rejects_float_value_for_int_view():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -551,7 +552,7 @@ def test_atomic_rejects_float_value_for_int_view():
 
 
 def test_star_args_are_rejected_generically():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -569,7 +570,7 @@ def test_star_args_are_rejected_generically():
 
 
 def test_channel_lifecycle_parses():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window, src: pl.Tensor[[1, 8], pl.DT_INT32]):
         with pl.section_vector():
             dt = pld.make_dtensor(win, 0, [1, 8], pl.DT_INT32)
@@ -593,7 +594,7 @@ def test_channel_requires_assignment():
     the multi-issuer form: ``pld.channel(win, buffer)`` without ``peer`` is itself legal
     (clos meshes), only the missing assignment is rejected."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             pld.channel(win, 64, peer=1)
@@ -608,7 +609,7 @@ def test_channel_multi_issuer_spelling_omits_peer():
     channel rides the calling AIV's own jetty and the device constructor receives
     ``peer == -1``."""
 
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             ch = pld.channel(win, 64)
@@ -621,7 +622,7 @@ def test_channel_multi_issuer_spelling_omits_peer():
 
 
 def test_channel_buffer_alignment_is_checked():
-    @pl.jit(arch="3510", auto_mutex=False)
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=False)
     def kernel(win: pld.Window):
         with pl.section_vector():
             _ = pld.channel(win, 65)

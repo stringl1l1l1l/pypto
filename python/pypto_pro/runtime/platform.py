@@ -38,38 +38,34 @@ from .._errors import InvalidVal
 
 logger = logging.getLogger(__name__)
 
-# NPUArch string → compilation arch mapping
-_ARCH_MAP = {
-    "DAV_1001": NpuArch.DAV_1001,
-    "DAV_2201": NpuArch.DAV_2201,
-    "DAV_3510": NpuArch.DAV_3510,
+_LEGACY_TO_CANONICAL = {
+    "a5": NpuArch.DAV_3510,
+    "a2": NpuArch.DAV_2201,
+    "a3": NpuArch.DAV_2201,
 }
 
-_ARCH_INPUT_TO_ENUM = {str(member): member for member in NpuArch.__members__.values() if member != NpuArch.DAV_UNKNOWN}
-_LEGACY_TO_CANONICAL = {"a5": "3510", "a2": "2201", "a3": "2201"}
-_DEPRECATED_INPUTS = {"a5"}
-
-
 def normalize_arch(value: str | NpuArch) -> NpuArch:
-    """Resolve any accepted arch input to its canonical NpuArch.
+    """Resolve an accepted arch input to its canonical NpuArch.
 
-    Accepts the __NPU_ARCH__ version number ("3510"), NpuArch values, and
-    legacy internal names; "a5" emits a DeprecationWarning and resolves
-    to DAV_3510. Unregistered NpuArch values collapse to DAV_UNKNOWN,
-    which downstream checks reject.
+    Accepts NpuArch values and the legacy names "a5"/"a2"/"a3", which emit a
+    DeprecationWarning and resolve to their canonical member; unregistered
+    NpuArch values collapse to DAV_UNKNOWN.
     """
     if isinstance(value, NpuArch):
-        return _ARCH_INPUT_TO_ENUM.get(str(value), NpuArch.DAV_UNKNOWN)
+        return NpuArch.__members__.get(value.name, NpuArch.DAV_UNKNOWN)
+    if not isinstance(value, str):
+        raise InvalidVal(f"expected str or NpuArch, got {type(value).__name__}")
     text = value.strip().lower()
     canonical = _LEGACY_TO_CANONICAL.get(text)
-    if canonical is not None:
-        if text in _DEPRECATED_INPUTS:
-            warnings.warn(f"arch {value!r} is deprecated; use arch {canonical!r}", DeprecationWarning, stacklevel=2)
-        text = canonical
-    arch = _ARCH_INPUT_TO_ENUM.get(text)
-    if arch is None:
-        raise InvalidVal(f"unknown arch {value!r}; expected an __NPU_ARCH__ version name such as '3510'")
-    return arch
+    if canonical is None:
+        legacy = "/".join(f"'{name}'" for name in _LEGACY_TO_CANONICAL)
+        raise InvalidVal(
+            f"unknown arch {value!r}; expected a NpuArch value or a legacy name ({legacy})"
+        )
+    warnings.warn(
+        f"arch {value!r} is deprecated; use arch enum value {canonical.name} instead", DeprecationWarning, stacklevel=2
+    )
+    return canonical
 
 
 @dataclass
@@ -94,7 +90,7 @@ class PlatformInfo:
         """
         if not self.soc_version:
             return None
-        return _ARCH_MAP.get(self.soc_version, NpuArch.DAV_2201)
+        return NpuArch.__members__.get(self.soc_version, NpuArch.DAV_2201)
 
 
 _cached_info: Optional[PlatformInfo] = None

@@ -27,6 +27,7 @@ Cube/Vector cross-core publication and reuse.
 import os
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import pytest
 import torch
 
@@ -75,7 +76,7 @@ def _make_fp16_pattern(shape, modulus, device=ST_DEVICE):
 # =============================================================================
 # Pure Cube: move(tile, tile_group)
 # =============================================================================
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def cube_move_tile_group_to_tile_kernel(
     a: pl.Tensor[[CUBE_M, CUBE_K], pl.DT_FP16],
     b: pl.Tensor[[CUBE_K, CUBE_N], pl.DT_FP16],
@@ -137,7 +138,7 @@ def cube_move_tile_group_to_tile_kernel(
 # =============================================================================
 # Pure Cube: move(tile_group, tile)
 # =============================================================================
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def cube_move_tile_to_tile_group_kernel(
     a: pl.Tensor[[CUBE_M, CUBE_K], pl.DT_FP16],
     b: pl.Tensor[[CUBE_K, CUBE_N], pl.DT_FP16],
@@ -200,7 +201,7 @@ def cube_move_tile_to_tile_group_kernel(
 # =============================================================================
 # Pure Vector: group -> tile -> group
 # =============================================================================
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def vector_mixed_move_both_directions_kernel(
     source: pl.Tensor[[VEC_M, VEC_TILE_N], pl.DT_FP16],
     middle_out: pl.Tensor[[VEC_M, VEC_TILE_N], pl.DT_FP16],
@@ -238,7 +239,7 @@ def vector_mixed_move_both_directions_kernel(
 # =============================================================================
 # Cube/Vector: move(Vec tile, Acc tile_group)
 # =============================================================================
-@pl.jit(arch="3510", auto_mutex=True)
+@pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True)
 def cv_move_acc_group_to_vec_tile_kernel(
     a: pl.Tensor[[CV_M, CV_TILE_K], pl.DT_FP16],
     b: pl.Tensor[[CV_TILE_K, CV_TILE_N], pl.DT_FP16],

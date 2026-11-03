@@ -14,6 +14,7 @@ import importlib
 import inspect
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 
 jit_runtime = importlib.import_module("pypto_pro.runtime.jit")
 
@@ -30,21 +31,21 @@ def _static_signature_suffix(signature):
     return _private(jit_runtime, "_static_signature_suffix")(signature)
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def mixed_policy_kernel(
     x: pl.Tensor[[pl.DYNAMIC, pl.STATIC, 4], pl.DT_FP32],
 ):
     return
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def ellipsis_policy_kernel(
     x: pl.Tensor[[pl.DYNAMIC, ...], pl.DT_FP32],
 ):
     return
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def call_style_policy_kernel(
     x: pl.Tensor([pl.DYNAMIC, pl.STATIC, 4], pl.DT_FP32),
 ):

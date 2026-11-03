@@ -18,6 +18,7 @@ entries and artifact suffixes.
 import importlib
 
 import pypto_pro.language as pl
+from pypto_pro.runtime.platform import NpuArch
 import torch
 
 jit_runtime = importlib.import_module("pypto_pro.runtime.jit")
@@ -43,14 +44,14 @@ def _static_signature_suffix(signature):
     return _private(jit_runtime, "_static_signature_suffix")(signature)
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def static_dynamic_kernel(
     x: pl.Tensor[[pl.STATIC, pl.DYNAMIC], pl.DT_FP16],
 ):
     return
 
 
-@pl.jit(arch="3510")
+@pl.jit(arch=NpuArch.DAV_3510)
 def dynamic_dynamic_kernel(
     x: pl.Tensor[[pl.DYNAMIC, pl.DYNAMIC], pl.DT_FP16],
 ):

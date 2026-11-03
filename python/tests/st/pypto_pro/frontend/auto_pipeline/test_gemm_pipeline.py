@@ -91,7 +91,7 @@ def _pipeline_kernel(preload, *, splitk=0, manual=False):
         product(z, x, y, la, lb)
         pl.store(out, z, [out.shape[0] // 2 + i * TM, 0])
 
-    @pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=preload),
+    @pl.jit(arch=NpuArch.DAV_3510, auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=preload),
             name=f"gemm_pipeline_p{preload}_k{splitk}_manual{int(manual)}")
     def kernel(a: pl.Tensor[[pl.DYNAMIC, TK], pl.DT_FP16],
                b: pl.Tensor[[pl.DYNAMIC, TN], pl.DT_FP16],
