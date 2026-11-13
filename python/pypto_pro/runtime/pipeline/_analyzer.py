@@ -333,21 +333,21 @@ def _resolve_kernel_buffers(
     buffer_facts: dict,
     unbound_decls: list,
     same_name_decls: list,
-) -> AccessTables | None:
+) -> AccessTables:
     """Fill ``sync`` from the kernel's buffer declarations; return the lookup tables.
 
     The kernel-level half: declarations, addresses and the name tables, all of which every
     pipeline loop in the kernel shares. The per-loop half — what each stage actually touches —
     is _resolve_loop_accesses.
 
-    Returns None when the kernel declares no cross-core buffer: with nothing to hand over
-    there is no sync to plan, and the tables would have no reader.
+    The tables are returned even without a cross-core buffer: the local slot validation reads
+    every declared group through them.
 
     ``buffer_facts`` is what the parse resolved for every declaration.
     The three structural validations run before the cross-core resolution, so a malformed
     declaration is reported as a declaration error rather than as a cross-core one.
     """
-    # Filled before the early return below: _collect_outer_slots needs a slot count for
+    # Filled before the cross-core split: _collect_outer_slots needs a slot count for
     # local groups too.
     sync.slot_counts = buffer_slot_counts(buffer_facts)
     sync.decl_spans = {name: decl.span for name, decl in buffer_facts.items()}
@@ -358,8 +358,6 @@ def _resolve_kernel_buffers(
     cross_buffers, lifted_ids = cross_core_buffers(buffer_facts)
     sync.buffers = cross_buffers
     sync.lifted_ids = lifted_ids
-    if not cross_buffers:
-        return None
 
     all_mem = buffer_memory_spaces(buffer_facts)
 

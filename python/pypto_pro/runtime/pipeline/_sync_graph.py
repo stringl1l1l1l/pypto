@@ -54,7 +54,7 @@ import logging
 
 from ..._errors import InvalidOperation, InvalidVal, OutOfRange, span_of
 from ._cross_core_scanner import MAX_EVENT_ID
-from ._validate import validate_sync
+from ._validate import validate_local_slot_lifetime, validate_sync
 
 # ---------------------------------------------------------------------------
 # Graph data
@@ -175,7 +175,10 @@ def build_regions(addr_overlaps, touched: set) -> dict:
 
 
 def collect_accesses(info) -> list:
-    """Flatten every stage's buffer accesses into op-level Access nodes."""
+    """Flatten every tracked stage access into op-level Access nodes."""
+    tracked = set(info.sync.buffers)
+    for pair in info.sync.addr_overlaps:
+        tracked.update(pair)
     out = []
     seq = 0
     for idx, stage in enumerate(info.stages):
@@ -184,6 +187,8 @@ def collect_accesses(info) -> list:
         # and set/wait pair through them.
         seen = set()
         for buf_name, role, pipe in stage.buffer_access:
+            if role is None or buf_name not in tracked:
+                continue
             if (buf_name, role, pipe) in seen:
                 continue
             seen.add((buf_name, role, pipe))
@@ -306,6 +311,7 @@ def build_graph(info, schedule: list) -> SyncGraph:
     # see exactly what the emission will. The cycle walk is graph work and is done here; the
     # verdict on what a cycle's total distance means is a check.
     validate_sync(graph, info, find_cycles(graph), schedule)
+    validate_local_slot_lifetime(info, schedule)
     return graph
 
 
