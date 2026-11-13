@@ -732,3 +732,72 @@ def _check_loop_step(info) -> None:
             f"{step.value}. The step must be a positive value.",
             span=span_of(step),
         )
+
+
+def validate_local_slot_lifetime(info, schedule) -> None:
+    """Check each local group's depth against its ordered write/read stage pairs.
+
+    A stage with any write starts a generation; its consumer is the nearest later read
+    on the same core before the next write-only stage. A read-write stage can close the
+    previous generation and start the next one. Pairs are collected in one right-to-left
+    walk per group, so the cost is linear in the stage accesses.
+
+    Assumes the user rotates each local group once per task, so every stage accesses
+    ``task % depth``. There is no cursor replay or generation check; only the stage
+    delays decide how many slots must be live.
+    """
+    cross = set(info.sync.buffers)
+    for group in sorted(info.group_names - cross):
+        depth = info.sync.slot_counts.get(group)
+        if depth is None:
+            continue
+
+        entries = []
+        unknown = False
+        for index, stage in enumerate(info.stages):
+            has_w = False
+            has_r = False
+            for buffer, role, _pipe in stage.buffer_access:
+                if buffer != group:
+                    continue
+                if role is None:
+                    unknown = True
+                    continue
+                has_w = has_w or "W" in role
+                has_r = has_r or "R" in role
+            if has_w or has_r:
+                entries.append((index, stage.section_kind, has_w, has_r))
+
+        if unknown or len({entry[1] for entry in entries}) != 1:
+            continue
+        if not any(entry[2] for entry in entries):
+            continue
+
+        pending_r = None
+        worst = None
+        for index, _section, has_w, has_r in reversed(entries):
+            if has_w:
+                if pending_r is None:
+                    # A producer with no reader before the next write-only stage cannot
+                    # be checked: the ring's rotation assumption is not met.
+                    worst = None
+                    break
+                needed = max(1, schedule[pending_r] - schedule[index] + 1)
+                if worst is None or needed > worst[0]:
+                    worst = (needed, index, pending_r)
+                if not has_r:
+                    pending_r = None
+            if has_r:
+                pending_r = index
+
+        if worst is None:
+            continue
+        needed, producer, consumer = worst
+        if depth < needed:
+            raise InvalidArgument(
+                f"pipeline: buffer '{group}' has {depth} slot(s), but producer "
+                f"'{info.stages[producer].func_name}' runs {needed - 1} iteration(s) ahead "
+                f"of consumer '{info.stages[consumer].func_name}', so {needed} slots are "
+                f"live at once. Give it {needed} slots, or lower `preload`.",
+                span=info.sync.decl_spans.get(group),
+            )
