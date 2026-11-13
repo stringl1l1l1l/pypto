@@ -33,7 +33,7 @@ def _operands(kernel_def, op_name: str) -> list:
     """The buffer names each operand of ``op_name`` reaches, in argument order."""
     facts = probe_kernel_facts(kernel_def.to_kernel_def())
     return [
-        [names for _position, _keyword, names in record.operands]
+        [operand.names for operand in record.operands]
         for by_site in facts.op_accesses.values()
         for records in by_site.values()
         for record in records

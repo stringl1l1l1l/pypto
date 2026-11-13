@@ -38,7 +38,7 @@ from ..._errors import (
 from ..typing._tiling import get_tiling_fields, get_tiling_tuple_type, is_tiling_class
 from ..typing.shape import _ShapePolicy
 from ._assignment_parser import AssignmentParserMixin
-from ._buffer_parser import BufferParserMixin, TileGroupFacts
+from ._buffer_parser import BufferParserMixin, SelectorKind, TileGroupFacts
 from ._call_parser import CallParserMixin, _check_type_compatible, _validate_simt_tensor_type
 from ._control_flow_parser import ControlFlowParserMixin, validate_single_tail_return
 from ._expr_evaluator import ExprEvaluator
@@ -107,11 +107,34 @@ def _infer_return_types_from_body(
 
 
 @dataclass(frozen=True, eq=False)
+class SlotSelector:
+    """One tile-group slot-selection call, shared by every operand reusing its tile."""
+
+    kind: SelectorKind  # next / current / previous / index
+    slot: int | None  # the static slot of an index selection, else None
+    index_node: ast.expr | None  # the index expression when it is not a constant
+    order: int  # parser selection order
+
+
+@dataclass(frozen=True, eq=False)
 class BufferRef:
-    """A declared buffer that an expression may refer to, and which slot of it."""
+    """A declared buffer that an expression may refer to, and how it selected a slot."""
 
     buffer: ir.Expr  # the declaration handle
     slot: int | None  # None when any slot may be referred to
+    selector: SlotSelector | None = None
+
+    @property
+    def kind(self) -> str | None:
+        return self.selector.kind if self.selector is not None else None
+
+    @property
+    def index_node(self) -> ast.expr | None:
+        return self.selector.index_node if self.selector is not None else None
+
+    @property
+    def selector_id(self) -> int | None:
+        return self.selector.order if self.selector is not None else None
 
 
 @dataclass(frozen=True, eq=False)
@@ -282,6 +305,7 @@ class ASTParser(
         self._buf_tile_counter: int = 0
         # Counter for let-bound buf_idx variables in tile-group cursor selection.
         self._tuple_idx_counter: int = 0
+        self._slot_selector_counter: int = 0
         self._auto_mutex_placeholder_counter: int = 0
         self._expr_tmp_counter: int = 0
         self._ifexpr_tmp_counter: int = 0
@@ -715,15 +739,33 @@ class ASTParser(
             gm = self.tile_group_meta.get(sources[0])
             if gm is not None:
                 self.tile_group_meta[target] = gm
-        refs = {(id(ref.buffer), ref.slot): ref for source in sources for ref in self.buffer_refs_of(source)}
+        refs = {
+            (id(ref.buffer), ref.slot, id(ref.selector)): ref
+            for source in sources
+            for ref in self.buffer_refs_of(source)
+        }
         if refs:
             self.parse_facts.buffer_refs[target] = tuple(refs.values())
 
-    def _bind_buffer_ref(self, target: ir.Expr, buffer: ir.Expr, slot: int | None) -> None:
+    def _bind_buffer_ref(
+        self,
+        target: ir.Expr,
+        buffer: ir.Expr,
+        slot: int | None,
+        selector: SlotSelector | None = None,
+    ) -> None:
         """Record that ``target`` refers to ``slot`` of the buffers ``buffer`` refers to."""
-        refs = tuple(BufferRef(decl, slot) for decl in self.buffers_of(buffer))
+        refs = tuple(BufferRef(decl, slot, selector) for decl in self.buffers_of(buffer))
         if refs:
             self.parse_facts.buffer_refs[target] = refs
+
+    def _new_slot_selector(
+        self, kind: SelectorKind, slot: int | None = None, index_node: ast.expr | None = None
+    ) -> SlotSelector:
+        """Allocate one selector for a single slot-selection call."""
+        selector = SlotSelector(kind, slot, index_node, self._slot_selector_counter)
+        self._slot_selector_counter += 1
+        return selector
 
     def buffer_refs_of(self, expr) -> tuple[BufferRef, ...]:
         """Return the buffers ``expr`` may refer to, empty when it refers to none.

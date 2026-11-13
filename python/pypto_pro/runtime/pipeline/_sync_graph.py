@@ -183,12 +183,15 @@ def collect_accesses(info) -> list:
         # two mutually exclusive if-branches), and duplicates would duplicate every edge
         # and set/wait pair through them.
         seen = set()
-        for buf_name, role, pipe in stage.buffer_access:
-            if (buf_name, role, pipe) in seen:
+        for access in stage.buffer_access:
+            if access.role is None:
                 continue
-            seen.add((buf_name, role, pipe))
+            key = (access.buffer, access.role, access.pipe)
+            if key in seen:
+                continue
+            seen.add(key)
             out.append(Access(
-                seq, idx, stage.func_name, stage.section_kind, buf_name, role, pipe,
+                seq, idx, stage.func_name, stage.section_kind, access.buffer, access.role, access.pipe,
                 source_stmt=stage.call_node or stage.source_stmt,
             ))
             seq += 1

@@ -24,7 +24,7 @@ import ast
 from dataclasses import dataclass, field
 import functools
 import inspect
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, NamedTuple, Union
 
 from pypto.pypto_impl.backend import BackendCCE
 from pypto.pypto_impl.ir import MemorySpace, PipeType
@@ -420,8 +420,8 @@ def reject_buffer_access_outside_stages(info, op_accesses: dict, tables: AccessT
             for record in by_site.get(site, ()):
                 buffers.update(
                     name
-                    for _position, _keyword, names in record.operands
-                    for name in names
+                    for operand in record.operands
+                    for name in operand.names
                     if tables.tracks(name)
                 )
         if not buffers:
@@ -665,11 +665,26 @@ def _reject_roleless_arg(shown: str, span, op_name: str, param: str, buf: str, r
     )
 
 
+class StageAccess(NamedTuple):
+    """One buffer access from the parse facts.
+
+    ``role``/``pipe`` are set for a buffer the sync graph tracks; ``selector`` is set for a
+    declared tile-group slot selection. A local group has role/pipe None; a cross-core
+    buffer may have both, but the lifetime check skips it.
+    """
+
+    buffer: str
+    role: str | None
+    pipe: str | None
+    selector: object | None = None
+
+
 def stage_accesses(stage, by_site: dict, tables: AccessTables) -> list:
-    """One stage's buffer accesses from the parse facts, ``[(buffer, role, pipe), ...]``.
+    """One stage's accesses from the parse facts, in one pass.
 
     The parse already resolved which declaration every operand reaches, so no name is bound
-    here; what is left is the role each operand carries and the pipe the op runs on.
+    here; what is left is the role/pipe view for sync and the slot-selector view for
+    lifetime, both emitted as ``StageAccess`` records.
 
     Args:
         stage: the StageCall whose call site keys the facts.
@@ -687,11 +702,11 @@ def stage_accesses(stage, by_site: dict, tables: AccessTables) -> list:
         )
     accesses: list = []
     for access in records:
-        _facts_op(access, tables, accesses)
+        accesses.extend(_facts_op(access, tables))
     return accesses
 
 
-def _facts_op(access, tables: AccessTables, out: list) -> None:
+def _facts_op(access, tables: AccessTables) -> list:
     """Record one op from its parse facts.
 
     A vf instruction differs from a block op in two things only: the pipe, since nothing
@@ -705,13 +720,19 @@ def _facts_op(access, tables: AccessTables, out: list) -> None:
     which reaches a buffer), so being inside a vf call and being a vf instruction are the
     same question for every op recorded with operands.
     """
+    out: list = []
+    # Every slot selection is a lifetime fact, whether or not the op reaches a tracked buffer.
+    for operand in access.operands:
+        for buffer_name, selector in operand.selectors:
+            out.append(StageAccess(buffer_name, None, None, selector))
+
     # A descriptor-only op touches no buffer data, whatever pipe it is registered on.
     if not op_accesses_buffer(access.op_name):
-        return
+        return out
     # An op reaching no tracked buffer orders nothing, so its pipe and roles never come up.
-    touched = [name for _p, _k, names in access.operands for name in names if tables.tracks(name)]
+    touched = [name for operand in access.operands for name in operand.names if tables.tracks(name)]
     if not touched:
-        return
+        return out
     in_vf = access.in_vf
     if in_vf:
         op_name = access.op_name.removeprefix("vf.")
@@ -728,7 +749,7 @@ def _facts_op(access, tables: AccessTables, out: list) -> None:
             lambda position: _facts_arg_memory(access, position, tables.all_buffer_memory),
         )
         if pipe is None:
-            return
+            return out
         roles = _block_op_roles(op_name, set(access.keyword_names))
     if roles is None:
         if in_vf:
@@ -746,6 +767,7 @@ def _facts_op(access, tables: AccessTables, out: list) -> None:
             _merge_role(merged, name, role)
     for buf, role in merged.items():
         _record_access(out, buf, role, pipe)
+    return out
 
 
 def _facts_arg_roles(access, roles: list):
@@ -758,7 +780,8 @@ def _facts_arg_roles(access, roles: list):
     """
     sig = _declared_signature(access.op_name)
     params = tuple(sig.parameters) if sig is not None else ()
-    for position, keyword, names in access.operands:
+    for operand in access.operands:
+        position, keyword, names = operand.position, operand.keyword, operand.names
         index = (params.index(keyword) if keyword in params else -1) if keyword is not None else position
         role = roles[index] if 0 <= index < len(roles) else _UNCOVERED
         param = keyword if keyword is not None else (params[index] if 0 <= index < len(params) else "")
@@ -767,9 +790,9 @@ def _facts_arg_roles(access, roles: list):
 
 def _facts_arg_memory(access, position: int, all_buffer_memory: dict) -> MemorySpace | None:
     """The MemorySpace of the operand written at ``position``, or None when it has no buffer."""
-    for recorded_position, _keyword, names in access.operands:
-        if recorded_position == position:
-            return all_buffer_memory.get(names[0]) if names else None
+    for operand in access.operands:
+        if operand.position == position:
+            return all_buffer_memory.get(operand.names[0]) if operand.names else None
     return None
 
 
@@ -918,7 +941,7 @@ def _record_access(out: list, buf: str, role: str, pipe: str) -> None:
     access as its own node, and a pair of endpoints cannot express a local access sitting
     BETWEEN two cross-core ones.
     """
-    out.append((buf, role, pipe))
+    out.append(StageAccess(buf, role, pipe))
 
 
 def _merge_role(result: dict[str, str], key: str, role: str | None) -> None:

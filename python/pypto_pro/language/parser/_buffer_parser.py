@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from enum import IntEnum, auto
 
 from pypto.pypto_impl import ir
 from pypto.pypto_impl.ir import DataType
@@ -62,6 +63,15 @@ class TileGroupFacts:
     bwd_ids: tuple[int, ...] | None
     span: ir.Span
     site: tuple[int, int] | None  # (lineno, col_offset) of the kernel-body statement or call parsing it
+
+
+class SelectorKind(IntEnum):
+
+    NEXT = auto()
+    CURRENT = auto()
+    PREVIOUS = auto()
+    INDEX = auto()
+
 
 
 class BufferParserMixin:
@@ -392,12 +402,13 @@ class BufferParserMixin:
 
     def _lower_group_accessor(self, group_var, method_name: str, span: ir.Span):
         """Select a complete bound tile using the rotating cursor."""
+        selector = self._new_slot_selector(SelectorKind[method_name.upper()])
         depth, _mutex_ids, _memory = self._group_meta(group_var)
         tiles = self.lower_attr_access(group_var, "tiles", span)
         if depth == 1:
             # Single tile: no cursor or modulo; optional mutex metadata stays static.
             tile = self._select_static_slot(tiles, 0, span)
-            self._bind_buffer_ref(tile, group_var, 0)
+            self._bind_buffer_ref(tile, group_var, 0, selector)
             return tile
         cursor_struct = self.lower_attr_access(group_var, "cursor", span)
         cur_read = self.lower_attr_access(cursor_struct, "cursor", span)
@@ -415,7 +426,7 @@ class BufferParserMixin:
             wrapped,
             span,
         )
-        self._bind_buffer_ref(tile, group_var, None)
+        self._bind_buffer_ref(tile, group_var, None, selector)
         return tile
 
     def lower_group_subscript(self, group_var, slice_node: ast.expr, span: ir.Span) -> ir.Expr:
@@ -434,7 +445,8 @@ class BufferParserMixin:
                     parser_retry=True,
                 )
             tile = self._select_static_slot(tiles, slot, span)
-            self._bind_buffer_ref(tile, group_var, slot)
+            selector = self._new_slot_selector(SelectorKind.INDEX, slot=slot, index_node=slice_node)
+            self._bind_buffer_ref(tile, group_var, slot, selector)
             return tile
 
         tile = self._select_dynamic_slot(
@@ -442,7 +454,8 @@ class BufferParserMixin:
             index_expr,
             span,
         )
-        self._bind_buffer_ref(tile, group_var, None)
+        selector = self._new_slot_selector(SelectorKind.INDEX, index_node=slice_node)
+        self._bind_buffer_ref(tile, group_var, None, selector)
         return tile
 
     def _reject_non_index_subscript(self, slice_node: ast.expr) -> ir.Expr:

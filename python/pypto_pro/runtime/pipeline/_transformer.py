@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pypto.pypto_impl.ir import MemorySpace
 
 from ..._errors import CommonInner, KeyNotFound, NotSupported, span_of
-from ._analyzer import KernelFacts, PipelineInfo, analyze_pipeline, buffers_touched
+from ._analyzer import KernelFacts, PipelineInfo, analyze_local_slot_events, analyze_pipeline, buffers_touched
 from ._astutil import (
     PL_IS_VALID_FIELD,
     PL_STRUCT_ARG,
@@ -31,7 +31,7 @@ from ._astutil import (
 from ._cross_core_scanner import CrossCoreBuffer
 from ._stage import is_pipeline_stage
 from ._sync_graph import SyncPlan, build_graph, plan_sync, sites_for
-from ._validate import validate_names
+from ._validate import validate_local_slot_lifetime, validate_names
 from .config import PipelineConfig
 
 
@@ -222,7 +222,10 @@ def _build_sync_plan(info: PipelineInfo):
     Called once per transform; the result travels down to the emitters as a value. Planning
     twice would allocate a second event-id group for every address-reuse edge.
     """
-    return plan_sync(build_graph(info, _schedule_of(info)), info)
+    schedule = _schedule_of(info)
+    graph = build_graph(info, schedule)
+    validate_local_slot_lifetime(info, schedule, analyze_local_slot_events(info, schedule))
+    return plan_sync(graph, info)
 
 
 def _schedule_of(info: PipelineInfo) -> list:

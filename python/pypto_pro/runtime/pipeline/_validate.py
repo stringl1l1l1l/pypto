@@ -28,6 +28,7 @@ from __future__ import annotations
 import ast
 
 from ..._errors import InvalidArgument, InvalidOperation, InvalidType, NotSupported, current_span, span_of
+from ...language.parser._buffer_parser import SelectorKind
 from ._astutil import (
     buffer_decl_location,
     call_name,
@@ -735,3 +736,122 @@ def _check_loop_step(info) -> None:
             f"{step.value}. The step must be a positive value.",
             span=span_of(step),
         )
+
+
+def validate_local_slot_lifetime(info, schedule, events_by_group: dict) -> None:
+    """Check each local group's prepared slot events for P/C shape and generation lifetime."""
+    for group, events in events_by_group.items():
+        by_slot: dict = {}
+        for event in events:
+            by_slot.setdefault(event[5], []).append(event)
+        roles: dict = {}
+        for slot, slot_events in by_slot.items():
+            pair = _check_slot_pair(info, group, info.sync.slot_counts[group], slot, slot_events, schedule)
+            if pair is not None:
+                roles[slot] = pair
+        if roles:
+            _check_slot_events(info, group, roles, events)
+
+
+def _check_slot_pair(info, group: str, depth: int, slot: int, events: list, schedule: list):
+    """Return ``(producer, consumer)`` for one slot, or None when it is not a handover."""
+    producers = sorted({event[2] for event in events if event[3] is SelectorKind.NEXT})
+    consumers = sorted(
+        {event[2] for event in events if event[3] in (SelectorKind.CURRENT, SelectorKind.PREVIOUS)}
+    )
+    indexers = sorted({event[2] for event in events if event[3] is SelectorKind.INDEX})
+    if not consumers:
+        if producers and len(indexers) == 1 and indexers[0] > producers[0]:
+            consumers = [indexers[0]]
+            indexers = []
+        else:
+            return None
+    producer = producers[0] if producers else None
+    if producer is None and len(indexers) == 1:
+        producer = indexers[0]
+    if producer is None:
+        return None
+    if len(producers) > 1:
+        names = [info.stages[index].func_name for index in producers]
+        raise InvalidOperation(
+            f"pipeline: buffer '{group}' slot {slot} is produced by several stages {names}. "
+            f"A local buffer slot must have a single producer; declare one tile_group per "
+            f"producer, or use separate slots.",
+            span=info.sync.decl_spans.get(group),
+        )
+    if len(consumers) > 1:
+        names = [info.stages[index].func_name for index in consumers]
+        raise InvalidOperation(
+            f"pipeline: buffer '{group}' slot {slot} is read by several stages {names}. "
+            f"A local buffer slot must have a single consumer; declare one tile_group per "
+            f"consumer, or use separate slots.",
+            span=info.sync.decl_spans.get(group),
+        )
+    consumer = consumers[0]
+    if producer > consumer:
+        raise InvalidOperation(
+            f"pipeline: buffer '{group}' slot {slot} is produced by '{info.stages[producer].func_name}' "
+            f"after its consumer '{info.stages[consumer].func_name}'. Put the producer stage first.",
+            span=info.sync.decl_spans.get(group),
+        )
+    extra = [index for index in indexers if index not in (producer, consumer)]
+    if extra:
+        names = [info.stages[index].func_name for index in extra]
+        raise InvalidOperation(
+            f"pipeline: buffer '{group}' slot {slot} is also selected by {names} through an "
+            f"explicit index, so its producer/consumer pair is ambiguous.",
+            span=info.sync.decl_spans.get(group),
+        )
+    if info.stages[producer].section_kind != info.stages[consumer].section_kind:
+        return None
+    needed = max(1, schedule[consumer] - schedule[producer] + 1)
+    if depth < needed:
+        raise InvalidArgument(
+            f"pipeline: buffer '{group}' has {depth} slot(s), but producer "
+            f"'{info.stages[producer].func_name}' runs {needed - 1} iteration(s) ahead of "
+            f"consumer '{info.stages[consumer].func_name}', so {needed} slots are live at "
+            f"once. Give it {needed} slots (its depth or the length of mutex_ids), or lower "
+            f"`preload`.",
+            span=info.sync.decl_spans.get(group),
+        )
+    return producer, consumer
+
+
+def _check_slot_events(info, group: str, roles: dict, events: list) -> None:
+    """Walk the group's events in beat order, maintaining one generation per slot."""
+    states = {slot: [None, None] for slot in roles}
+    for beat, task, stage_index, kind, order, slot in sorted(events, key=lambda item: (item[0], item[2], item[4])):
+        pair = roles.get(slot)
+        if pair is None:
+            continue
+        producer, consumer = pair
+        if producer == consumer:
+            writes = kind in (SelectorKind.NEXT, SelectorKind.INDEX)
+        else:
+            writes = stage_index == producer and kind in (SelectorKind.NEXT, SelectorKind.INDEX)
+        generation, pending = states[slot]
+        if writes:
+            if pending is not None:
+                raise InvalidArgument(
+                    f"pipeline: buffer '{group}' slot {slot} is overwritten for task {task} "
+                    f"before task {pending} is read. Increase the buffer depth, or move the "
+                    f"consumer before the next production.",
+                    span=info.sync.decl_spans.get(group),
+                )
+            states[slot] = [task, task]
+            continue
+        if generation != task:
+            raise InvalidOperation(
+                f"pipeline: buffer '{group}' consumer task {task} reads slot {slot}, which "
+                f"holds generation {generation}. The consumer must select the slot of its own "
+                f"task; current()/previous() at a delayed stage does not.",
+                span=info.sync.decl_spans.get(group),
+            )
+        states[slot] = [generation, None]
+    for slot, (generation, pending) in states.items():
+        if pending is not None:
+            raise InvalidOperation(
+                f"pipeline: buffer '{group}' slot {slot} holds generation {pending}, which was "
+                f"never consumed.",
+                span=info.sync.decl_spans.get(group),
+            )

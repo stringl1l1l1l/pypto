@@ -13,10 +13,23 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from pypto.pypto_impl.ir import SectionKind
 
-from ..._errors import InvalidArgument, InvalidOperation, InvalidType, KeyNotFound, NotSupported, current_span, span_of
+from ..._errors import (
+    InvalidArgument,
+    InvalidOperation,
+    InvalidType,
+    KeyNotFound,
+    NotSupported,
+    PyptoProWarning,
+    _warn_located,
+    current_span,
+    span_of,
+)
+from ...language.parser._buffer_parser import SelectorKind
+from ...language.parser._expr_evaluator import ExprEvaluator
 from ._astutil import (
     PL_IS_VALID_FIELD,
     PL_STRUCT_ARG,
@@ -102,14 +115,21 @@ class KernelFacts:
     same_name_decls: list = field(default_factory=list)
 
 
-@dataclass(frozen=True)
+class OperandFact(NamedTuple):
+    """One op argument that refers to a buffer: its binding and slot selectors."""
+
+    position: int | None
+    keyword: str | None
+    names: tuple  # declared buffer names this argument reaches
+    selectors: tuple = ()  # ``(declared name, SlotSelector)`` for slot-selected refs
+
+
+@dataclass
 class StageOpAccess:
     """One op a parse emitted, with every buffer operand resolved to its declared name."""
 
     op_name: str  # "move", "getval", "vf.load_align", ...
-    # ``(position among the positional arguments, keyword name, declared buffer names)`` per
-    # operand that reaches a buffer. No names means a tile resolving to no declaration.
-    operands: tuple
+    operands: tuple  # OperandFact per argument that reaches a buffer
     keyword_names: tuple  # every keyword the call wrote
     in_vf: bool  # whether the op is inside a vector function
     span: object
@@ -311,14 +331,13 @@ def analyze_pipeline(
         # body first failed to resolve the slot.
         info.outer_slots = _collect_outer_slots(info)
         # What each stage touches, which is the one half that is per pipeline.
-        if tables is not None:
-            _resolve_loop_accesses(info, tables, facts)
-            # And nothing outside a stage may touch what the graph tracks: its accesses would
-            # be recorded against no stage and synchronised by nobody, and its cursor would hand
-            # stages a slot that is not their task's.
-            tracked = set(tables.cross_buffers) | tables.addr_shared
-            validate_slot_picks(info, tracked & info.group_names, helper_func_defs)
-            reject_buffer_access_outside_stages(info, facts.op_accesses, tables)
+        _resolve_loop_accesses(info, tables, facts)
+        # And nothing outside a stage may touch what the graph tracks: its accesses would
+        # be recorded against no stage and synchronised by nobody, and its cursor would hand
+        # stages a slot that is not their task's.
+        tracked = set(tables.cross_buffers) | tables.addr_shared
+        validate_slot_picks(info, tracked & info.group_names, helper_func_defs)
+        reject_buffer_access_outside_stages(info, facts.op_accesses, tables)
     # Every declared cross-core buffer must be used by SOME pipeline. The per-loop check in
     # validate_sync cannot see that: a buffer another loop uses is legitimately absent there.
     validate_kernel_buffers(sync, set().union(*(buffers_touched(i) for i in infos)))
@@ -341,21 +360,21 @@ def _resolve_kernel_buffers(
     buffer_facts: dict,
     unbound_decls: list,
     same_name_decls: list,
-) -> AccessTables | None:
+) -> AccessTables:
     """Fill ``sync`` from the kernel's buffer declarations; return the lookup tables.
 
     The kernel-level half: declarations, addresses and the name tables, all of which every
     pipeline loop in the kernel shares. The per-loop half — what each stage actually touches —
     is _resolve_loop_accesses.
 
-    Returns None when the kernel declares no cross-core buffer: with nothing to hand over
-    there is no sync to plan, and the tables would have no reader.
+    The tables are returned even without a cross-core buffer: the local slot validation reads
+    every declared group through them.
 
     ``buffer_facts`` is what the parse resolved for every declaration.
     The three structural validations run before the cross-core resolution, so a malformed
     declaration is reported as a declaration error rather than as a cross-core one.
     """
-    # Filled before the early return below: _collect_outer_slots needs a slot count for
+    # Filled before the cross-core split: _collect_outer_slots needs a slot count for
     # local groups too.
     sync.slot_counts = buffer_slot_counts(buffer_facts)
     sync.decl_spans = {name: decl.span for name, decl in buffer_facts.items()}
@@ -366,15 +385,14 @@ def _resolve_kernel_buffers(
     cross_buffers, lifted_ids = cross_core_buffers(buffer_facts)
     sync.buffers = cross_buffers
     sync.lifted_ids = lifted_ids
-    if not cross_buffers:
-        return None
 
     all_mem = buffer_memory_spaces(buffer_facts)
 
     # Detect address overlaps involving cross-core buffers (for auto-sync of
     # address-reused buffers). Local-local overlaps are ignored.
-    sync.addr_ranges = buffer_addr_ranges(buffer_facts)
-    sync.addr_overlaps = detect_addr_overlaps(sync.addr_ranges, set(cross_buffers.keys()), sync.decl_spans)
+    if cross_buffers:
+        sync.addr_ranges = buffer_addr_ranges(buffer_facts)
+        sync.addr_overlaps = detect_addr_overlaps(sync.addr_ranges, set(cross_buffers.keys()), sync.decl_spans)
 
     return AccessTables(
         cross_buffers=cross_buffers,
@@ -400,7 +418,7 @@ def buffers_touched(info: PipelineInfo) -> set:
     declaration builder ("which ids does this loop declare") — and they must agree, so they
     all come here rather than each writing the comprehension out.
     """
-    return {access[0] for stage in info.stages for access in stage.buffer_access}
+    return {access.buffer for stage in info.stages for access in stage.buffer_access}
 
 
 def _resolve_loop_accesses(info: PipelineInfo, tables: AccessTables, facts: KernelFacts) -> None:
@@ -1077,6 +1095,15 @@ def _operand_names(operand, decl_names: dict) -> tuple:
     return tuple(dict.fromkeys(found))
 
 
+def _operand_refs(operand, decl_names: dict) -> tuple:
+    """The declared name and slot selector of every selected buffer ref."""
+    return tuple(
+        (decl_names[id(ref.buffer)], ref.selector)
+        for ref in operand.buffers
+        if id(ref.buffer) in decl_names and ref.selector is not None
+    )
+
+
 def probe_kernel_facts(kernel_def, bound_signature=None) -> KernelFacts:
     """Probe-parse the kernel once per target, for the facts only the parser can give.
 
@@ -1214,7 +1241,12 @@ def probe_kernel_facts(kernel_def, bound_signature=None) -> KernelFacts:
                 StageOpAccess(
                     access.op_name,
                     tuple(
-                        (operand.position, operand.keyword, _operand_names(operand, decl_names))
+                        OperandFact(
+                            operand.position,
+                            operand.keyword,
+                            _operand_names(operand, decl_names),
+                            _operand_refs(operand, decl_names),
+                        )
                         for operand in access.operands
                     ),
                     access.keyword_names,
@@ -1241,3 +1273,126 @@ def probe_kernel_facts(kernel_def, bound_signature=None) -> KernelFacts:
     # placed by its site, so one a factory function makes sorts where the kernel calls it.
     facts.buffer_facts = dict(sorted(buffer_facts.items(), key=lambda item: item[1].site or (0, 0)))
     return facts
+
+
+class _UnresolvedSlotIndexError(Exception):
+    """A dynamic slot index could not be resolved for one task."""
+
+
+def analyze_local_slot_events(info, schedule) -> dict:
+    """Expand each local group's slot selections into per-slot events.
+
+    Groups whose dynamic index cannot be resolved are reported and left out; the lifetime
+    check in _validate only consumes the events this returns.
+    """
+    events_by_group: dict = {}
+    cross = set(info.sync.buffers)
+    task_count = _local_task_count(info)
+    for group in sorted(info.group_names - cross):
+        depth = info.sync.slot_counts.get(group)
+        if depth is None:
+            continue
+        selectors = _local_stage_selectors(info, group)
+        if not selectors:
+            continue
+        kinds = {selector.kind for stage_selectors in selectors.values() for selector in stage_selectors}
+        if not ({SelectorKind.CURRENT, SelectorKind.PREVIOUS} & kinds) and SelectorKind.INDEX not in kinds:
+            continue
+        try:
+            events_by_group[group] = _local_slot_events(info, group, depth, selectors, schedule, task_count)
+        except _UnresolvedSlotIndexError as exc:
+            _warn_located(str(exc), PyptoProWarning, info.sync.decl_spans.get(group))
+    return events_by_group
+
+
+def _local_stage_selectors(info, group: str) -> dict:
+    """``{stage index: [SlotSelector, ...]}`` in parser selection order."""
+    result: dict = {}
+    for index, stage in enumerate(info.stages):
+        by_order: dict = {}
+        for access in stage.buffer_access:
+            if access.buffer != group or access.selector is None:
+                continue
+            by_order[access.selector.order] = access.selector
+        if by_order:
+            result[index] = [by_order[order] for order in sorted(by_order)]
+    return result
+
+
+def _local_task_count(info):
+    """The pipeline loop's constant trip count, or None when it is not a constant."""
+    end = info.pipeline_loop_end
+    if end is None:
+        return None
+    env = dict(info.closure_vars)
+    for stage in info.stages:
+        function = info.closure_vars.get(stage.func_name)
+        env.update(getattr(function, "__globals__", {}))
+    try:
+        value = ExprEvaluator(env).eval_expr(end)
+    except Exception:
+        return None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _local_slot_events(info, group: str, depth: int, selectors: dict, schedule: list, task_count) -> list:
+    """Expand one group's selectors into ``(beat, task, stage, kind, order, slot)`` events."""
+    max_delay = max(schedule) if schedule else 0
+    ntask = task_count if task_count is not None else max_delay + 2 * depth + 4
+    max_beat = ntask + max_delay
+    cursor = depth - 1
+    events: list = []
+    for beat in range(max_beat):
+        for stage_index in sorted(selectors):
+            task = beat - schedule[stage_index]
+            if task < 0 or task >= ntask:
+                continue
+            for order, selector in enumerate(selectors[stage_index]):
+                if selector.kind is SelectorKind.NEXT:
+                    cursor = (cursor + 1) % depth
+                    slot = cursor
+                elif selector.kind is SelectorKind.CURRENT:
+                    slot = cursor
+                elif selector.kind is SelectorKind.PREVIOUS:
+                    slot = (cursor + depth - 1) % depth
+                else:
+                    slot = _local_index_slot(info, group, stage_index, selector, task, depth)
+                events.append((beat, task, stage_index, selector.kind, order, slot))
+    return events
+
+
+def _local_index_slot(info, group: str, stage_index: int, selector, task: int, depth: int) -> int:
+    """Resolve the slot of an explicit ``group[index]`` selection for one task."""
+    if selector.slot is not None:
+        return selector.slot
+    stage = info.stages[stage_index]
+    parameters = [arg.arg for arg in stage.func_def.args.args] if stage.func_def is not None else []
+    function = info.closure_vars.get(stage.func_name)
+    env = dict(getattr(function, "__globals__", {}))
+    env.update(info.closure_vars)
+    if parameters:
+        env[parameters[0]] = task
+        suffix = "_" + parameters[0]
+        for node in ast.walk(selector.index_node):
+            if isinstance(node, ast.Name) and node.id.startswith("__inline_") and node.id.endswith(suffix):
+                env[node.id] = task
+    try:
+        value = ExprEvaluator(env).eval_expr(selector.index_node)
+    except Exception as exc:
+        raise _UnresolvedSlotIndexError(
+            f"pipeline: skipped local slot lifetime check for buffer '{group}' in stage "
+            f"'{stage.func_name}': slot index `{ast.unparse(selector.index_node)}` depends on a "
+            f"value not resolvable at compile time (task {task})."
+        ) from exc
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _UnresolvedSlotIndexError(
+            f"pipeline: skipped local slot lifetime check for buffer '{group}' in stage "
+            f"'{stage.func_name}': slot index `{ast.unparse(selector.index_node)}` is not an "
+            f"integer (task {task})."
+        )
+    if not 0 <= value < depth:
+        raise InvalidArgument(
+            f"pipeline: buffer '{group}' selects slot {value}, outside [0, {depth}).",
+            span=info.sync.decl_spans.get(group),
+        )
+    return value
