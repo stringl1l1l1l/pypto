@@ -189,6 +189,17 @@ def test_read_write_stage_closes_and_opens_pairs():
     validate_local_slot_lifetime(info, [0, 2, 4])
 
 
+def test_last_reader_extends_lifetime():
+    info = _fake_info(["W", "R", "R"], depth=2)
+    with pytest.raises(InvalidArgument, match=r"has 2 slot\(s\).*3 slots"):
+        validate_local_slot_lifetime(info, [0, 1, 2])
+
+
+def test_last_reader_fits_when_depth_covers():
+    info = _fake_info(["W", "R", "R"], depth=3)
+    validate_local_slot_lifetime(info, [0, 1, 2])
+
+
 def test_read_write_stage_uses_worst_pair():
     info = _fake_info(["W", "RW", "R"], depth=2)
     with pytest.raises(InvalidArgument, match=r"has 2 slot\(s\).*3 slots"):
@@ -203,3 +214,26 @@ def test_multiple_pairs_are_checked():
 def test_producer_without_reader_is_skipped():
     info = _fake_info(["W", "W", "R"], depth=1)
     validate_local_slot_lifetime(info, [0, 1, 2])
+
+
+@pl.pipeline.stage
+def local_store(k, src, out):
+    tile = pl.make_tile(
+        pl.TileType(shape=[T, T], dtype=pl.DT_FP32, target_memory=pl.MemorySpace.Vec),
+        addr=0)
+    pl.load(tile, src, [k * T, 0])
+    pl.store(out, tile, [k * T, 0])
+
+
+def _make_tile_only():
+    @pl.jit(arch="3510", auto_mutex=True, pipeline=pl.pipeline.PipelineConfig(preload=[0]))
+    def kernel(src: pl.Tensor[[N * T, T], pl.DT_FP32],
+               out: pl.Tensor[[N * T, T], pl.DT_FP32]):
+        for k in pl.range(0, N):
+            with pl.section_vector():
+                local_store(k, src, out)
+    return kernel
+
+
+def test_make_tile_only_stage_is_ignored():
+    transform(_make_tile_only())

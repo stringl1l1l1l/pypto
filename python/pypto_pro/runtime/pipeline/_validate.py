@@ -737,7 +737,7 @@ def _check_loop_step(info) -> None:
 def validate_local_slot_lifetime(info, schedule) -> None:
     """Check each local group's depth against its ordered write/read stage pairs.
 
-    A stage with any write starts a generation; its consumer is the nearest later read
+    A stage with any write starts a generation; its consumer is the last later read
     on the same core before the next write-only stage. A read-write stage can close the
     previous generation and start the next one. Pairs are collected in one right-to-left
     walk per group, so the cost is linear in the stage accesses.
@@ -778,8 +778,7 @@ def validate_local_slot_lifetime(info, schedule) -> None:
         for index, _section, has_w, has_r in reversed(entries):
             if has_w:
                 if pending_r is None:
-                    # A producer with no reader before the next write-only stage cannot
-                    # be checked: the ring's rotation assumption is not met.
+                    # A producer with no reader before the next write-only stage cannot be checked.
                     worst = None
                     break
                 needed = max(1, schedule[pending_r] - schedule[index] + 1)
@@ -787,7 +786,8 @@ def validate_local_slot_lifetime(info, schedule) -> None:
                     worst = (needed, index, pending_r)
                 if not has_r:
                     pending_r = None
-            if has_r:
+            # A generation's slot is reusable only after its last read, so keep the last reader.
+            if has_r and (has_w or pending_r is None):
                 pending_r = index
 
         if worst is None:
