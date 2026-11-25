@@ -53,6 +53,8 @@ def stage1(ki, a, b_l1, a_l1_db, left_db, right_db, acc_db, mm1_vec_db):
 
 其中`fwd_ids`为正向同步（生产者写完通知消费者），生产者stage之后插入set、消费者stage之前插入wait；`bwd_ids`为反向同步（消费者用完通知生产者可以覆写），消费者stage之后插入set、生产者stage之前插入wait。只配置`fwd_ids`时，仅保证消费者读到的是生产者写完的数据，不保证生产者下一轮覆写时消费者已经读完。每次迭代使用的slot按slot数轮转；核间同步id则按`ids[迭代序号 % len(ids)]`轮转，因此二者的轮转周期可以不同。
 
+生产者与消费者位于两个核上，各自持有一份该Buffer的slot游标，且每个stage从它第一次被执行起每次迭代各前进一格，因此两个核的游标值都等于该stage当前处理的任务序号：生产者为某个任务写入的slot，与消费者处理该任务时取到的slot自动一致，用`group.next()`取slot即可，无需自行计算下标。
+
 > [!NOTE]说明
 >
 > - 跨核Buffer和核内Buffer需要在kernel函数体内、所有循环之外声明，也可以由kernel函数体内调用的普通函数返回；不能写在stage内，也不能写在stage调用的普通函数中。
@@ -62,7 +64,8 @@ def stage1(ki, a, b_l1, a_l1_db, left_db, right_db, acc_db, mm1_vec_db):
 > - 自动流水不扫描[pypto_pro.language.make_tile](../../../../../api/pro_api/SIMD-API/resource_management/make_tile.md)声明的Tile，不会为访问它的op插入任何同步。框架也不检查它的地址，其地址范围与跨核Buffer（或与跨核Buffer复用地址的Buffer）重叠时不会报错，但同样不会插入同步，需由开发者自行保证地址不冲突。参与流水的Buffer建议统一用make_tile_group声明，不需要轮转和自动同步时只配置`depth`、不配置`mutex_ids`即可。
 > - 一个跨核Buffer需要恰好被相邻的两个stage使用，两个stage分别位于Cube和Vector上，并构成一对一的生产者和消费者关系。需要把数据送到更后面的stage时，应逐级交接。
 > - `fwd_ids`和`bwd_ids`的取值范围为0～15，只能直接写编译期常量整数列表，或使用kernel外绑定到整数列表的变量，不支持切片、拼接、函数调用等表达式。ID数量需要等于slot数或等于1；等于1时所有slot共用同一个同步ID，可能降低性能。
-> - 跨核Buffer的slot需要随迭代顺序轮转。按stage在主循环中的书写顺序编号（与第一个stage位于Cube还是Vector无关），写该Buffer的stage编号为奇数时至少需要2个slot，为偶数时至少需要`preload`个slot；slot数不足时会在编译期报错，并提示所需的最小slot数。
+> - 同一个跨核Buffer在每次迭代中只允许取用一个slot，且取用顺序必须按slot编号依次循环。以`depth=3`为例，取用序列为slot0、slot1、slot2、slot0、slot1……起始slot可任意选取，但不允许跳过中间的slot，也不允许在相邻迭代中重复取用同一个slot。使用`group.next()`取slot时自动满足该顺序；使用下标取slot时，下标需写成`(循环变量 + 编译期常量) % depth`的形式，例如`g[i % 3]`、`g[(i + 1) % 3]`。
+> - 对于跨核Buffer，按stage在主循环中的书写顺序编号（与第一个stage位于Cube还是Vector无关），写该Buffer的stage编号为奇数时至少需要2个slot，为偶数时至少需要`preload`个slot；slot数不足时会在编译期报错，并提示所需的最小slot数。核内Buffer的slot数下限另见[声明核内Buffer](#声明核内buffer)。
 > - 在空间充足时，可以分配多于下限的slot，并根据实测结果判断是否有性能收益。调整slot数时，需要同步调整`fwd_ids`和`bwd_ids`的数量以及Buffer占用的空间；核间同步ID配置为所有slot共用的单个ID时除外。
 
 `mutex_ids`需要为Buffer中的每个Tile配置一个id，因此其数量与Tile数一致。`target_memory`仅声明Buffer所在的物理存储空间，不表示是否跨核；跨核共享Buffer支持UB和L1 Buffer。下面的`mm1_vec_db`是Cube stage将计算结果交给Vector stage的示例；在后文完整示例中，`p_mat_db`由Vector stage写入后交给Cube stage读取。两者的跨核关系都由stage的生产者/消费者关系以及`fwd_ids`、`bwd_ids`确定。
@@ -83,6 +86,37 @@ mm1_vec_db = pl.make_tile_group(
 >
 > - 复用地址时最多允许两块Buffer复用，双方的Tile数和`mutex_ids`需要一致；`mutex_ids`不同不能形成地址互斥。
 > - 调整Tile数时，还需要同步调整`mutex_ids`的数量和Buffer占用的地址空间。
+
+### 声明核内Buffer
+
+未配置`fwd_ids`和`bwd_ids`的Buffer为核内Buffer，其流水同步和地址复用由`mutex_ids`配合`auto_mutex`完成，不涉及核间同步。核内Buffer不要求恰好被相邻的两个stage使用：同一个核上的多个stage都可以使用同一个核内Buffer，这些stage之间也可以间隔其他stage。核内Buffer不能同时被Cube stage和Vector stage使用，框架不会为其插入核间同步，也不会报错。
+
+#### 两种取槽写法
+
+核内Buffer有两种取槽写法，它们决定了该Buffer能表达哪种数据流，也决定了slot数下限如何计算。
+
+- **游标写法**：`group.next()`、`group.current()`、`group.previous()`。游标是每个核各一份的运行期计数器，`next()`使其前进一格，`current()`读取其当前所在位置。slot由这段代码执行时游标所在的位置决定。
+- **下标写法**：`group[下标]`，不改变游标，slot由下标直接决定。用于流水时，下标需写成`(循环变量 + 编译期常量) % depth`的形式，其中循环变量是该stage本拍处理的任务所对应的变量，即stage的入参，例如`g[i % 3]`、`g[(i + 1) % 3]`。
+
+同一个核内Buffer不要混用这两种写法。
+
+#### 形态一：取出后在同一个stage内用完
+
+一次迭代中取出的Tile，在本stage内写入并读完，不交给其他stage。这种形态使用游标写法即可。
+
+该核上有多个stage各取一次槽时，游标在一次迭代中前进多次，各stage取到的slot相差固定的格数，因此只要slot数不小于一次迭代中的取槽次数，各stage取到的就是互不相同的slot，与`preload`取值无关。
+
+slot数的正确性下限为1，此时该核的多个stage取到的是同一块Tile，`auto_mutex`会在后一个stage写入这块Tile之前插入等待，直到前一个stage把它读完；两个stage的指令因此不能同时执行，退化为串行，但计算结果仍然正确。
+
+推荐把slot数配置为“一次迭代中取槽次数”的整数倍。取槽次数的1倍时，该核的每个stage各自独占一块Tile，stage之间不再有上述等待，可以同时执行；取2倍时，每个stage各独占两块Tile，同一个stage相邻两次迭代各用其中一块，下一次迭代的写入也不必等待上一次迭代的读取完成。
+
+#### 形态二：在一个stage写入、在同核后面的stage读取
+
+一次迭代中写入的数据，交给该核后面的某个stage读取。这种形态**必须使用下标写法**，写入和读取的stage各自用本拍任务所对应的循环变量计算下标，才会落在同一个slot上。
+
+slot数下限按“从写入到最后一次读完”这段间隔计算。在该Buffer所在的核上，按主循环中的书写顺序只为**该核的**stage编号（第1个、第2个……，另一个核的stage不计入）；同一个核上相邻两个stage在流水上相差`preload`拍。设写入的stage是该核的第a个、最后一次读取的stage是第b个，则至少需要`(b - a) × preload + 1`个slot。
+
+该Buffer在一次迭代中被写入多次时，每次写入到其下一次写入之前的最后一次读取各算一段，取各段结果的最大值。slot数不足时会在编译期报错，并提示所需的最小slot数。
 
 ### 编写主循环
 
@@ -139,9 +173,9 @@ for kj in pl.range(0, M_ITER):        # 第二条流水
 | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | preload | 表示上游核提前迭代计算的次数，类型为int或list[int]。传入单个整数时，kernel内所有流水循环共用该值；传入列表时，按源码顺序为每个流水循环单独配置。取值为0的循环不做流水改写，只在原串行循环中插入核间同步。 |
 
-**建议流程**：先配置**preload=0**执行，确认串行版本精度正确，再逐步调大preload开启流水。调大preload的同时，需按[声明跨核共享Buffer](#声明跨核共享buffer)后的说明检查各跨核Buffer的Tile数是否够用。多个流水循环时可以只把其中一条配成0（如preload=[0, 2]），单独验证这条流水的串行精度。
+**建议流程**：先配置**preload=0**执行，确认串行版本精度正确，再逐步调大preload开启流水。调大preload的同时，需按[声明跨核共享Buffer](#声明跨核共享buffer)后的说明检查各跨核Buffer的Tile数是否够用，并按[声明核内Buffer](#声明核内buffer)检查各核内Buffer的Tile数是否够用。多个流水循环时可以只把其中一条配成0（如preload=[0, 2]），单独验证这条流水的串行精度。
 
-调优时应同时观察`preload`和Buffer Tile数对性能的影响。如果增大`preload`或增加Tile后性能没有提升，可将Tile数减少到当前`preload`对应的最小值，以节省片上存储空间；减少后仍需满足[声明跨核共享Buffer](#声明跨核共享buffer)后说明中的slot数下限，并重新验证精度和性能。
+调优时应同时观察`preload`和Buffer Tile数对性能的影响。如果增大`preload`或增加Tile后性能没有提升，可将Tile数减少到当前`preload`对应的最小值，以节省片上存储空间；减少后仍需满足[声明跨核共享Buffer](#声明跨核共享buffer)后说明和[声明核内Buffer](#声明核内buffer)中的slot数下限，并重新验证精度和性能。
 
 > [!NOTE]说明
 >
