@@ -633,6 +633,8 @@ def stage_accesses(stage, by_site: dict, tables: AccessTables) -> list:
 
     The parse already resolved which declaration every operand reaches, so no name is bound
     here; what is left is the role each operand carries and the pipe the op runs on.
+    Local groups are recorded with role/pipe None; they still identify the stages that
+    touch the group for the local depth check.
 
     Args:
         stage: the StageCall whose call site keys the facts.
@@ -671,10 +673,12 @@ def _facts_op(access, tables: AccessTables, out: list) -> None:
     # A descriptor-only op touches no buffer data, whatever pipe it is registered on.
     if not op_accesses_buffer(access.op_name):
         return
-    # An op reaching no tracked buffer orders nothing, so its pipe and roles never come up.
-    touched = [name for _p, _k, names in access.operands for name in names if tables.tracks(name)]
-    if not touched:
+    names = tuple(dict.fromkeys(name for _p, _k, operand_names in access.operands for name in operand_names))
+    if not names:
         return
+    local_names = [name for name in names if name in tables.group_names and not tables.tracks(name)]
+    tracked_names = [name for name in names if tables.tracks(name)]
+
     in_vf = access.in_vf
     if in_vf:
         op_name = access.op_name.removeprefix("vf.")
@@ -686,29 +690,74 @@ def _facts_op(access, tables: AccessTables, out: list) -> None:
         op_name = access.op_name
         shown = f"pl.{op_name}()"
         table = "_BLOCK_OP_TILE_ROLES"
+        roles = _block_op_roles(op_name, set(access.keyword_names))
+
+    if not tracked_names:
+        _record_local_groups(access, roles, local_names, out)
+        return
+
+    if not in_vf:
         pipe = _pipe_from_operand_memory(
             op_name, shown, access.span,
             lambda position: _facts_arg_memory(access, position, tables.all_buffer_memory),
         )
-        if pipe is None:
-            return
-        roles = _block_op_roles(op_name, set(access.keyword_names))
+
     if roles is None:
         if in_vf:
-            _reject_untabled_vf_op(access, op_name, touched[0])
+            _reject_untabled_vf_op(access, op_name, tracked_names[0])
         else:
-            _reject_untabled_op(shown, access.span, op_name, touched)
+            _reject_untabled_op(shown, access.span, op_name, tracked_names)
+        _record_local_groups(access, None, local_names, out)
+        return
+
+    if pipe is None:
+        _record_local_groups(access, roles, local_names, out)
+        return
+
     # One record per buffer, not per argument.
     merged: dict[str, str] = {}
-    for param, names, role in _facts_arg_roles(access, roles):
-        for name in names:
+    local_roles: dict[str, str] = {}
+    for param, operand_names, role in _facts_arg_roles(access, roles):
+        for name in operand_names:
             if not tables.tracks(name):
+                if name in local_names:
+                    _merge_local_access(local_roles, name, role, out)
                 continue
             if role is None or role is _UNCOVERED:
                 _reject_roleless_arg(shown, access.span, op_name, param, name, role, table)
             _merge_role(merged, name, role)
     for buf, role in merged.items():
         _record_access(out, buf, role, pipe)
+    for buf, role in local_roles.items():
+        _record_access(out, buf, role, pipe)
+
+
+def _record_local_groups(access, roles, local_names, out: list) -> None:
+    """Record local tile groups for the local slot lifetime check, without resolving pipes.
+
+    A local group's access is not part of the cross-core graph, so its pipe is unnecessary
+    and may not even be resolvable (for example, a make_tile operand has no memory-space
+    entry). Unknown roles are recorded as None so the lifetime check skips that group.
+    """
+    if roles is None:
+        for name in local_names:
+            out.append((name, None, None))
+        return
+    local_roles: dict[str, str] = {}
+    for _param, operand_names, role in _facts_arg_roles(access, roles):
+        for name in operand_names:
+            if name in local_names:
+                _merge_local_access(local_roles, name, role, out)
+    for buf, role in local_roles.items():
+        _record_access(out, buf, role, None)
+
+
+def _merge_local_access(local_roles, name, role, out: list) -> None:
+    """Fold one local operand's role into the group's access, or record an unknown role."""
+    if role is None or role is _UNCOVERED:
+        out.append((name, None, None))
+    else:
+        _merge_role(local_roles, name, role)
 
 
 def _facts_arg_roles(access, roles: list):
